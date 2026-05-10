@@ -168,6 +168,16 @@ bool hasSeenMessage(const String &msgId) {
   return false;
 }
 
+size_t duplicateCacheCount() {
+  size_t count = 0;
+  for (size_t i = 0; i < DUPLICATE_CACHE_SIZE; ++i) {
+    if (seenMessageIds[i].length() > 0) {
+      ++count;
+    }
+  }
+  return count;
+}
+
 void rememberMessage(const String &msgId) {
   seenMessageIds[seenMessageIndex] = msgId;
   seenMessageIndex = (seenMessageIndex + 1) % DUPLICATE_CACHE_SIZE;
@@ -324,15 +334,20 @@ void processIncomingMessage(const String &line) {
 }
 
 void sendCommand(const String &line) {
-  const int destStart = line.indexOf(' ') + 1;
-  const int payloadStart = line.indexOf(' ', destStart);
-  if (destStart <= 0 || payloadStart <= destStart) {
+  String trimmedLine = line;
+  trimmedLine.trim();
+
+  String args = trimmedLine.substring(4);
+  args.trim();
+
+  const int payloadStart = args.indexOf(' ');
+  if (payloadStart <= 0) {
     Serial.println("[ERROR] Usage: SEND <DEST> <MESSAGE>");
     return;
   }
 
-  String dest = line.substring(destStart, payloadStart);
-  String payload = line.substring(payloadStart + 1);
+  String dest = args.substring(0, payloadStart);
+  String payload = args.substring(payloadStart + 1);
   dest.trim();
   payload.trim();
 
@@ -342,6 +357,20 @@ void sendCommand(const String &line) {
   }
 
   SimMessage message = createOutboundMessage(dest, payload);
+  rememberMessage(message.msgId);
+  logMessage("RECEIVED", message);
+  routeMessage(message);
+}
+
+void sendPlainTextFallback(const String &line) {
+  String payload = line;
+  payload.trim();
+  if (payload.length() == 0) {
+    return;
+  }
+
+  Serial.println("[FALLBACK] Plain text routed to default destination. Prefer: SEND <DEST> <MESSAGE>");
+  SimMessage message = createOutboundMessage(DEFAULT_DEST_ID, payload);
   rememberMessage(message.msgId);
   logMessage("RECEIVED", message);
   routeMessage(message);
@@ -371,8 +400,12 @@ void printStatus() {
   Serial.println(DEFAULT_DEST_ID);
   Serial.print("  max_hop=");
   Serial.println(MAX_HOP_COUNT);
-  Serial.print("  processed_cache_size=");
+  Serial.print("  duplicate_cache_count=");
+  Serial.print(duplicateCacheCount());
+  Serial.print("/");
   Serial.println(DUPLICATE_CACHE_SIZE);
+  Serial.print("  message_counter=");
+  Serial.println(outboundCounter);
 }
 
 void setOfflineCommand(const String &line) {
@@ -416,19 +449,20 @@ void processSerialLine(String line) {
     return;
   }
 
-  const String command = toUpperCopy(line);
-  if (command.startsWith("SEND ")) {
+  const int commandEnd = line.indexOf(' ');
+  const String command = toUpperCopy(commandEnd < 0 ? line : line.substring(0, commandEnd));
+  if (command == "SEND") {
     sendCommand(line);
   } else if (command == "STATUS") {
     printStatus();
   } else if (command == "NEIGHBORS") {
     printNeighbors();
-  } else if (command == "OFFLINE" || command.startsWith("OFFLINE ")) {
-    setOfflineCommand(command);
-  } else if (command == "ONLINE" || command.startsWith("ONLINE ")) {
-    setOnlineCommand(command);
+  } else if (command == "OFFLINE") {
+    setOfflineCommand(toUpperCopy(line));
+  } else if (command == "ONLINE") {
+    setOnlineCommand(toUpperCopy(line));
   } else {
-    Serial.println("[ERROR] Unknown command. Use SEND, STATUS, NEIGHBORS, OFFLINE, or ONLINE.");
+    sendPlainTextFallback(line);
   }
 }
 
