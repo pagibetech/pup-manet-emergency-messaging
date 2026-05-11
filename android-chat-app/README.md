@@ -25,6 +25,10 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - LoRa/MANET packet abstraction for generated chat messages.
 - ESP32 communication bridge abstraction with simulation and placeholder transports.
 - Adaptive routing decision engine with weighted candidate scoring and failover reasons.
+- Realistic MANET state simulation with fluctuating signal, battery drain, intermittent links, node mobility, and outages.
+- Simulation speed control with Slow, Normal, and Fast modes.
+- Live simulation state indicators for Stable, Congested, Recovering, and Partitioned conditions.
+- Network event log for dynamic link, node, route, and recovery events.
 - Routing decision panel showing preferred route, selected route, score, failover reason, and route candidates.
 - Transport bridge status panel with active implementation, connection state, last sent packet, and last received packet.
 - Transport selection dropdown for Simulation, Bluetooth Placeholder, WiFi Placeholder, and USB Serial Placeholder.
@@ -162,11 +166,28 @@ Candidate scoring considers:
 
 The app displays the preferred route, selected route, route score, failover reason, available candidates, and candidate details. If a transport is toggled down or a path becomes unavailable, the engine immediately recalculates and updates the visible routing decision. Generated packet logs continue to reflect the selected route.
 
+## Realistic MANET State Simulation
+
+Android Step 009 adds dynamic local network behavior to exercise routing and failover decisions.
+
+The simulation can now change over time:
+
+- RSSI and SNR fluctuate per node.
+- Nodes slowly drain battery.
+- Low or critical battery affects node health and route scoring.
+- Critical battery can disable node links.
+- LoRa, WiFi, GSM, and simulated satellite links can fail or recover.
+- Node ordering can shift to simulate mobility and path rediscovery.
+- Nodes can enter weak, critical, low-battery, or offline states.
+
+Simulation speed can be set to Slow, Normal, or Fast. The UI shows a simulation condition of Stable, Congested, Recovering, or Partitioned. The network event log records changes such as degraded relays, recovered links, node health changes, route rediscovery, and failover-related events.
+
 ## Current Limitations
 
 - Messages are stored only in local Compose state.
 - Route decisions and metrics are simulated only.
 - Adaptive routing scores are local simulation values only.
+- Dynamic MANET behavior is generated locally and is not based on physical radio measurements.
 - Bluetooth pairing is simulated only and uses fake ESP32 node names.
 - LoRa/MANET packets are local data models only and are not sent to an ESP32.
 - Transport bridge implementations are local simulation/placeholder classes only.

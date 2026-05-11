@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,7 @@ import ph.edu.pup.manetmessenger.ui.theme.PUPMANETMessengerTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.random.Random
 
 enum class NetworkMode(val label: String) {
     Auto("Auto"),
@@ -102,6 +104,19 @@ enum class TransportConnectionState(val label: String) {
     Connected("Connected"),
     PlaceholderReady("Placeholder ready"),
     Disconnected("Disconnected")
+}
+
+enum class SimulationSpeed(val label: String, val tickMs: Long, val volatility: Int) {
+    Slow("Slow", 6000L, 1),
+    Normal("Normal", 3500L, 2),
+    Fast("Fast", 1600L, 3)
+}
+
+enum class SimulationCondition(val label: String) {
+    Stable("Stable"),
+    Congested("Congested"),
+    Recovering("Recovering"),
+    Partitioned("Partitioned")
 }
 
 data class NetworkState(
@@ -228,6 +243,13 @@ data class ChatMessage(
     val packet: LoraManetPacket
 )
 
+data class NetworkSimulationUpdate(
+    val nodes: List<SimNode>,
+    val networkState: NetworkState,
+    val condition: SimulationCondition,
+    val events: List<String>
+)
+
 private val simNodes = listOf(
     SimNode("Node Alpha", 91, -58, 11.0, 0, "Near gateway", true, true, false, true),
     SimNode("Node Bravo", 84, -64, 9.2, 1, "One relay", true, true, true, true),
@@ -306,9 +328,10 @@ private class AdaptiveRoutingEngine {
         selectedNetwork: NetworkMode,
         networkState: NetworkState,
         localNode: SimNode,
-        targetNode: SimNode
+        targetNode: SimNode,
+        nodes: List<SimNode> = simNodes
     ): RoutingDecision {
-        val path = routePath(localNode, targetNode)
+        val path = routePath(localNode, targetNode, nodes)
         val preferred = preferredRoute(selectedNetwork)
         val allCandidates = listOf(
             RouteLabel.Lora,
@@ -422,8 +445,11 @@ fun MessengerApp() {
     var selectedNetwork by remember { mutableStateOf(NetworkMode.Auto) }
     var networkState by remember { mutableStateOf(NetworkState()) }
     var bluetoothState by remember { mutableStateOf(BluetoothState()) }
+    var simulatedNodes by remember { mutableStateOf(simNodes) }
     var localNode by remember { mutableStateOf(simNodes.first()) }
     var targetNode by remember { mutableStateOf(simNodes.last()) }
+    var simulationSpeed by remember { mutableStateOf(SimulationSpeed.Normal) }
+    var simulationCondition by remember { mutableStateOf(SimulationCondition.Stable) }
     var draftMessage by remember { mutableStateOf("") }
     var nextMessageId by remember { mutableStateOf(1L) }
     var selectedTransport by remember { mutableStateOf(TransportOption.Simulation) }
@@ -433,6 +459,7 @@ fun MessengerApp() {
     var transportStatus by remember { mutableStateOf(activeTransport.connect()) }
     val messages = remember { mutableStateListOf<ChatMessage>() }
     val packetLog = remember { mutableStateListOf<LoraManetPacket>() }
+    val eventLog = remember { mutableStateListOf<String>() }
     val queueScope = rememberCoroutineScope()
     val routingEngine = remember { AdaptiveRoutingEngine() }
     val routedNetworkState = effectiveNetworkState(networkState, bluetoothState)
@@ -440,8 +467,31 @@ fun MessengerApp() {
         selectedNetwork = selectedNetwork,
         networkState = routedNetworkState,
         localNode = localNode,
-        targetNode = targetNode
+        targetNode = targetNode,
+        nodes = simulatedNodes
     )
+
+    LaunchedEffect(simulationSpeed) {
+        while (true) {
+            delay(simulationSpeed.tickMs)
+            val update = nextNetworkSimulationState(
+                nodes = simulatedNodes,
+                networkState = networkState,
+                speed = simulationSpeed
+            )
+            simulatedNodes = update.nodes
+            networkState = update.networkState
+            simulationCondition = update.condition
+            localNode = update.nodes.firstOrNull { it.name == localNode.name } ?: update.nodes.first()
+            targetNode = update.nodes.firstOrNull { it.name == targetNode.name } ?: update.nodes.last()
+            update.events.asReversed().forEach { event ->
+                eventLog.add(0, event)
+            }
+            while (eventLog.size > 10) {
+                eventLog.removeAt(eventLog.lastIndex)
+            }
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -457,7 +507,8 @@ fun MessengerApp() {
                             bluetoothState = bluetoothState,
                             localNode = localNode,
                             targetNode = targetNode,
-                            adaptiveRoutingDecision = adaptiveRoutingDecision
+                            adaptiveRoutingDecision = adaptiveRoutingDecision,
+                            nodes = simulatedNodes
                         )
                         val messageId = nextMessageId++
                         val delayMs = simulatedDelayMs(decision.route, decision.metrics)
@@ -544,12 +595,13 @@ fun MessengerApp() {
             }
             item {
                 NodeSelector(
+                    nodes = simulatedNodes,
                     localNode = localNode,
                     targetNode = targetNode,
                     onLocalNodeSelected = { selected ->
                         localNode = selected
-                        if (targetNode == selected) {
-                            targetNode = simNodes.first { it != selected }
+                        if (targetNode.name == selected.name) {
+                            targetNode = simulatedNodes.first { it.name != selected.name }
                         }
                     },
                     onTargetNodeSelected = { targetNode = it }
@@ -566,7 +618,8 @@ fun MessengerApp() {
                 TopologyOverviewPanel(
                     localNode = localNode,
                     targetNode = targetNode,
-                    networkState = routedNetworkState
+                    networkState = routedNetworkState,
+                    nodes = simulatedNodes
                 )
             }
             item {
@@ -585,7 +638,10 @@ fun MessengerApp() {
             item {
                 SimulationControls(
                     networkState = networkState,
-                    onNetworkStateChange = { networkState = it }
+                    onNetworkStateChange = { networkState = it },
+                    simulationSpeed = simulationSpeed,
+                    onSimulationSpeedChange = { simulationSpeed = it },
+                    simulationCondition = simulationCondition
                 )
             }
             item {
@@ -594,9 +650,11 @@ fun MessengerApp() {
                     networkState = routedNetworkState,
                     bluetoothState = bluetoothState,
                     localNode = localNode,
-                    targetNode = targetNode
+                    targetNode = targetNode,
+                    nodes = simulatedNodes
                 )
             }
+            item { EventLogPanel(events = eventLog) }
             item {
                 RoutingDecisionPanel(routingDecision = adaptiveRoutingDecision)
             }
@@ -693,6 +751,7 @@ private fun NetworkSelector(
 
 @Composable
 private fun NodeSelector(
+    nodes: List<SimNode>,
     localNode: SimNode,
     targetNode: SimNode,
     onLocalNodeSelected: (SimNode) -> Unit,
@@ -707,13 +766,13 @@ private fun NodeSelector(
         NodeChipGroup(
             title = "Current local node",
             selectedNode = localNode,
-            availableNodes = simNodes,
+            availableNodes = nodes,
             onNodeSelected = onLocalNodeSelected
         )
         NodeChipGroup(
             title = "Target destination node",
             selectedNode = targetNode,
-            availableNodes = simNodes.filter { it != localNode },
+            availableNodes = nodes.filter { it.name != localNode.name },
             onNodeSelected = onTargetNodeSelected
         )
     }
@@ -739,7 +798,7 @@ private fun NodeChipGroup(
             ) {
                 rowNodes.forEach { node ->
                     FilterChip(
-                        selected = selectedNode == node,
+                        selected = selectedNode.name == node.name,
                         onClick = { onNodeSelected(node) },
                         label = { Text(node.name) }
                     )
@@ -809,10 +868,11 @@ private fun NodeSummaryRow(
 private fun TopologyOverviewPanel(
     localNode: SimNode,
     targetNode: SimNode,
-    networkState: NetworkState
+    networkState: NetworkState,
+    nodes: List<SimNode>
 ) {
-    val path = routePath(localNode, targetNode)
-    val offlineNodes = simNodes.filter { !nodeHasAnyAvailableRoute(it, networkState) }
+    val path = routePath(localNode, targetNode, nodes)
+    val offlineNodes = nodes.filter { !nodeHasAnyAvailableRoute(it, networkState) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -828,7 +888,7 @@ private fun TopologyOverviewPanel(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
-        StatusRow(label = "Connected nodes", value = "${simNodes.size - offlineNodes.size}/${simNodes.size}")
+        StatusRow(label = "Connected nodes", value = "${nodes.size - offlineNodes.size}/${nodes.size}")
         StatusRow(label = "Offline nodes", value = if (offlineNodes.isEmpty()) "None" else offlineNodes.joinToString { it.name })
         StatusRow(label = "Gateway node", value = "Gateway Node")
         Text(
@@ -837,7 +897,7 @@ private fun TopologyOverviewPanel(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = simNodes.joinToString(" | ") { "${it.name.removePrefix("Node ")}: ${nodeHealth(it, networkState)}" },
+            text = nodes.joinToString(" | ") { "${it.name.removePrefix("Node ")}: ${nodeHealth(it, networkState)}" },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1033,7 +1093,10 @@ private fun BluetoothPanel(
 @Composable
 private fun SimulationControls(
     networkState: NetworkState,
-    onNetworkStateChange: (NetworkState) -> Unit
+    onNetworkStateChange: (NetworkState) -> Unit,
+    simulationSpeed: SimulationSpeed,
+    onSimulationSpeedChange: (SimulationSpeed) -> Unit,
+    simulationCondition: SimulationCondition
 ) {
     Column(
         modifier = Modifier
@@ -1050,6 +1113,25 @@ private fun SimulationControls(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
+        StatusRow(label = "Network state", value = simulationCondition.label)
+        Text(
+            text = "Simulation speed",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SimulationSpeed.entries.forEach { speed ->
+                FilterChip(
+                    selected = simulationSpeed == speed,
+                    onClick = { onSimulationSpeedChange(speed) },
+                    label = { Text(speed.label) }
+                )
+            }
+        }
         AvailabilityToggle(
             label = "LoRa",
             checked = networkState.loraAvailable,
@@ -1106,9 +1188,10 @@ private fun MetricsPanel(
     networkState: NetworkState,
     bluetoothState: BluetoothState,
     localNode: SimNode,
-    targetNode: SimNode
+    targetNode: SimNode,
+    nodes: List<SimNode>
 ) {
-    val decision = decideRoute(selectedNetwork, networkState, bluetoothState, localNode, targetNode)
+    val decision = decideRoute(selectedNetwork, networkState, bluetoothState, localNode, targetNode, nodes = nodes)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1184,6 +1267,41 @@ private fun RoutingDecisionPanel(routingDecision: RoutingDecision) {
         )
         routingDecision.allCandidates.forEach { candidate ->
             RouteCandidateRow(candidate = candidate)
+        }
+    }
+}
+
+@Composable
+private fun EventLogPanel(events: List<String>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Network Event Log",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        if (events.isEmpty()) {
+            Text(
+                text = "Waiting for simulated network changes.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            events.take(6).forEach { event ->
+                Text(
+                    text = event,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -1562,14 +1680,16 @@ private fun decideRoute(
     bluetoothState: BluetoothState,
     localNode: SimNode,
     targetNode: SimNode,
+    nodes: List<SimNode> = simNodes,
     adaptiveRoutingDecision: RoutingDecision = AdaptiveRoutingEngine().decide(
         selectedNetwork = selectedNetwork,
         networkState = networkState,
         localNode = localNode,
-        targetNode = targetNode
+        targetNode = targetNode,
+        nodes = nodes
     )
 ): RouteDecision {
-    val path = routePath(localNode, targetNode)
+    val path = routePath(localNode, targetNode, nodes)
     if (path.size < 2) {
         val noRouteDecision = adaptiveRoutingDecision.copy(
             selectedRoute = RouteLabel.None,
@@ -1618,16 +1738,20 @@ private fun decideRoute(
     )
 }
 
-private fun routePath(localNode: SimNode, targetNode: SimNode): List<SimNode> {
-    val startIndex = simNodes.indexOf(localNode)
-    val endIndex = simNodes.indexOf(targetNode)
+private fun routePath(
+    localNode: SimNode,
+    targetNode: SimNode,
+    nodes: List<SimNode> = simNodes
+): List<SimNode> {
+    val startIndex = nodes.indexOfFirst { it.name == localNode.name }
+    val endIndex = nodes.indexOfFirst { it.name == targetNode.name }
     if (startIndex < 0 || endIndex < 0) {
         return listOf(localNode)
     }
     return if (startIndex <= endIndex) {
-        simNodes.subList(startIndex, endIndex + 1)
+        nodes.subList(startIndex, endIndex + 1)
     } else {
-        simNodes.subList(endIndex, startIndex + 1).asReversed()
+        nodes.subList(endIndex, startIndex + 1).asReversed()
     }
 }
 
@@ -1681,6 +1805,9 @@ private fun isRouteGloballyAvailable(route: RouteLabel, networkState: NetworkSta
 }
 
 private fun nodeRouteAvailable(node: SimNode, route: RouteLabel): Boolean {
+    if (node.batteryLevel <= 5) {
+        return false
+    }
     return when (route) {
         RouteLabel.Lora -> node.loraAvailable
         RouteLabel.Wifi -> node.wifiAvailable
@@ -1691,6 +1818,9 @@ private fun nodeRouteAvailable(node: SimNode, route: RouteLabel): Boolean {
 }
 
 private fun nodeHasAnyAvailableRoute(node: SimNode, networkState: NetworkState): Boolean {
+    if (node.batteryLevel <= 5) {
+        return false
+    }
     return (node.loraAvailable && networkState.loraAvailable) ||
         (node.wifiAvailable && networkState.wifiAvailable) ||
         (node.gsmAvailable && networkState.gsmAvailable) ||
@@ -1712,10 +1842,149 @@ private fun effectiveNetworkState(
     }
 }
 
+private fun nextNetworkSimulationState(
+    nodes: List<SimNode>,
+    networkState: NetworkState,
+    speed: SimulationSpeed
+): NetworkSimulationUpdate {
+    val events = mutableListOf<String>()
+    var nextNetwork = networkState
+    val volatility = speed.volatility
+    val updatedNodes = nodes.map { node ->
+        val previousHealth = nodeHealth(node, networkState)
+        val rssiDelta = Random.nextInt(-3 * volatility, 3 * volatility + 1)
+        val snrDelta = Random.nextDouble(-0.7 * volatility, 0.7 * volatility)
+        val drain = if (Random.nextInt(100) < 35 * volatility) 1 else 0
+        val outageChance = 4 * volatility
+        val recoveryChance = 10 * volatility
+        var nextNode = node.copy(
+            rssi = (node.rssi + rssiDelta).coerceIn(-96, -45),
+            snr = (node.snr + snrDelta).coerceIn(1.0, 19.0),
+            batteryLevel = (node.batteryLevel - drain).coerceAtLeast(0)
+        )
+
+        if (nextNode.batteryLevel <= 5) {
+            nextNode = nextNode.copy(
+                loraAvailable = false,
+                wifiAvailable = false,
+                gsmAvailable = false,
+                satelliteAvailable = false
+            )
+        } else if (Random.nextInt(100) < outageChance) {
+            nextNode = toggleRandomNodeRoute(nextNode, available = false)
+        } else if (Random.nextInt(100) < recoveryChance) {
+            nextNode = toggleRandomNodeRoute(nextNode, available = true)
+        }
+
+        val nextHealth = nodeHealth(nextNode, nextNetwork)
+        if (previousHealth != nextHealth) {
+            events += "${nextNode.name} changed from $previousHealth to $nextHealth"
+        }
+        if (node.rssi < -82 && nextNode.rssi >= -72) {
+            events += "${nextNode.name} LoRa RSSI recovered"
+        } else if (node.rssi >= -72 && nextNode.rssi < -82) {
+            events += "${nextNode.name} signal degraded"
+        }
+        if (node.batteryLevel > 20 && nextNode.batteryLevel <= 20) {
+            events += "${nextNode.name} entered low battery state"
+        }
+        nextNode
+    }.let { maybeMoveNode(it, events, volatility) }
+
+    if (Random.nextInt(100) < 8 * volatility) {
+        val previous = nextNetwork
+        nextNetwork = toggleRandomNetworkRoute(nextNetwork)
+        describeNetworkChange(previous, nextNetwork)?.let { events += it }
+    }
+
+    val offlineCount = updatedNodes.count { nodeHealth(it, nextNetwork) == "Offline" }
+    val weakCount = updatedNodes.count {
+        val health = nodeHealth(it, nextNetwork)
+        health == "Weak signal" || health == "Critical signal"
+    }
+    val unavailableLinks = listOf(
+        nextNetwork.loraAvailable,
+        nextNetwork.wifiAvailable,
+        nextNetwork.gsmAvailable,
+        nextNetwork.satelliteAvailable
+    ).count { !it }
+    val condition = when {
+        offlineCount >= 2 || unavailableLinks >= 3 -> SimulationCondition.Partitioned
+        offlineCount == 1 || weakCount >= 2 || unavailableLinks >= 2 -> SimulationCondition.Congested
+        events.any { it.contains("recovered") || it.contains("restored") } -> SimulationCondition.Recovering
+        else -> SimulationCondition.Stable
+    }
+
+    if (events.isEmpty()) {
+        events += "${condition.label} MANET tick: RSSI and battery updated"
+    }
+
+    return NetworkSimulationUpdate(
+        nodes = updatedNodes,
+        networkState = nextNetwork,
+        condition = condition,
+        events = events.takeLast(4)
+    )
+}
+
+private fun toggleRandomNodeRoute(node: SimNode, available: Boolean): SimNode {
+    return when (Random.nextInt(4)) {
+        0 -> node.copy(loraAvailable = available)
+        1 -> node.copy(wifiAvailable = available)
+        2 -> node.copy(gsmAvailable = available)
+        else -> node.copy(satelliteAvailable = available)
+    }
+}
+
+private fun maybeMoveNode(
+    nodes: List<SimNode>,
+    events: MutableList<String>,
+    volatility: Int
+): List<SimNode> {
+    if (nodes.size < 4 || Random.nextInt(100) >= 5 * volatility) {
+        return nodes
+    }
+    val movableIndexes = nodes.indices.filter { nodes[it].name != "Gateway Node" }
+    val firstIndex = movableIndexes.random()
+    val secondIndex = movableIndexes.filter { it != firstIndex }.random()
+    val reordered = nodes.toMutableList()
+    val firstNode = reordered[firstIndex]
+    reordered[firstIndex] = reordered[secondIndex]
+    reordered[secondIndex] = firstNode
+    events += "Node mobility changed path order"
+    events += "Route rediscovered after node mobility"
+    return reordered
+}
+
+private fun toggleRandomNetworkRoute(networkState: NetworkState): NetworkState {
+    return when (Random.nextInt(4)) {
+        0 -> networkState.copy(loraAvailable = !networkState.loraAvailable)
+        1 -> networkState.copy(wifiAvailable = !networkState.wifiAvailable)
+        2 -> networkState.copy(gsmAvailable = !networkState.gsmAvailable)
+        else -> networkState.copy(satelliteAvailable = !networkState.satelliteAvailable)
+    }
+}
+
+private fun describeNetworkChange(
+    previous: NetworkState,
+    next: NetworkState
+): String? {
+    return when {
+        previous.loraAvailable != next.loraAvailable -> if (next.loraAvailable) "LoRa RSSI recovered" else "LoRa link failed"
+        previous.wifiAvailable != next.wifiAvailable -> if (next.wifiAvailable) "WiFi relay recovered" else "WiFi relay degraded"
+        previous.gsmAvailable != next.gsmAvailable -> if (next.gsmAvailable) "GSM failover restored" else "GSM failover unavailable"
+        previous.satelliteAvailable != next.satelliteAvailable -> if (next.satelliteAvailable) "Satellite fallback restored" else "Satellite fallback interrupted"
+        !next.loraAvailable && !next.wifiAvailable && next.gsmAvailable -> "GSM failover activated"
+        else -> null
+    }
+}
+
 private fun nodeHealth(node: SimNode): String {
     return when {
+        node.batteryLevel <= 5 -> "Offline"
         !node.loraAvailable && !node.wifiAvailable && !node.gsmAvailable && !node.satelliteAvailable -> "Offline"
         node.batteryLevel < 25 -> "Low battery"
+        node.rssi < -88 || node.snr < 2.5 -> "Critical signal"
         node.rssi < -75 || node.snr < 6.0 -> "Weak signal"
         else -> "Healthy"
     }
