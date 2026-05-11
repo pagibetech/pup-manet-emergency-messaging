@@ -1384,6 +1384,16 @@ fun MessengerApp() {
                             )
                         }
                         item {
+                            BluetoothReadinessAndTestPlanPanel(
+                                outgoingPacket = protocolPacketFromManetPacket(
+                                    packet = outgoingPacketPreview,
+                                    packetType = BluetoothProtocolPacketType.Message,
+                                    retryCount = messages.firstOrNull { it.packet.packetId == outgoingPacketPreview.packetId }?.retryCount ?: 0
+                                ),
+                                incomingPacket = sampleIncomingAckPacket(outgoingPacketPreview)
+                            )
+                        }
+                        item {
                             ValidationChecklistPanel(
                                 items = validationItems,
                                 onRunBasicValidation = {
@@ -2443,8 +2453,6 @@ private fun BluetoothProtocolPreviewPanel(
 ) {
     val serializedOutgoing = serializeBluetoothProtocolPacket(outgoingPacket)
     val parsedOutgoing = deserializeBluetoothProtocolPacket(serializedOutgoing)
-    val outgoingValidation = validateBluetoothProtocolPacket(outgoingPacket)
-    val incomingValidation = validateBluetoothProtocolPacket(incomingPacket)
 
     Column(
         modifier = Modifier
@@ -2461,25 +2469,14 @@ private fun BluetoothProtocolPreviewPanel(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
-        Text(
-            text = "Android sends MESSAGE packets to ESP32 over future Bluetooth. ESP32 forwards valid MESSAGE packets to LoRa and returns ACK/STATUS packets to Android.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
         StatusRow(label = "Protocol version", value = BLUETOOTH_PROTOCOL_VERSION)
-        StatusRow(
-            label = "Supported packet types",
-            value = BluetoothProtocolPacketType.entries.joinToString { it.wireName }
+        CompactProtocolPacketRow(
+            title = "Outgoing MESSAGE",
+            packet = outgoingPacket
         )
-        ProtocolPacketCard(
-            title = "Sample outgoing: Android -> ESP32 -> LoRa",
-            packet = outgoingPacket,
-            validation = outgoingValidation
-        )
-        ProtocolPacketCard(
-            title = "Sample incoming: ESP32 -> Android",
-            packet = incomingPacket,
-            validation = incomingValidation
+        CompactProtocolPacketRow(
+            title = "Incoming ACK",
+            packet = incomingPacket
         )
         Column(
             modifier = Modifier
@@ -2489,7 +2486,7 @@ private fun BluetoothProtocolPreviewPanel(
                     shape = RoundedCornerShape(8.dp)
                 )
                 .padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
                 text = "Serialization Preview",
@@ -2497,7 +2494,7 @@ private fun BluetoothProtocolPreviewPanel(
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = serializedOutgoing,
+                text = compactSerializedPacketText(outgoingPacket),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2510,6 +2507,39 @@ private fun BluetoothProtocolPreviewPanel(
                 value = outgoingPacket.checksumPlaceholder
             )
         }
+    }
+}
+
+@Composable
+private fun CompactProtocolPacketRow(
+    title: String,
+    packet: BluetoothProtocolPacket
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.background,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Text(
+            text = "$title | ${packet.packetId} | ${packet.status}",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "${packet.sourceNode} -> ${packet.destinationNode} | Retry ${packet.retryCount} | ${packet.packetType.wireName}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "Path: ${packet.hopPath.joinToString(" -> ")}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -2557,6 +2587,143 @@ private fun ProtocolPacketCard(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary
         )
+    }
+}
+
+@Composable
+private fun BluetoothReadinessAndTestPlanPanel(
+    outgoingPacket: BluetoothProtocolPacket,
+    incomingPacket: BluetoothProtocolPacket
+) {
+    val outgoingValidation = validateBluetoothProtocolPacket(outgoingPacket)
+    val incomingValidation = validateBluetoothProtocolPacket(incomingPacket)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = "Bluetooth Readiness and Test Plan",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "Android Phone <-> Bluetooth <-> ESP32 <-> LoRa <-> ESP32 <-> Bluetooth <-> Android Phone",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold
+        )
+        ChecklistPanel(
+            title = "Bluetooth Readiness",
+            rows = listOf(
+                "Android Bluetooth architecture ready" to "Ready",
+                "Packet protocol defined" to "Ready",
+                "ESP32 firmware packet parser pending" to "Pending",
+                "ESP32 Bluetooth service pending" to "Pending",
+                "SX1278 LoRa wiring pending" to "Pending",
+                "LoRa send/receive test pending" to "Pending",
+                "Android real Bluetooth permission pending" to "Pending",
+                "Android real Bluetooth socket/service pending" to "Pending"
+            )
+        )
+        ChecklistPanel(
+            title = "ESP32 Firmware Requirements",
+            rows = listOf(
+                "Expose Bluetooth connection" to "Required",
+                "Accept HELLO" to "Required",
+                "Return ESP32_ACK" to "Required",
+                "Accept MESSAGE packet" to "Required",
+                "Forward MESSAGE over LoRa" to "Required",
+                "Report STATUS" to "Required"
+            )
+        )
+        ChecklistPanel(
+            title = "Protocol Test Cases",
+            rows = listOf(
+                "HELLO handshake test" to "Planned",
+                "MESSAGE packet send test" to "Planned",
+                "ACK receive test" to "Planned",
+                "Invalid packet test" to "Planned",
+                "Route discovery packet test" to "Planned",
+                "Status packet test" to "Planned"
+            )
+        )
+        ProtocolPacketCard(
+            title = "Detailed outgoing protocol data",
+            packet = outgoingPacket,
+            validation = outgoingValidation
+        )
+        ProtocolPacketCard(
+            title = "Detailed incoming protocol data",
+            packet = incomingPacket,
+            validation = incomingValidation
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    color = MaterialTheme.colorScheme.background,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = "Readable Serialization",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            serializeBluetoothProtocolPacket(outgoingPacket).lines().forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        ChecklistPanel(
+            title = "Next Implementation Stages",
+            rows = listOf(
+                "Step 017" to "ESP32 firmware packet parser",
+                "Step 018" to "ESP32 Bluetooth service",
+                "Step 019" to "Android real Bluetooth permissions",
+                "Step 020" to "Android Bluetooth connection implementation",
+                "Step 021" to "Android-to-ESP32 live packet test",
+                "Step 022" to "ESP32-to-ESP32 LoRa packet test"
+            )
+        )
+    }
+}
+
+@Composable
+private fun ChecklistPanel(
+    title: String,
+    rows: List<Pair<String, String>>
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.background,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        rows.forEach { row ->
+            StatusRow(label = row.first, value = row.second)
+        }
     }
 }
 
@@ -2884,6 +3051,10 @@ private fun serializeBluetoothProtocolPacket(packet: BluetoothProtocolPacket): S
           "checksum": "${packet.checksumPlaceholder}"
         }
     """.trimIndent()
+}
+
+private fun compactSerializedPacketText(packet: BluetoothProtocolPacket): String {
+    return "{ version=${packet.protocolVersion}, type=${packet.packetType.wireName}, id=${packet.packetId}, src=${packet.sourceNode}, dest=${packet.destinationNode}, status=${packet.status} }"
 }
 
 private fun deserializeBluetoothProtocolPacket(rawPacket: String): BluetoothProtocolPacket? {

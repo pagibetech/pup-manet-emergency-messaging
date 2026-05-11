@@ -24,6 +24,7 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Simulated Bluetooth pairing controls for scanning, selecting, pairing, and disconnecting fake ESP32 nodes.
 - Bluetooth architecture layer with simulated lifecycle states, packet bridge counters, reconnect timing, and diagnostics.
 - ESP32 Bluetooth packet protocol preview with supported packet types, serialization placeholder, checksum placeholder, and validation status.
+- Bluetooth readiness and hardware test plan panels for ESP32 firmware, protocol test cases, architecture, and next implementation stages.
 - LoRa/MANET packet abstraction for generated chat messages.
 - ESP32 communication bridge abstraction with simulation and placeholder transports.
 - Adaptive routing decision engine with weighted candidate scoring and failover reasons.
@@ -163,13 +164,34 @@ The protocol packet model includes:
 
 The Route tab shows a protocol preview panel with:
 
-- Sample outgoing packet: Android sends `MESSAGE` to ESP32, then ESP32 forwards to LoRa.
-- Sample incoming packet: ESP32 sends `RECEIVED/ACK` back to Android.
-- JSON-like serialization preview.
+- Compact sample outgoing packet: Android sends `MESSAGE` to ESP32, then ESP32 forwards to LoRa.
+- Compact sample incoming packet: ESP32 sends `RECEIVED/ACK` back to Android.
+- Compact JSON-like serialization preview.
 - String-to-packet deserialization placeholder.
 - Validation status for protocol version, required fields, supported packet type, and checksum placeholder.
 
 The checksum remains `checksum pending / simulated`; no CRC is implemented yet. The protocol layer does not send packets over Bluetooth and does not use Android Bluetooth APIs.
+
+## Bluetooth Readiness and Hardware Test Plan
+
+Android Step 016 keeps the Route tab compact and moves detailed protocol readiness information into the Logs tab.
+
+The Logs tab now includes:
+
+- Bluetooth readiness checklist
+- ESP32 firmware requirements
+- Protocol test cases
+- Detailed outgoing and incoming protocol packet data
+- Readable serialization output
+- Next-stage implementation plan
+
+Hardware architecture note:
+
+```text
+Android Phone <-> Bluetooth <-> ESP32 <-> LoRa <-> ESP32 <-> Bluetooth <-> Android Phone
+```
+
+Readiness checks include Android Bluetooth architecture, packet protocol definition, ESP32 firmware packet parser, ESP32 Bluetooth service, SX1278 LoRa wiring, LoRa send/receive testing, Android Bluetooth permissions, and Android Bluetooth socket/service implementation. Pending items remain documented only until future workbook steps enable real hardware work.
 
 ## LoRa/MANET Packet Abstraction
 
