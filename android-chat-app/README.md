@@ -24,6 +24,8 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Simulated Bluetooth pairing controls for scanning, selecting, pairing, and disconnecting fake ESP32 nodes.
 - LoRa/MANET packet abstraction for generated chat messages.
 - ESP32 communication bridge abstraction with simulation and placeholder transports.
+- Adaptive routing decision engine with weighted candidate scoring and failover reasons.
+- Routing decision panel showing preferred route, selected route, score, failover reason, and route candidates.
 - Transport bridge status panel with active implementation, connection state, last sent packet, and last received packet.
 - Transport selection dropdown for Simulation, Bluetooth Placeholder, WiFi Placeholder, and USB Serial Placeholder.
 - Compact packet preview inside each message card.
@@ -135,10 +137,36 @@ Each implementation follows the same interface shape:
 
 `SimulationTransport` is the default active transport. Placeholder transports update local status only and do not perform real BLE, Classic Bluetooth, WiFi, USB serial, ESP32, or network communication. Packet sending is routed through the active transport abstraction before the existing local message simulation continues.
 
+## Adaptive Routing Decision Engine
+
+Android Step 008 adds a dedicated local routing engine for explainable route selection.
+
+The engine evaluates simulated route candidates such as:
+
+- LoRa direct
+- Multi-hop LoRa
+- WiFi relay
+- GSM fallback
+- Satellite fallback
+
+Candidate scoring considers:
+
+- Hop count
+- RSSI
+- SNR
+- Battery level
+- Transport availability
+- Gateway availability
+- Satellite availability
+- Node health
+
+The app displays the preferred route, selected route, route score, failover reason, available candidates, and candidate details. If a transport is toggled down or a path becomes unavailable, the engine immediately recalculates and updates the visible routing decision. Generated packet logs continue to reflect the selected route.
+
 ## Current Limitations
 
 - Messages are stored only in local Compose state.
 - Route decisions and metrics are simulated only.
+- Adaptive routing scores are local simulation values only.
 - Bluetooth pairing is simulated only and uses fake ESP32 node names.
 - LoRa/MANET packets are local data models only and are not sent to an ESP32.
 - Transport bridge implementations are local simulation/placeholder classes only.

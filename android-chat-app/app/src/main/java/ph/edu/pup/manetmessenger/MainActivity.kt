@@ -128,12 +128,42 @@ data class SimMetrics(
     val satelliteStatus: String
 )
 
+data class RouteScore(
+    val total: Int,
+    val hopScore: Int,
+    val rssiScore: Int,
+    val snrScore: Int,
+    val batteryScore: Int,
+    val nodeHealthScore: Int,
+    val gatewayScore: Int,
+    val transportScore: Int
+)
+
+data class RouteCandidate(
+    val name: String,
+    val route: RouteLabel,
+    val path: List<String>,
+    val score: RouteScore,
+    val available: Boolean,
+    val reason: String
+)
+
+data class RoutingDecision(
+    val preferredRoute: RouteLabel,
+    val selectedRoute: RouteLabel,
+    val routeScore: Int,
+    val failoverReason: String,
+    val availableCandidates: List<RouteCandidate>,
+    val allCandidates: List<RouteCandidate>
+)
+
 data class RouteDecision(
     val route: RouteLabel,
     val status: MessageStatus,
     val metrics: SimMetrics,
     val path: List<String>,
-    val note: String
+    val note: String,
+    val routingDecision: RoutingDecision
 )
 
 data class LoraManetPacket(
@@ -271,6 +301,106 @@ private class UsbSerialTransportPlaceholder : BaseTransport(
     connectedLabel = TransportConnectionState.PlaceholderReady.label
 )
 
+private class AdaptiveRoutingEngine {
+    fun decide(
+        selectedNetwork: NetworkMode,
+        networkState: NetworkState,
+        localNode: SimNode,
+        targetNode: SimNode
+    ): RoutingDecision {
+        val path = routePath(localNode, targetNode)
+        val preferred = preferredRoute(selectedNetwork)
+        val allCandidates = listOf(
+            RouteLabel.Lora,
+            RouteLabel.Wifi,
+            RouteLabel.Gsm,
+            RouteLabel.Satellite
+        ).map { route ->
+            buildCandidate(route, path, networkState, targetNode)
+        }
+        val consideredRoutes = failoverOrder(selectedNetwork)
+        val availableCandidates = allCandidates.filter { candidate ->
+            candidate.available && candidate.route in consideredRoutes
+        }
+        val selectedCandidate = availableCandidates.maxWithOrNull(
+            compareBy<RouteCandidate> { it.score.total }
+                .thenBy { -consideredRoutes.indexOf(it.route) }
+        )
+        val selectedRoute = selectedCandidate?.route ?: RouteLabel.None
+        val preferredCandidate = allCandidates.firstOrNull { it.route == preferred }
+        val failoverReason = when {
+            selectedRoute == RouteLabel.None -> "No route candidate is available across the simulated MANET path."
+            selectedRoute == preferred -> "Preferred route selected with the strongest available score."
+            preferredCandidate?.available == false -> "Failover from ${preferred.label}: ${preferredCandidate.reason}"
+            else -> "Adaptive scoring selected ${selectedRoute.label} over ${preferred.label}."
+        }
+
+        return RoutingDecision(
+            preferredRoute = preferred,
+            selectedRoute = selectedRoute,
+            routeScore = selectedCandidate?.score?.total ?: 0,
+            failoverReason = failoverReason,
+            availableCandidates = availableCandidates,
+            allCandidates = allCandidates
+        )
+    }
+
+    private fun buildCandidate(
+        route: RouteLabel,
+        path: List<SimNode>,
+        networkState: NetworkState,
+        targetNode: SimNode
+    ): RouteCandidate {
+        val hopCount = (path.size - 1).coerceAtLeast(0)
+        val globalAvailable = isRouteGloballyAvailable(route, networkState)
+        val pathSupportsRoute = path.all { nodeRouteAvailable(it, route) }
+        val routeAvailable = globalAvailable && pathSupportsRoute && path.size > 1
+        val averageRssi = path.map { it.rssi }.average().toInt()
+        val averageSnr = path.map { it.snr }.average()
+        val weakestBattery = path.minOfOrNull { it.batteryLevel } ?: targetNode.batteryLevel
+        val healthyNodes = path.count { nodeHealth(it, networkState) == "Healthy" }
+        val gatewayAvailable = path.any { it.name == "Gateway Node" && nodeHasAnyAvailableRoute(it, networkState) } ||
+            targetNode.gatewayProximity == "Gateway"
+        val score = if (routeAvailable) {
+            val hopScore = ((6 - hopCount).coerceAtLeast(0)) * 25
+            val rssiScore = (averageRssi + 100).coerceIn(0, 80)
+            val snrScore = (averageSnr * 6.0).toInt().coerceIn(0, 120)
+            val batteryScore = (weakestBattery / 2).coerceIn(0, 50)
+            val nodeHealthScore = healthyNodes * 15
+            val gatewayScore = if (gatewayAvailable) 30 else 0
+            val transportScore = 35
+            RouteScore(
+                total = hopScore + rssiScore + snrScore + batteryScore + nodeHealthScore + gatewayScore + transportScore,
+                hopScore = hopScore,
+                rssiScore = rssiScore,
+                snrScore = snrScore,
+                batteryScore = batteryScore,
+                nodeHealthScore = nodeHealthScore,
+                gatewayScore = gatewayScore,
+                transportScore = transportScore
+            )
+        } else {
+            RouteScore(0, 0, 0, 0, 0, 0, 0, 0)
+        }
+        val reason = when {
+            path.size < 2 -> "Source and destination are the same."
+            !globalAvailable -> "${route.label} transport is simulated down."
+            !pathSupportsRoute -> "One or more nodes on the path cannot use ${route.label}."
+            routeAvailable -> "Available; scored by hop count, RSSI, SNR, node health, gateway availability, and transport link state."
+            else -> "Unavailable."
+        }
+
+        return RouteCandidate(
+            name = candidateName(route, hopCount),
+            route = route,
+            path = path.map { it.name },
+            score = score,
+            available = routeAvailable,
+            reason = reason
+        )
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -304,7 +434,14 @@ fun MessengerApp() {
     val messages = remember { mutableStateListOf<ChatMessage>() }
     val packetLog = remember { mutableStateListOf<LoraManetPacket>() }
     val queueScope = rememberCoroutineScope()
+    val routingEngine = remember { AdaptiveRoutingEngine() }
     val routedNetworkState = effectiveNetworkState(networkState, bluetoothState)
+    val adaptiveRoutingDecision = routingEngine.decide(
+        selectedNetwork = selectedNetwork,
+        networkState = routedNetworkState,
+        localNode = localNode,
+        targetNode = targetNode
+    )
 
     Scaffold(
         bottomBar = {
@@ -319,7 +456,8 @@ fun MessengerApp() {
                             networkState = routedNetworkState,
                             bluetoothState = bluetoothState,
                             localNode = localNode,
-                            targetNode = targetNode
+                            targetNode = targetNode,
+                            adaptiveRoutingDecision = adaptiveRoutingDecision
                         )
                         val messageId = nextMessageId++
                         val delayMs = simulatedDelayMs(decision.route, decision.metrics)
@@ -458,6 +596,9 @@ fun MessengerApp() {
                     localNode = localNode,
                     targetNode = targetNode
                 )
+            }
+            item {
+                RoutingDecisionPanel(routingDecision = adaptiveRoutingDecision)
             }
             item {
                 TransportBridgePanel(
@@ -996,6 +1137,79 @@ private fun MetricsPanel(
 }
 
 @Composable
+private fun RoutingDecisionPanel(routingDecision: RoutingDecision) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Routing Decision",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        StatusRow(label = "Preferred route", value = routingDecision.preferredRoute.label)
+        StatusRow(label = "Selected route", value = routingDecision.selectedRoute.label)
+        StatusRow(label = "Route score", value = routingDecision.routeScore.toString())
+        Text(
+            text = "Reason: ${routingDecision.failoverReason}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "Available candidates",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        if (routingDecision.availableCandidates.isEmpty()) {
+            Text(
+                text = "No available route candidates.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            routingDecision.availableCandidates.forEach { candidate ->
+                RouteCandidateRow(candidate = candidate)
+            }
+        }
+        Text(
+            text = "Candidate visualization",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        routingDecision.allCandidates.forEach { candidate ->
+            RouteCandidateRow(candidate = candidate)
+        }
+    }
+}
+
+@Composable
+private fun RouteCandidateRow(candidate: RouteCandidate) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = "${candidate.name} | ${if (candidate.available) "Available" else "Unavailable"} | Score ${candidate.score.total}",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = candidate.reason,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "Path: ${candidate.path.joinToString(" -> ")}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 private fun TransportBridgePanel(
     selectedTransport: TransportOption,
     transportStatus: TransportStatus,
@@ -1347,19 +1561,31 @@ private fun decideRoute(
     networkState: NetworkState,
     bluetoothState: BluetoothState,
     localNode: SimNode,
-    targetNode: SimNode
+    targetNode: SimNode,
+    adaptiveRoutingDecision: RoutingDecision = AdaptiveRoutingEngine().decide(
+        selectedNetwork = selectedNetwork,
+        networkState = networkState,
+        localNode = localNode,
+        targetNode = targetNode
+    )
 ): RouteDecision {
     val path = routePath(localNode, targetNode)
     if (path.size < 2) {
+        val noRouteDecision = adaptiveRoutingDecision.copy(
+            selectedRoute = RouteLabel.None,
+            routeScore = 0,
+            failoverReason = "Source and destination are the same."
+        )
         return RouteDecision(
             route = RouteLabel.None,
             status = MessageStatus.Failed,
             metrics = metricsFor(RouteLabel.None, networkState, localNode, path),
             path = path.map { it.name },
-            note = "Source and destination are the same."
+            note = "Source and destination are the same.",
+            routingDecision = noRouteDecision
         )
     }
-    val route = failoverRoute(selectedNetwork, networkState, path)
+    val route = adaptiveRoutingDecision.selectedRoute
 
     if (route != RouteLabel.None) {
         val preferred = preferredRoute(selectedNetwork)
@@ -1374,10 +1600,11 @@ private fun decideRoute(
             metrics = metricsFor(route, networkState, targetNode, path),
             path = path.map { it.name },
             note = if (route == preferred) {
-                "Preferred simulated route available end-to-end.$routeNote"
+                "${adaptiveRoutingDecision.failoverReason}$routeNote"
             } else {
-                "Adaptive failover selected ${route.label} after preferred route became unavailable.$routeNote"
-            }
+                "${adaptiveRoutingDecision.failoverReason}$routeNote"
+            },
+            routingDecision = adaptiveRoutingDecision
         )
     }
 
@@ -1386,7 +1613,8 @@ private fun decideRoute(
         status = MessageStatus.Failed,
         metrics = metricsFor(RouteLabel.None, networkState, targetNode, path),
         path = path.map { it.name },
-        note = "No route type is available across the simulated MANET path."
+        note = adaptiveRoutingDecision.failoverReason,
+        routingDecision = adaptiveRoutingDecision
     )
 }
 
@@ -1420,6 +1648,16 @@ private fun failoverOrder(selectedNetwork: NetworkMode): List<RouteLabel> {
         NetworkMode.Lora -> priority
         NetworkMode.Wifi -> priority.dropWhile { it != RouteLabel.Wifi }
         NetworkMode.Gsm -> priority.dropWhile { it != RouteLabel.Gsm }
+    }
+}
+
+private fun candidateName(route: RouteLabel, hopCount: Int): String {
+    return when (route) {
+        RouteLabel.Lora -> if (hopCount <= 1) "LoRa direct" else "Multi-hop LoRa"
+        RouteLabel.Wifi -> "WiFi relay"
+        RouteLabel.Gsm -> "GSM fallback"
+        RouteLabel.Satellite -> "Satellite fallback"
+        RouteLabel.None -> "No route"
     }
 }
 
