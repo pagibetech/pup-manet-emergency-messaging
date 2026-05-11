@@ -32,7 +32,8 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Network event log for dynamic link, node, route, and recovery events.
 - Routing decision panel showing preferred route, selected route, score, failover reason, and route candidates.
 - Transport bridge status panel with active implementation, connection state, last sent packet, and last received packet.
-- Transport selection dropdown for Simulation, Bluetooth Placeholder, WiFi Placeholder, and USB Serial Placeholder.
+- Transport selection dropdown for Simulation, Bluetooth Placeholder, and WiFi Placeholder.
+- ESP32 transport preparation panel with hardware mode disabled, bridge configuration fields, simulated handshake, packet preview, and hardware readiness checklist.
 - Compact field-use message cards with technical packet details moved to Logs.
 - Packet log panel showing recent generated packets, route, and delivery status.
 - Queue statistics panel showing queued/active, delivered, failed, and retry totals.
@@ -167,7 +168,6 @@ The current app includes these local transport implementations:
 - `SimulationTransport`
 - `BluetoothTransportPlaceholder`
 - `WiFiTransportPlaceholder`
-- `UsbSerialTransportPlaceholder`
 
 Each implementation follows the same interface shape:
 
@@ -177,7 +177,21 @@ Each implementation follows the same interface shape:
 - `receivePacket()`
 - `getTransportStatus()`
 
-`SimulationTransport` is the default active transport. Placeholder transports update local status only and do not perform real BLE, Classic Bluetooth, WiFi, USB serial, ESP32, or network communication. Packet sending is routed through the active transport abstraction before the existing local message simulation continues.
+`SimulationTransport` is the default active transport. Placeholder transports update local status only and do not perform real BLE, Classic Bluetooth, WiFi, ESP32, or network communication. Packet sending is routed through the active transport abstraction before the existing local message simulation continues.
+
+## ESP32 Transport Preparation
+
+Android Step 013 adds a real-hardware preparation panel while keeping hardware mode disabled.
+
+- Hardware mode shows `Simulation Mode` as active and `Hardware Disabled` as unavailable for now.
+- ESP32 bridge configuration includes device name, connection type, packet format version, connection status, and last handshake time.
+- Bluetooth is the primary planned Android-to-ESP32 connection path.
+- WiFi remains a future optional placeholder only.
+- The intended field architecture is Android Phone to ESP32 over Bluetooth, then ESP32 to other ESP32 nodes over LoRa.
+- The simulated handshake flow sends a local `HELLO`, waits briefly, then shows a simulated `ESP32_ACK`.
+- The outgoing MANET packet preview shows packet ID, source, destination, transport, payload, hop path, and status.
+- The hardware readiness checklist tracks Android readiness, ESP32 firmware readiness, Bluetooth pairing readiness, LoRa wiring, and packet format matching.
+- This step does not add Android Bluetooth permissions, BLE, Classic Bluetooth, WiFi backend, ESP32 firmware, Raspberry Pi code, or physical hardware communication.
 
 ## Adaptive Routing Decision Engine
 
@@ -236,6 +250,7 @@ The battery signal was removed from the Android UI and route scoring model. Rout
 - Dynamic MANET behavior is generated locally and is not based on physical radio measurements.
 - Bluetooth pairing is simulated only and uses fake ESP32 node names.
 - LoRa/MANET packets are local data models only and are not sent to an ESP32.
+- Hardware mode is visible but disabled; ESP32 handshake and readiness checks are placeholders only.
 - Transport bridge implementations are local simulation/placeholder classes only.
 - LoRa, WiFi, GSM, and simulated satellite statuses are controlled by local toggles only.
 - No messages leave the app.

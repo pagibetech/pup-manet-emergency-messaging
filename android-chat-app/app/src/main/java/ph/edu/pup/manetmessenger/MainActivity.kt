@@ -100,8 +100,7 @@ enum class PairingStatus(val label: String) {
 enum class TransportOption(val label: String) {
     Simulation("Simulation"),
     BluetoothPlaceholder("Bluetooth Placeholder"),
-    WiFiPlaceholder("WiFi Placeholder"),
-    UsbSerialPlaceholder("USB Serial Placeholder")
+    WiFiPlaceholder("WiFi Placeholder")
 }
 
 enum class TransportConnectionState(val label: String) {
@@ -137,6 +136,16 @@ enum class ValidationStatus(val label: String) {
     NotTested("Not tested")
 }
 
+enum class HardwareMode(val label: String) {
+    Simulation("Simulation Mode"),
+    HardwareDisabled("Hardware Mode: Disabled")
+}
+
+enum class Esp32ConnectionType(val label: String) {
+    Bluetooth("Bluetooth"),
+    Wifi("WiFi")
+}
+
 data class NetworkState(
     val loraAvailable: Boolean = true,
     val wifiAvailable: Boolean = true,
@@ -150,6 +159,15 @@ data class BluetoothState(
     val selectedNode: String? = null,
     val connectedNode: String? = null,
     val pairingStatus: PairingStatus = PairingStatus.NotPaired
+)
+
+data class Esp32BridgeConfig(
+    val deviceName: String = "ESP32-MANET-01",
+    val connectionType: Esp32ConnectionType = Esp32ConnectionType.Bluetooth,
+    val packetFormatVersion: String = "MANET-PACKET-v1",
+    val connectionStatus: String = "Simulation placeholder only",
+    val lastHandshakeTime: String = "Never",
+    val handshakeStatus: String = "Not started"
 )
 
 data class SimMetrics(
@@ -384,11 +402,6 @@ private class WiFiTransportPlaceholder : BaseTransport(
     connectedLabel = TransportConnectionState.PlaceholderReady.label
 )
 
-private class UsbSerialTransportPlaceholder : BaseTransport(
-    implementationName = "UsbSerialTransportPlaceholder",
-    connectedLabel = TransportConnectionState.PlaceholderReady.label
-)
-
 private class MessageQueueManager(
     val maxRetryCount: Int = MAX_RETRY_COUNT
 ) {
@@ -608,6 +621,8 @@ fun MessengerApp() {
     var draftMessage by remember { mutableStateOf("") }
     var nextMessageId by remember { mutableStateOf(1L) }
     var selectedTransport by remember { mutableStateOf(TransportOption.Simulation) }
+    var hardwareMode by remember { mutableStateOf(HardwareMode.Simulation) }
+    var esp32BridgeConfig by remember { mutableStateOf(Esp32BridgeConfig()) }
     var validationItems by remember { mutableStateOf(defaultValidationItems()) }
     var activeTransport by remember {
         mutableStateOf<ManetTransportInterface>(transportFor(TransportOption.Simulation))
@@ -626,6 +641,22 @@ fun MessengerApp() {
         localNode = localNode,
         targetNode = targetNode,
         nodes = simulatedNodes
+    )
+    val previewDecision = decideRoute(
+        selectedNetwork = selectedNetwork,
+        networkState = routedNetworkState,
+        bluetoothState = bluetoothState,
+        localNode = localNode,
+        targetNode = targetNode,
+        adaptiveRoutingDecision = adaptiveRoutingDecision,
+        nodes = simulatedNodes
+    )
+    val outgoingPacketPreview = packetLog.firstOrNull() ?: messageToPacket(
+        packetId = "PKT-PREVIEW",
+        payloadText = draftMessage.ifBlank { "<message text>" },
+        localNode = localNode,
+        targetNode = targetNode,
+        decision = previewDecision
     )
 
     LaunchedEffect(simulationSpeed) {
@@ -959,6 +990,44 @@ fun MessengerApp() {
                                     selectedTransport = option
                                     activeTransport = nextTransport
                                     transportStatus = nextTransport.connect()
+                                }
+                            )
+                        }
+                        item {
+                            Esp32TransportPreparationPanel(
+                                hardwareMode = hardwareMode,
+                                esp32BridgeConfig = esp32BridgeConfig,
+                                packetPreview = outgoingPacketPreview,
+                                bluetoothState = bluetoothState,
+                                onHardwareModeSelected = { selectedMode ->
+                                    hardwareMode = if (selectedMode == HardwareMode.Simulation) {
+                                        HardwareMode.Simulation
+                                    } else {
+                                        HardwareMode.HardwareDisabled
+                                    }
+                                },
+                                onBridgeConfigChanged = { esp32BridgeConfig = it },
+                                onSendHello = {
+                                    esp32BridgeConfig = esp32BridgeConfig.copy(
+                                        connectionStatus = "Waiting for ESP32_ACK (simulated)",
+                                        handshakeStatus = "HELLO sent"
+                                    )
+                                    eventLog.add(0, "ESP32 HELLO sent in placeholder mode.")
+                                    while (eventLog.size > 10) {
+                                        eventLog.removeAt(eventLog.lastIndex)
+                                    }
+                                    queueScope.launch {
+                                        delay(650L)
+                                        esp32BridgeConfig = esp32BridgeConfig.copy(
+                                            connectionStatus = "ESP32_ACK received (simulated)",
+                                            lastHandshakeTime = currentTimeLabel(),
+                                            handshakeStatus = "ESP32_ACK received"
+                                        )
+                                        eventLog.add(0, "ESP32_ACK received from simulated bridge.")
+                                        while (eventLog.size > 10) {
+                                            eventLog.removeAt(eventLog.lastIndex)
+                                        }
+                                    }
                                 }
                             )
                         }
@@ -1860,6 +1929,162 @@ private fun TransportBridgePanel(
 }
 
 @Composable
+private fun Esp32TransportPreparationPanel(
+    hardwareMode: HardwareMode,
+    esp32BridgeConfig: Esp32BridgeConfig,
+    packetPreview: LoraManetPacket,
+    bluetoothState: BluetoothState,
+    onHardwareModeSelected: (HardwareMode) -> Unit,
+    onBridgeConfigChanged: (Esp32BridgeConfig) -> Unit,
+    onSendHello: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = "ESP32 Transport Preparation",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "Hardware transport is prepared as a disabled placeholder. No Bluetooth or WiFi transport APIs are active.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            FilterChip(
+                selected = hardwareMode == HardwareMode.Simulation,
+                onClick = { onHardwareModeSelected(HardwareMode.Simulation) },
+                label = { Text(HardwareMode.Simulation.label) }
+            )
+            FilterChip(
+                selected = false,
+                enabled = false,
+                onClick = { onHardwareModeSelected(HardwareMode.HardwareDisabled) },
+                label = { Text(HardwareMode.HardwareDisabled.label) }
+            )
+        }
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = esp32BridgeConfig.deviceName,
+            onValueChange = { onBridgeConfigChanged(esp32BridgeConfig.copy(deviceName = it)) },
+            label = { Text("ESP32 device name") },
+            singleLine = true
+        )
+        Text(
+            text = "Connection type",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Esp32ConnectionType.entries.chunked(2).forEach { connectionTypes ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                connectionTypes.forEach { type ->
+                    FilterChip(
+                        selected = esp32BridgeConfig.connectionType == type,
+                        onClick = {
+                            onBridgeConfigChanged(
+                                esp32BridgeConfig.copy(connectionType = type)
+                            )
+                        },
+                        label = { Text(type.label) }
+                    )
+                }
+            }
+        }
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = esp32BridgeConfig.packetFormatVersion,
+            onValueChange = { onBridgeConfigChanged(esp32BridgeConfig.copy(packetFormatVersion = it)) },
+            label = { Text("Packet format version") },
+            singleLine = true
+        )
+        StatusRow(label = "Connection status", value = esp32BridgeConfig.connectionStatus)
+        StatusRow(label = "Last handshake", value = esp32BridgeConfig.lastHandshakeTime)
+        StatusRow(label = "Handshake state", value = esp32BridgeConfig.handshakeStatus)
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onSendHello
+        ) {
+            Text("Send HELLO to ESP32")
+        }
+        Text(
+            text = "Expected response: ESP32_ACK (simulated only)",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        PacketFormatPreviewPanel(packet = packetPreview)
+        HardwareReadinessPanel(bluetoothState = bluetoothState)
+    }
+}
+
+@Composable
+private fun PacketFormatPreviewPanel(packet: LoraManetPacket) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.background,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = "Outgoing Packet Preview",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = packetPreviewText(packet),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun HardwareReadinessPanel(bluetoothState: BluetoothState) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.background,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = "Hardware Readiness",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        StatusRow(label = "Android app ready", value = "Ready for simulation")
+        StatusRow(label = "ESP32 firmware ready", value = "Not verified")
+        StatusRow(
+            label = "Bluetooth pairing ready",
+            value = if (bluetoothState.pairingStatus == PairingStatus.Paired) {
+                "Simulated paired"
+            } else {
+                "Placeholder only"
+            }
+        )
+        StatusRow(label = "LoRa module wired", value = "Not verified")
+        StatusRow(label = "Packet format matched", value = "Pending ESP32 test")
+    }
+}
+
+@Composable
 private fun PacketLogPanel(packets: List<LoraManetPacket>) {
     Column(
         modifier = Modifier
@@ -2123,6 +2348,18 @@ private fun updatePacketLog(packetLog: MutableList<LoraManetPacket>, packet: Lor
     }
 }
 
+private fun packetPreviewText(packet: LoraManetPacket): String {
+    return listOf(
+        "packetId: ${packet.packetId}",
+        "source: ${packet.sourceNodeId}",
+        "destination: ${packet.destinationNodeId}",
+        "transport: ${packet.selectedTransport}",
+        "payload: ${packet.payloadText}",
+        "hopPath: ${packet.hopPath.joinToString(" -> ")}",
+        "status: ${packet.deliveryStatus}"
+    ).joinToString(separator = "\n")
+}
+
 private fun defaultValidationItems(): List<ValidationChecklistItem> {
     return validationLabels.map { label ->
         ValidationChecklistItem(label = label, status = ValidationStatus.NotTested)
@@ -2214,7 +2451,6 @@ private fun transportFor(option: TransportOption): ManetTransportInterface {
         TransportOption.Simulation -> SimulationTransport()
         TransportOption.BluetoothPlaceholder -> BluetoothTransportPlaceholder()
         TransportOption.WiFiPlaceholder -> WiFiTransportPlaceholder()
-        TransportOption.UsbSerialPlaceholder -> UsbSerialTransportPlaceholder()
     }
 }
 
