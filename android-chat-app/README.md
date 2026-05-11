@@ -23,6 +23,7 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Bluetooth status panel showing simulated availability, connected ESP32 placeholder node, and pairing status.
 - Simulated Bluetooth pairing controls for scanning, selecting, pairing, and disconnecting fake ESP32 nodes.
 - Bluetooth architecture layer with simulated lifecycle states, packet bridge counters, reconnect timing, and diagnostics.
+- ESP32 Bluetooth packet protocol preview with supported packet types, serialization placeholder, checksum placeholder, and validation status.
 - LoRa/MANET packet abstraction for generated chat messages.
 - ESP32 communication bridge abstraction with simulation and placeholder transports.
 - Adaptive routing decision engine with weighted candidate scoring and failover reasons.
@@ -131,6 +132,44 @@ The simulated lifecycle supports `Idle`, `Scanning`, `Pairing`, `Connecting`, `C
 Bluetooth diagnostics show the current paired ESP32, signal placeholder, packet counters, last reconnect attempt, connection uptime, retry counter, reconnect countdown, and timeout status. These diagnostics remain local Compose state only.
 
 No Android Bluetooth permissions, BLE APIs, Classic Bluetooth APIs, socket code, ESP32 firmware logic, or Raspberry Pi logic are included.
+
+## ESP32 Bluetooth Packet Protocol
+
+Android Step 015 defines the packet format that future Bluetooth communication will use between Android and ESP32.
+
+Supported packet types:
+
+- `HELLO`
+- `ACK`
+- `MESSAGE`
+- `ROUTE_DISCOVERY`
+- `ROUTE_REPLY`
+- `STATUS`
+- `ERROR`
+
+The protocol packet model includes:
+
+- Protocol version
+- Packet type
+- Packet ID
+- Source node
+- Destination node
+- Payload
+- Hop path
+- Retry count
+- Timestamp
+- Status
+- Checksum placeholder
+
+The Route tab shows a protocol preview panel with:
+
+- Sample outgoing packet: Android sends `MESSAGE` to ESP32, then ESP32 forwards to LoRa.
+- Sample incoming packet: ESP32 sends `RECEIVED/ACK` back to Android.
+- JSON-like serialization preview.
+- String-to-packet deserialization placeholder.
+- Validation status for protocol version, required fields, supported packet type, and checksum placeholder.
+
+The checksum remains `checksum pending / simulated`; no CRC is implemented yet. The protocol layer does not send packets over Bluetooth and does not use Android Bluetooth APIs.
 
 ## LoRa/MANET Packet Abstraction
 

@@ -157,6 +157,16 @@ enum class Esp32ConnectionType(val label: String) {
     Wifi("WiFi")
 }
 
+enum class BluetoothProtocolPacketType(val wireName: String) {
+    Hello("HELLO"),
+    Ack("ACK"),
+    Message("MESSAGE"),
+    RouteDiscovery("ROUTE_DISCOVERY"),
+    RouteReply("ROUTE_REPLY"),
+    Status("STATUS"),
+    Error("ERROR")
+}
+
 data class NetworkState(
     val loraAvailable: Boolean = true,
     val wifiAvailable: Boolean = true,
@@ -217,6 +227,27 @@ data class BluetoothConnectionSession(
     val reconnectCountdownSeconds: Int = 0,
     val retryCounter: Int = 0,
     val timeoutStatus: String = "No timeout"
+)
+
+data class BluetoothProtocolPacket(
+    val protocolVersion: String = BLUETOOTH_PROTOCOL_VERSION,
+    val packetType: BluetoothProtocolPacketType,
+    val packetId: String,
+    val sourceNode: String,
+    val destinationNode: String,
+    val payload: String,
+    val hopPath: List<String>,
+    val retryCount: Int,
+    val timestamp: Long,
+    val status: String,
+    val checksumPlaceholder: String = CHECKSUM_PLACEHOLDER
+)
+
+data class ProtocolValidationStatus(
+    val versionValid: Boolean,
+    val requiredFieldsPresent: Boolean,
+    val packetTypeSupported: Boolean,
+    val checksumPlaceholderValid: Boolean
 )
 
 data class SimMetrics(
@@ -381,6 +412,8 @@ private val fakeEsp32Nodes = listOf(
 )
 
 private const val MAX_RETRY_COUNT = 2
+private const val BLUETOOTH_PROTOCOL_VERSION = "BT-MANET-1.0"
+private const val CHECKSUM_PLACEHOLDER = "checksum pending / simulated"
 
 private val validationLabels = listOf(
     "App opens on Chat tab",
@@ -1174,6 +1207,16 @@ fun MessengerApp() {
                                         }
                                     }
                                 }
+                            )
+                        }
+                        item {
+                            BluetoothProtocolPreviewPanel(
+                                outgoingPacket = protocolPacketFromManetPacket(
+                                    packet = outgoingPacketPreview,
+                                    packetType = BluetoothProtocolPacketType.Message,
+                                    retryCount = messages.firstOrNull { it.packet.packetId == outgoingPacketPreview.packetId }?.retryCount ?: 0
+                                ),
+                                incomingPacket = sampleIncomingAckPacket(outgoingPacketPreview)
                             )
                         }
                     }
@@ -2394,6 +2437,130 @@ private fun HardwareReadinessPanel(bluetoothState: BluetoothState) {
 }
 
 @Composable
+private fun BluetoothProtocolPreviewPanel(
+    outgoingPacket: BluetoothProtocolPacket,
+    incomingPacket: BluetoothProtocolPacket
+) {
+    val serializedOutgoing = serializeBluetoothProtocolPacket(outgoingPacket)
+    val parsedOutgoing = deserializeBluetoothProtocolPacket(serializedOutgoing)
+    val outgoingValidation = validateBluetoothProtocolPacket(outgoingPacket)
+    val incomingValidation = validateBluetoothProtocolPacket(incomingPacket)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = "ESP32 Bluetooth Packet Protocol",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "Android sends MESSAGE packets to ESP32 over future Bluetooth. ESP32 forwards valid MESSAGE packets to LoRa and returns ACK/STATUS packets to Android.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        StatusRow(label = "Protocol version", value = BLUETOOTH_PROTOCOL_VERSION)
+        StatusRow(
+            label = "Supported packet types",
+            value = BluetoothProtocolPacketType.entries.joinToString { it.wireName }
+        )
+        ProtocolPacketCard(
+            title = "Sample outgoing: Android -> ESP32 -> LoRa",
+            packet = outgoingPacket,
+            validation = outgoingValidation
+        )
+        ProtocolPacketCard(
+            title = "Sample incoming: ESP32 -> Android",
+            packet = incomingPacket,
+            validation = incomingValidation
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    color = MaterialTheme.colorScheme.background,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = "Serialization Preview",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = serializedOutgoing,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            StatusRow(
+                label = "Parsed packet",
+                value = parsedOutgoing?.packetId ?: "Parse failed"
+            )
+            StatusRow(
+                label = "Checksum",
+                value = outgoingPacket.checksumPlaceholder
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProtocolPacketCard(
+    title: String,
+    packet: BluetoothProtocolPacket,
+    validation: ProtocolValidationStatus
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.background,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        StatusRow(label = "Packet type", value = packet.packetType.wireName)
+        StatusRow(label = "Packet ID", value = packet.packetId)
+        StatusRow(label = "Source", value = packet.sourceNode)
+        StatusRow(label = "Destination", value = packet.destinationNode)
+        StatusRow(label = "Retry count", value = packet.retryCount.toString())
+        StatusRow(label = "Timestamp", value = packet.timestamp.toString())
+        StatusRow(label = "Status", value = packet.status)
+        StatusRow(label = "Checksum", value = packet.checksumPlaceholder)
+        Text(
+            text = "Payload: ${packet.payload}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "Hop path: ${packet.hopPath.joinToString(" -> ")}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = protocolValidationText(validation),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
 private fun PacketLogPanel(packets: List<LoraManetPacket>) {
     Column(
         modifier = Modifier
@@ -2667,6 +2834,108 @@ private fun packetPreviewText(packet: LoraManetPacket): String {
         "hopPath: ${packet.hopPath.joinToString(" -> ")}",
         "status: ${packet.deliveryStatus}"
     ).joinToString(separator = "\n")
+}
+
+private fun protocolPacketFromManetPacket(
+    packet: LoraManetPacket,
+    packetType: BluetoothProtocolPacketType,
+    retryCount: Int
+): BluetoothProtocolPacket {
+    return BluetoothProtocolPacket(
+        packetType = packetType,
+        packetId = packet.packetId,
+        sourceNode = packet.sourceNodeId,
+        destinationNode = packet.destinationNodeId,
+        payload = packet.payloadText,
+        hopPath = packet.hopPath,
+        retryCount = retryCount,
+        timestamp = packet.timestamp,
+        status = packet.deliveryStatus
+    )
+}
+
+private fun sampleIncomingAckPacket(packet: LoraManetPacket): BluetoothProtocolPacket {
+    return BluetoothProtocolPacket(
+        packetType = BluetoothProtocolPacketType.Ack,
+        packetId = "ACK-${packet.packetId}",
+        sourceNode = "ESP32_BRIDGE",
+        destinationNode = packet.sourceNodeId,
+        payload = "RECEIVED ${packet.packetId}",
+        hopPath = listOf("ESP32_BRIDGE", packet.sourceNodeId),
+        retryCount = 0,
+        timestamp = System.currentTimeMillis() / 1000L,
+        status = "RECEIVED/ACK"
+    )
+}
+
+private fun serializeBluetoothProtocolPacket(packet: BluetoothProtocolPacket): String {
+    return """
+        {
+          "protocolVersion": "${packet.protocolVersion}",
+          "packetType": "${packet.packetType.wireName}",
+          "packetId": "${packet.packetId}",
+          "sourceNode": "${packet.sourceNode}",
+          "destinationNode": "${packet.destinationNode}",
+          "payload": "${packet.payload}",
+          "hopPath": "${packet.hopPath.joinToString(">")}",
+          "retryCount": "${packet.retryCount}",
+          "timestamp": "${packet.timestamp}",
+          "status": "${packet.status}",
+          "checksum": "${packet.checksumPlaceholder}"
+        }
+    """.trimIndent()
+}
+
+private fun deserializeBluetoothProtocolPacket(rawPacket: String): BluetoothProtocolPacket? {
+    fun valueFor(key: String): String? {
+        return Regex("\"$key\"\\s*:\\s*\"([^\"]*)\"")
+            .find(rawPacket)
+            ?.groupValues
+            ?.getOrNull(1)
+    }
+
+    val packetType = BluetoothProtocolPacketType.entries.firstOrNull {
+        it.wireName == valueFor("packetType")
+    } ?: return null
+
+    return BluetoothProtocolPacket(
+        protocolVersion = valueFor("protocolVersion") ?: return null,
+        packetType = packetType,
+        packetId = valueFor("packetId") ?: return null,
+        sourceNode = valueFor("sourceNode") ?: return null,
+        destinationNode = valueFor("destinationNode") ?: return null,
+        payload = valueFor("payload") ?: "",
+        hopPath = valueFor("hopPath")?.split(">")?.filter { it.isNotBlank() } ?: emptyList(),
+        retryCount = valueFor("retryCount")?.toIntOrNull() ?: 0,
+        timestamp = valueFor("timestamp")?.toLongOrNull() ?: 0L,
+        status = valueFor("status") ?: return null,
+        checksumPlaceholder = valueFor("checksum") ?: CHECKSUM_PLACEHOLDER
+    )
+}
+
+private fun validateBluetoothProtocolPacket(packet: BluetoothProtocolPacket): ProtocolValidationStatus {
+    return ProtocolValidationStatus(
+        versionValid = packet.protocolVersion == BLUETOOTH_PROTOCOL_VERSION,
+        requiredFieldsPresent = packet.packetId.isNotBlank() &&
+            packet.sourceNode.isNotBlank() &&
+            packet.destinationNode.isNotBlank() &&
+            packet.status.isNotBlank(),
+        packetTypeSupported = BluetoothProtocolPacketType.entries.contains(packet.packetType),
+        checksumPlaceholderValid = packet.checksumPlaceholder == CHECKSUM_PLACEHOLDER
+    )
+}
+
+private fun protocolValidationText(validation: ProtocolValidationStatus): String {
+    return listOf(
+        "version valid: ${validation.versionValid.passFailLabel()}",
+        "required fields present: ${validation.requiredFieldsPresent.passFailLabel()}",
+        "packet type supported: ${validation.packetTypeSupported.passFailLabel()}",
+        "checksum placeholder valid: ${validation.checksumPlaceholderValid.passFailLabel()}"
+    ).joinToString(separator = " | ")
+}
+
+private fun Boolean.passFailLabel(): String {
+    return if (this) "Pass" else "Fail"
 }
 
 private fun defaultValidationItems(): List<ValidationChecklistItem> {
