@@ -22,6 +22,9 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Status panel showing the current selected network and simulated communication states.
 - Bluetooth status panel showing simulated availability, connected ESP32 placeholder node, and pairing status.
 - Simulated Bluetooth pairing controls for scanning, selecting, pairing, and disconnecting fake ESP32 nodes.
+- LoRa/MANET packet abstraction for generated chat messages.
+- Compact packet preview inside each message card.
+- Packet log panel showing recent generated packets, route, and delivery status.
 - Local simulation controls for LoRa, WiFi, GSM, and simulated satellite link availability.
 - Simulated metrics for RSSI, SNR, hop count, battery level, gateway proximity, and simulated satellite link status.
 - Scrollable Network, Status, Simulation Controls, Metrics, and Messages content.
@@ -89,11 +92,31 @@ Android Step 005 adds a local-only Bluetooth placeholder flow for future ESP32 p
 - When paired, LoRa is shown as `Bluetooth-linked to ESP32`, and route notes state that LoRa transport is simulated through the paired ESP32.
 - This flow does not request Android Bluetooth permissions and does not use BLE or Classic Bluetooth APIs.
 
+## LoRa/MANET Packet Abstraction
+
+Android Step 006 prepares messages for future ESP32 transport by converting each typed chat message into a structured local packet before it appears in the chat list.
+
+Each generated packet includes:
+
+- Packet ID
+- Source node ID
+- Destination node ID
+- Selected transport
+- Payload text
+- Unix timestamp
+- Hop path and hop count
+- RSSI, SNR, and battery
+- Gateway and satellite status
+- Delivery status
+
+The packet remains local to the app. Message cards show a compact packet preview, and the packet log panel lists the latest generated packets with packet ID, route, and status.
+
 ## Current Limitations
 
 - Messages are stored only in local Compose state.
 - Route decisions and metrics are simulated only.
 - Bluetooth pairing is simulated only and uses fake ESP32 node names.
+- LoRa/MANET packets are local data models only and are not sent to an ESP32.
 - LoRa, WiFi, GSM, and simulated satellite statuses are controlled by local toggles only.
 - No messages leave the app.
 - No ESP32, Raspberry Pi, backend, or hardware integration is included.

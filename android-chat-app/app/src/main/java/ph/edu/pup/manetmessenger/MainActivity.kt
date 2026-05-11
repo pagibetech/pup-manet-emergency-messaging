@@ -120,6 +120,23 @@ data class RouteDecision(
     val note: String
 )
 
+data class LoraManetPacket(
+    val packetId: String,
+    val sourceNodeId: String,
+    val destinationNodeId: String,
+    val selectedTransport: String,
+    val payloadText: String,
+    val timestamp: Long,
+    val hopPath: List<String>,
+    val hopCount: Int,
+    val rssi: Int,
+    val snr: Double,
+    val battery: Int,
+    val gatewayStatus: String,
+    val satelliteStatus: String,
+    val deliveryStatus: String
+)
+
 data class SimNode(
     val name: String,
     val batteryLevel: Int,
@@ -146,7 +163,8 @@ data class ChatMessage(
     val sentAt: String,
     val progressStep: Int,
     val routeQuality: String,
-    val delayMs: Long
+    val delayMs: Long,
+    val packet: LoraManetPacket
 )
 
 private val simNodes = listOf(
@@ -189,6 +207,7 @@ fun MessengerApp() {
     var draftMessage by remember { mutableStateOf("") }
     var nextMessageId by remember { mutableStateOf(1L) }
     val messages = remember { mutableStateListOf<ChatMessage>() }
+    val packetLog = remember { mutableStateListOf<LoraManetPacket>() }
     val queueScope = rememberCoroutineScope()
     val routedNetworkState = effectiveNetworkState(networkState, bluetoothState)
 
@@ -209,42 +228,58 @@ fun MessengerApp() {
                         )
                         val messageId = nextMessageId++
                         val delayMs = simulatedDelayMs(decision.route, decision.metrics)
+                        val packet = messageToPacket(
+                            packetId = packetIdFor(messageId),
+                            payloadText = trimmedMessage,
+                            localNode = localNode,
+                            targetNode = targetNode,
+                            decision = decision
+                        )
                         messages.add(
-                            ChatMessage(
-                                id = messageId,
-                                text = trimmedMessage,
-                                sourceNode = localNode.name,
-                                targetNode = targetNode.name,
-                                route = decision.route,
-                                status = decision.status,
-                                metrics = decision.metrics,
-                                path = decision.path,
+                            packetToChatMessage(
+                                messageId = messageId,
+                                packet = packet,
+                                decision = decision,
+                                sourceNodeName = localNode.name,
+                                targetNodeName = targetNode.name,
                                 note = decision.note,
                                 sentAt = currentTimeLabel(),
-                                progressStep = 0,
-                                routeQuality = routeQuality(decision.metrics),
                                 delayMs = delayMs
                             )
                         )
+                        packetLog.add(0, packet)
+                        if (packetLog.size > 8) {
+                            packetLog.removeAt(packetLog.lastIndex)
+                        }
                         draftMessage = ""
                         if (decision.route != RouteLabel.None) {
                             queueScope.launch {
                                 delay(300L)
                                 val queuedIndex = messages.indexOfFirst { it.id == messageId }
                                 if (queuedIndex >= 0) {
+                                    val relayedPacket = messages[queuedIndex].packet.copy(
+                                        deliveryStatus = MessageStatus.Relayed.label
+                                    )
                                     messages[queuedIndex] = messages[queuedIndex].copy(
                                         status = MessageStatus.Relayed,
-                                        progressStep = if (decision.path.size > 1) 1 else 0
+                                        progressStep = if (decision.path.size > 1) 1 else 0,
+                                        packet = relayedPacket
                                     )
+                                    updatePacketLog(packetLog, relayedPacket)
                                 }
 
                                 delay(delayMs)
                                 val relayIndex = messages.indexOfFirst { it.id == messageId }
                                 if (relayIndex >= 0) {
+                                    val deliveredPacket = messages[relayIndex].packet.copy(
+                                        deliveryStatus = MessageStatus.Delivered.label
+                                    )
                                     messages[relayIndex] = messages[relayIndex].copy(
                                         status = MessageStatus.Delivered,
-                                        progressStep = (decision.path.size - 1).coerceAtLeast(0)
+                                        progressStep = (decision.path.size - 1).coerceAtLeast(0),
+                                        packet = deliveredPacket
                                     )
+                                    updatePacketLog(packetLog, deliveredPacket)
                                 }
                             }
                         }
@@ -322,6 +357,9 @@ fun MessengerApp() {
                     localNode = localNode,
                     targetNode = targetNode
                 )
+            }
+            item {
+                PacketLogPanel(packets = packetLog)
             }
             item {
                 Text(
@@ -844,6 +882,48 @@ private fun MetricsPanel(
 }
 
 @Composable
+private fun PacketLogPanel(packets: List<LoraManetPacket>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Packet Log",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        if (packets.isEmpty()) {
+            Text(
+                text = "No generated packets yet.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            packets.take(5).forEach { packet ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "${packet.packetId} | ${packet.selectedTransport} | ${packet.deliveryStatus}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = packet.hopPath.joinToString(" -> "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun EmptyMessageState() {
     Text(
         modifier = Modifier
@@ -979,12 +1059,112 @@ private fun MessageBubble(message: ChatMessage) {
             style = MaterialTheme.typography.labelSmall,
             color = statusColors.second
         )
+        PacketPreview(packet = message.packet, textColor = statusColors.second)
         Text(
             text = message.note,
             style = MaterialTheme.typography.labelSmall,
             color = statusColors.second
         )
     }
+}
+
+@Composable
+private fun PacketPreview(packet: LoraManetPacket, textColor: Color) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = Color.White,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = "Packet ${packet.packetId}",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = textColor
+        )
+        Text(
+            text = "Source ${packet.sourceNodeId} | Destination ${packet.destinationNodeId}",
+            style = MaterialTheme.typography.labelSmall,
+            color = textColor
+        )
+        Text(
+            text = "Transport ${packet.selectedTransport} | Hop ${packet.hopCount} | Status ${packet.deliveryStatus}",
+            style = MaterialTheme.typography.labelSmall,
+            color = textColor
+        )
+    }
+}
+
+private fun messageToPacket(
+    packetId: String,
+    payloadText: String,
+    localNode: SimNode,
+    targetNode: SimNode,
+    decision: RouteDecision
+): LoraManetPacket {
+    return LoraManetPacket(
+        packetId = packetId,
+        sourceNodeId = nodeId(localNode),
+        destinationNodeId = nodeId(targetNode),
+        selectedTransport = decision.route.label,
+        payloadText = payloadText,
+        timestamp = System.currentTimeMillis() / 1000L,
+        hopPath = decision.path,
+        hopCount = decision.metrics.hopCount,
+        rssi = decision.metrics.rssi,
+        snr = decision.metrics.snr,
+        battery = decision.metrics.batteryLevel,
+        gatewayStatus = decision.metrics.gatewayProximity,
+        satelliteStatus = decision.metrics.satelliteStatus,
+        deliveryStatus = decision.status.label
+    )
+}
+
+private fun packetToChatMessage(
+    messageId: Long,
+    packet: LoraManetPacket,
+    decision: RouteDecision,
+    sourceNodeName: String,
+    targetNodeName: String,
+    note: String,
+    sentAt: String,
+    delayMs: Long
+): ChatMessage {
+    return ChatMessage(
+        id = messageId,
+        text = packet.payloadText,
+        sourceNode = sourceNodeName,
+        targetNode = targetNodeName,
+        route = decision.route,
+        status = decision.status,
+        metrics = decision.metrics,
+        path = packet.hopPath,
+        note = note,
+        sentAt = sentAt,
+        progressStep = 0,
+        routeQuality = routeQuality(decision.metrics),
+        delayMs = delayMs,
+        packet = packet
+    )
+}
+
+private fun updatePacketLog(packetLog: MutableList<LoraManetPacket>, packet: LoraManetPacket) {
+    val packetIndex = packetLog.indexOfFirst { it.packetId == packet.packetId }
+    if (packetIndex >= 0) {
+        packetLog[packetIndex] = packet
+    }
+}
+
+private fun packetIdFor(messageId: Long): String {
+    return "PKT-${messageId.toString().padStart(4, '0')}"
+}
+
+private fun nodeId(node: SimNode): String {
+    return node.name.uppercase(Locale.US).replace(" ", "_")
 }
 
 private fun decideRoute(
