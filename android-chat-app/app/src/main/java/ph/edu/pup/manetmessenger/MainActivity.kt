@@ -122,11 +122,11 @@ enum class SimulationCondition(val label: String) {
 }
 
 enum class AppTab(val label: String) {
-    Messaging("Messaging"),
-    Network("Network"),
-    Routing("Routing"),
-    Simulation("Simulation"),
-    Diagnostics("Diagnostics")
+    Messaging("Chat"),
+    Network("Nodes"),
+    Routing("Route"),
+    Simulation("Sim"),
+    Diagnostics("Logs")
 }
 
 data class NetworkState(
@@ -715,7 +715,13 @@ private fun MainTabRow(
             Tab(
                 selected = selectedTab == tab,
                 onClick = { onTabSelected(tab) },
-                text = { Text(tab.label) }
+                text = {
+                    Text(
+                        text = tab.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1
+                    )
+                }
             )
         }
     }
@@ -1257,15 +1263,28 @@ private fun CurrentRouteSummary(routingDecision: RoutingDecision) {
                 shape = RoundedCornerShape(8.dp)
             )
             .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(
-            text = "Current Route",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-        StatusRow(label = "Selected", value = routingDecision.selectedRoute.label)
-        StatusRow(label = "Score", value = routingDecision.routeScore.toString())
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = "Current Route",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                modifier = Modifier.weight(1f),
+                text = routingDecision.selectedRoute.label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.End,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
         Text(
             text = routingDecision.failoverReason,
             style = MaterialTheme.typography.labelSmall,
@@ -1459,14 +1478,33 @@ private fun PacketLogPanel(packets: List<LoraManetPacket>) {
             )
         } else {
             packets.take(5).forEach { packet ->
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            color = MaterialTheme.colorScheme.background,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
                     Text(
                         text = "${packet.packetId} | ${packet.selectedTransport} | ${packet.deliveryStatus}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = packet.hopPath.joinToString(" -> "),
+                        text = "${packet.sourceNodeId} -> ${packet.destinationNodeId}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Path: ${packet.hopPath.joinToString(" -> ")}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "RSSI ${packet.rssi} dBm | SNR ${formatSnr(packet.snr)} dB | Hop ${packet.hopCount}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1549,8 +1587,8 @@ private fun MessageBubble(message: ChatMessage) {
                 color = statusColors.first,
                 shape = RoundedCornerShape(8.dp)
             )
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1588,11 +1626,6 @@ private fun MessageBubble(message: ChatMessage) {
             color = statusColors.second
         )
         Text(
-            text = "${message.sourceNode} -> ${message.targetNode}",
-            style = MaterialTheme.typography.labelSmall,
-            color = statusColors.second
-        )
-        Text(
             text = "Path: ${message.path.joinToString(" -> ")}",
             style = MaterialTheme.typography.labelSmall,
             color = statusColors.second
@@ -1602,53 +1635,13 @@ private fun MessageBubble(message: ChatMessage) {
             style = MaterialTheme.typography.labelSmall,
             color = statusColors.second
         )
-        Text(
-            text = "Quality ${message.routeQuality} | Delay ${message.delayMs} ms",
-            style = MaterialTheme.typography.labelSmall,
-            color = statusColors.second
-        )
-        Text(
-            text = "Gateway ${message.metrics.gatewayProximity} | Satellite ${message.metrics.satelliteStatus}",
-            style = MaterialTheme.typography.labelSmall,
-            color = statusColors.second
-        )
-        PacketPreview(packet = message.packet, textColor = statusColors.second)
-        Text(
-            text = message.note,
-            style = MaterialTheme.typography.labelSmall,
-            color = statusColors.second
-        )
-    }
-}
-
-@Composable
-private fun PacketPreview(packet: LoraManetPacket, textColor: Color) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                color = Color.White,
-                shape = RoundedCornerShape(8.dp)
+        if (message.note.contains("Failover") || message.note.contains("Adaptive") || message.status == MessageStatus.Failed) {
+            Text(
+                text = message.note,
+                style = MaterialTheme.typography.labelSmall,
+                color = statusColors.second
             )
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        Text(
-            text = "Packet ${packet.packetId}",
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = textColor
-        )
-        Text(
-            text = "Source ${packet.sourceNodeId} | Destination ${packet.destinationNodeId}",
-            style = MaterialTheme.typography.labelSmall,
-            color = textColor
-        )
-        Text(
-            text = "Transport ${packet.selectedTransport} | Hop ${packet.hopCount} | Status ${packet.deliveryStatus}",
-            style = MaterialTheme.typography.labelSmall,
-            color = textColor
-        )
+        }
     }
 }
 

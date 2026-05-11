@@ -26,14 +26,14 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - ESP32 communication bridge abstraction with simulation and placeholder transports.
 - Adaptive routing decision engine with weighted candidate scoring and failover reasons.
 - Realistic MANET state simulation with fluctuating signal, intermittent links, node mobility, and outages.
-- Tabbed UI with Messaging, Network, Routing, Simulation, and Diagnostics sections.
+- Tabbed UI with Chat, Nodes, Route, Sim, and Logs sections.
 - Simulation speed control with Slow, Normal, and Fast modes.
 - Live simulation state indicators for Stable, Congested, Recovering, and Partitioned conditions.
 - Network event log for dynamic link, node, route, and recovery events.
 - Routing decision panel showing preferred route, selected route, score, failover reason, and route candidates.
 - Transport bridge status panel with active implementation, connection state, last sent packet, and last received packet.
 - Transport selection dropdown for Simulation, Bluetooth Placeholder, WiFi Placeholder, and USB Serial Placeholder.
-- Compact packet preview inside each message card.
+- Compact field-use message cards with technical packet details moved to Logs.
 - Packet log panel showing recent generated packets, route, and delivery status.
 - Local simulation controls for LoRa, WiFi, GSM, and simulated satellite link availability.
 - Simulated metrics for RSSI, SNR, hop count, gateway proximity, and simulated satellite link status.
@@ -80,7 +80,7 @@ The app includes a local-only simulation engine for route and failover testing.
 - If the preferred route is unavailable across the path, the app automatically tries the next available route.
 - Messages can show `Queued`, `Relayed`, `Delivered`, or `Failed`.
 - Route labels include `LoRa`, `WiFi`, `GSM`, `Simulated Satellite`, or `No route`.
-- Message cards show route type, full node path, hop count, RSSI, SNR, gateway proximity, and satellite status.
+- Message cards show route type, delivery status, path, hop count, RSSI, SNR, and failover/failure reason when relevant.
 - Message cards use different visual styles for Queued, Relayed, Delivered, and Failed.
 - Messages briefly progress through Queued, Relayed, and Delivered using local simulated delays based on hop count, route type, and RSSI quality.
 - Route quality is displayed as Excellent, Good, Weak, or Critical.
@@ -119,7 +119,7 @@ Each generated packet includes:
 - Gateway and satellite status
 - Delivery status
 
-The packet remains local to the app. Message cards show a compact packet preview, and the packet log panel lists the latest generated packets with packet ID, route, and status.
+The packet remains local to the app. The Logs tab lists the latest generated packets with packet ID, route, source, destination, path, RSSI, SNR, hop count, and status.
 
 ## ESP32 Communication Bridge Interface
 
@@ -181,13 +181,13 @@ Simulation speed can be set to Slow, Normal, or Fast. The UI shows a simulation 
 
 ## Tabbed Interface
 
-The app opens on the Messaging tab by default.
+The app opens on the Chat tab by default.
 
-- Messaging: Adamson University header, current route summary, message list, packet previews, and bottom message composer.
-- Network: network mode selection, current local node, target destination node, selected node information, and topology summary.
-- Routing: adaptive routing decision details, route candidates, candidate visualization, and transport bridge.
-- Simulation: Bluetooth pairing placeholder, simulation speed, network state, and LoRa/WiFi/GSM/Satellite toggles.
-- Diagnostics: current status summary, metrics panel, packet log, and network event log.
+- Chat: Adamson University header, compact current route summary, message list, and bottom message composer.
+- Nodes: network mode selection, current local node, target destination node, selected node information, and topology summary.
+- Route: adaptive routing decision details, route candidates, candidate visualization, and transport bridge.
+- Sim: Bluetooth pairing placeholder, simulation speed, network state, and LoRa/WiFi/GSM/Satellite toggles.
+- Logs: current status summary, metrics panel, packet log, and network event log.
 
 The battery signal was removed from the Android UI and route scoring model. Routing now uses RSSI, SNR, hop count, node health, gateway availability, satellite availability, and transport availability.
 
