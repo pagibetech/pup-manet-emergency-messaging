@@ -25,7 +25,8 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - LoRa/MANET packet abstraction for generated chat messages.
 - ESP32 communication bridge abstraction with simulation and placeholder transports.
 - Adaptive routing decision engine with weighted candidate scoring and failover reasons.
-- Realistic MANET state simulation with fluctuating signal, battery drain, intermittent links, node mobility, and outages.
+- Realistic MANET state simulation with fluctuating signal, intermittent links, node mobility, and outages.
+- Tabbed UI with Messaging, Network, Routing, Simulation, and Diagnostics sections.
 - Simulation speed control with Slow, Normal, and Fast modes.
 - Live simulation state indicators for Stable, Congested, Recovering, and Partitioned conditions.
 - Network event log for dynamic link, node, route, and recovery events.
@@ -35,7 +36,7 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Compact packet preview inside each message card.
 - Packet log panel showing recent generated packets, route, and delivery status.
 - Local simulation controls for LoRa, WiFi, GSM, and simulated satellite link availability.
-- Simulated metrics for RSSI, SNR, hop count, battery level, gateway proximity, and simulated satellite link status.
+- Simulated metrics for RSSI, SNR, hop count, gateway proximity, and simulated satellite link status.
 - Scrollable Network, Status, Simulation Controls, Metrics, and Messages content.
 - Fixed bottom message composer so text input and Send stay visible on small screens.
 - Local message simulation that adds typed messages to the chat list with the selected route label.
@@ -73,13 +74,13 @@ From a terminal with Gradle available:
 The app includes a local-only simulation engine for route and failover testing.
 
 - Simulated nodes: Node Alpha, Node Bravo, Node Charlie, Node Delta, and Gateway Node.
-- Each node has local placeholder battery, RSSI, SNR, hop count, gateway proximity, and route availability values.
+- Each node has local placeholder RSSI, SNR, hop count, gateway proximity, and route availability values.
 - Messages use simulated store-and-forward routing through intermediate nodes.
 - Adaptive failover priority is LoRa, then WiFi, then GSM, then Simulated Satellite.
 - If the preferred route is unavailable across the path, the app automatically tries the next available route.
 - Messages can show `Queued`, `Relayed`, `Delivered`, or `Failed`.
 - Route labels include `LoRa`, `WiFi`, `GSM`, `Simulated Satellite`, or `No route`.
-- Message cards show route type, full node path, hop count, RSSI, SNR, battery, gateway proximity, and satellite status.
+- Message cards show route type, full node path, hop count, RSSI, SNR, gateway proximity, and satellite status.
 - Message cards use different visual styles for Queued, Relayed, Delivered, and Failed.
 - Messages briefly progress through Queued, Relayed, and Delivered using local simulated delays based on hop count, route type, and RSSI quality.
 - Route quality is displayed as Excellent, Good, Weak, or Critical.
@@ -114,7 +115,7 @@ Each generated packet includes:
 - Payload text
 - Unix timestamp
 - Hop path and hop count
-- RSSI, SNR, and battery
+- RSSI and SNR
 - Gateway and satellite status
 - Delivery status
 
@@ -158,7 +159,6 @@ Candidate scoring considers:
 - Hop count
 - RSSI
 - SNR
-- Battery level
 - Transport availability
 - Gateway availability
 - Satellite availability
@@ -173,14 +173,23 @@ Android Step 009 adds dynamic local network behavior to exercise routing and fai
 The simulation can now change over time:
 
 - RSSI and SNR fluctuate per node.
-- Nodes slowly drain battery.
-- Low or critical battery affects node health and route scoring.
-- Critical battery can disable node links.
 - LoRa, WiFi, GSM, and simulated satellite links can fail or recover.
 - Node ordering can shift to simulate mobility and path rediscovery.
-- Nodes can enter weak, critical, low-battery, or offline states.
+- Nodes can enter weak, critical, or offline states.
 
 Simulation speed can be set to Slow, Normal, or Fast. The UI shows a simulation condition of Stable, Congested, Recovering, or Partitioned. The network event log records changes such as degraded relays, recovered links, node health changes, route rediscovery, and failover-related events.
+
+## Tabbed Interface
+
+The app opens on the Messaging tab by default.
+
+- Messaging: Adamson University header, current route summary, message list, packet previews, and bottom message composer.
+- Network: network mode selection, current local node, target destination node, selected node information, and topology summary.
+- Routing: adaptive routing decision details, route candidates, candidate visualization, and transport bridge.
+- Simulation: Bluetooth pairing placeholder, simulation speed, network state, and LoRa/WiFi/GSM/Satellite toggles.
+- Diagnostics: current status summary, metrics panel, packet log, and network event log.
+
+The battery signal was removed from the Android UI and route scoring model. Routing now uses RSSI, SNR, hop count, node health, gateway availability, satellite availability, and transport availability.
 
 ## Current Limitations
 
