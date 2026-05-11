@@ -22,6 +22,7 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Status panel showing the current selected network and simulated communication states.
 - Bluetooth status panel showing simulated availability, connected ESP32 placeholder node, and pairing status.
 - Simulated Bluetooth pairing controls for scanning, selecting, pairing, and disconnecting fake ESP32 nodes.
+- Bluetooth architecture layer with simulated lifecycle states, packet bridge counters, reconnect timing, and diagnostics.
 - LoRa/MANET packet abstraction for generated chat messages.
 - ESP32 communication bridge abstraction with simulation and placeholder transports.
 - Adaptive routing decision engine with weighted candidate scoring and failover reasons.
@@ -104,6 +105,32 @@ Android Step 005 adds a local-only Bluetooth placeholder flow for future ESP32 p
 - Press **Disconnect** to clear the simulated connection.
 - When paired, LoRa is shown as `Bluetooth-linked to ESP32`, and route notes state that LoRa transport is simulated through the paired ESP32.
 - This flow does not request Android Bluetooth permissions and does not use BLE or Classic Bluetooth APIs.
+
+## Bluetooth Architecture Layer
+
+Android Step 014 prepares the production Bluetooth architecture without enabling hardware communication.
+
+The planned future stack is:
+
+```text
+Android Bluetooth API
+-> BluetoothTransportManager
+-> BluetoothPacketBridge
+-> MANET routing engine
+```
+
+The app currently includes these platform-free architecture types:
+
+- `BluetoothTransportManager`
+- `BluetoothDeviceState`
+- `BluetoothPacketBridge`
+- `BluetoothConnectionSession`
+
+The simulated lifecycle supports `Idle`, `Scanning`, `Pairing`, `Connecting`, `Connected`, `Disconnected`, `Failed`, and `Retrying`. The Sim tab can scan for fake ESP32 devices, pair, connect, exchange simulated `HELLO` / `ESP32_ACK` packets, disconnect, and simulate a timeout followed by automatic reconnect attempts.
+
+Bluetooth diagnostics show the current paired ESP32, signal placeholder, packet counters, last reconnect attempt, connection uptime, retry counter, reconnect countdown, and timeout status. These diagnostics remain local Compose state only.
+
+No Android Bluetooth permissions, BLE APIs, Classic Bluetooth APIs, socket code, ESP32 firmware logic, or Raspberry Pi logic are included.
 
 ## LoRa/MANET Packet Abstraction
 

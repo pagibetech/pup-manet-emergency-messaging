@@ -97,6 +97,17 @@ enum class PairingStatus(val label: String) {
     ConnectionFailed("Connection failed")
 }
 
+enum class BluetoothLifecycleState(val label: String) {
+    Idle("Idle"),
+    Scanning("Scanning"),
+    Pairing("Pairing"),
+    Connecting("Connecting"),
+    Connected("Connected"),
+    Disconnected("Disconnected"),
+    Failed("Failed"),
+    Retrying("Retrying")
+}
+
 enum class TransportOption(val label: String) {
     Simulation("Simulation"),
     BluetoothPlaceholder("Bluetooth Placeholder"),
@@ -168,6 +179,44 @@ data class Esp32BridgeConfig(
     val connectionStatus: String = "Simulation placeholder only",
     val lastHandshakeTime: String = "Never",
     val handshakeStatus: String = "Not started"
+)
+
+data class BluetoothDeviceState(
+    val lifecycleState: BluetoothLifecycleState = BluetoothLifecycleState.Idle,
+    val discoveredDevices: List<String> = emptyList(),
+    val selectedDevice: String? = null,
+    val pairedDevice: String? = null,
+    val signalPlaceholder: String = "Simulated -62 dBm"
+)
+
+data class BluetoothPacketBridge(
+    val packetsSent: Int = 0,
+    val packetsReceived: Int = 0,
+    val lastOutboundPacket: String = "None",
+    val lastInboundPacket: String = "None"
+) {
+    fun recordOutbound(packetId: String): BluetoothPacketBridge {
+        return copy(
+            packetsSent = packetsSent + 1,
+            lastOutboundPacket = packetId
+        )
+    }
+
+    fun recordInbound(packetId: String): BluetoothPacketBridge {
+        return copy(
+            packetsReceived = packetsReceived + 1,
+            lastInboundPacket = packetId
+        )
+    }
+}
+
+data class BluetoothConnectionSession(
+    val connectedDevice: String? = null,
+    val startedAt: Long? = null,
+    val lastReconnectAttempt: String = "Never",
+    val reconnectCountdownSeconds: Int = 0,
+    val retryCounter: Int = 0,
+    val timeoutStatus: String = "No timeout"
 )
 
 data class SimMetrics(
@@ -402,6 +451,92 @@ private class WiFiTransportPlaceholder : BaseTransport(
     connectedLabel = TransportConnectionState.PlaceholderReady.label
 )
 
+/*
+ * Future Bluetooth layer:
+ * Android Bluetooth API -> BluetoothTransportManager -> BluetoothPacketBridge -> MANET routing engine.
+ * This class is intentionally platform-free in Step 014; it models lifecycle transitions only.
+ */
+private class BluetoothTransportManager {
+    fun scan(state: BluetoothDeviceState): BluetoothDeviceState {
+        return state.copy(
+            lifecycleState = BluetoothLifecycleState.Scanning,
+            discoveredDevices = fakeEsp32Nodes,
+            selectedDevice = state.selectedDevice ?: fakeEsp32Nodes.first()
+        )
+    }
+
+    fun pair(state: BluetoothDeviceState): BluetoothDeviceState {
+        val selected = state.selectedDevice ?: state.discoveredDevices.firstOrNull()
+        return if (selected == null) {
+            state.copy(lifecycleState = BluetoothLifecycleState.Failed)
+        } else {
+            state.copy(
+                lifecycleState = BluetoothLifecycleState.Pairing,
+                selectedDevice = selected,
+                pairedDevice = selected
+            )
+        }
+    }
+
+    fun connect(
+        state: BluetoothDeviceState,
+        session: BluetoothConnectionSession
+    ): Pair<BluetoothDeviceState, BluetoothConnectionSession> {
+        val device = state.pairedDevice ?: state.selectedDevice
+        return if (device == null) {
+            state.copy(lifecycleState = BluetoothLifecycleState.Failed) to session.copy(
+                timeoutStatus = "No paired ESP32 selected"
+            )
+        } else {
+            state.copy(
+                lifecycleState = BluetoothLifecycleState.Connected,
+                pairedDevice = device,
+                selectedDevice = device
+            ) to session.copy(
+                connectedDevice = device,
+                startedAt = System.currentTimeMillis(),
+                reconnectCountdownSeconds = 0,
+                timeoutStatus = "Connected"
+            )
+        }
+    }
+
+    fun disconnect(
+        state: BluetoothDeviceState,
+        session: BluetoothConnectionSession
+    ): Pair<BluetoothDeviceState, BluetoothConnectionSession> {
+        return state.copy(lifecycleState = BluetoothLifecycleState.Disconnected) to session.copy(
+            connectedDevice = null,
+            startedAt = null,
+            reconnectCountdownSeconds = 0,
+            timeoutStatus = "Disconnected"
+        )
+    }
+
+    fun failForTimeout(
+        state: BluetoothDeviceState,
+        session: BluetoothConnectionSession
+    ): Pair<BluetoothDeviceState, BluetoothConnectionSession> {
+        return state.copy(lifecycleState = BluetoothLifecycleState.Failed) to session.copy(
+            connectedDevice = null,
+            startedAt = null,
+            timeoutStatus = "Connection timeout"
+        )
+    }
+
+    fun scheduleReconnect(
+        state: BluetoothDeviceState,
+        session: BluetoothConnectionSession
+    ): Pair<BluetoothDeviceState, BluetoothConnectionSession> {
+        return state.copy(lifecycleState = BluetoothLifecycleState.Retrying) to session.copy(
+            lastReconnectAttempt = currentTimeLabel(),
+            reconnectCountdownSeconds = 3,
+            retryCounter = session.retryCounter + 1,
+            timeoutStatus = "Reconnect scheduled"
+        )
+    }
+}
+
 private class MessageQueueManager(
     val maxRetryCount: Int = MAX_RETRY_COUNT
 ) {
@@ -623,6 +758,9 @@ fun MessengerApp() {
     var selectedTransport by remember { mutableStateOf(TransportOption.Simulation) }
     var hardwareMode by remember { mutableStateOf(HardwareMode.Simulation) }
     var esp32BridgeConfig by remember { mutableStateOf(Esp32BridgeConfig()) }
+    var bluetoothDeviceState by remember { mutableStateOf(BluetoothDeviceState()) }
+    var bluetoothPacketBridge by remember { mutableStateOf(BluetoothPacketBridge()) }
+    var bluetoothSession by remember { mutableStateOf(BluetoothConnectionSession()) }
     var validationItems by remember { mutableStateOf(defaultValidationItems()) }
     var activeTransport by remember {
         mutableStateOf<ManetTransportInterface>(transportFor(TransportOption.Simulation))
@@ -634,6 +772,7 @@ fun MessengerApp() {
     val queueScope = rememberCoroutineScope()
     val queueManager = remember { MessageQueueManager() }
     val routingEngine = remember { AdaptiveRoutingEngine() }
+    val bluetoothTransportManager = remember { BluetoothTransportManager() }
     val routedNetworkState = effectiveNetworkState(networkState, bluetoothState)
     val adaptiveRoutingDecision = routingEngine.decide(
         selectedNetwork = selectedNetwork,
@@ -710,6 +849,9 @@ fun MessengerApp() {
                             )
                             val transportForMessage = activeTransport
                             val sentPacket = transportForMessage.sendPacket(packet)
+                            if (bluetoothDeviceState.lifecycleState == BluetoothLifecycleState.Connected) {
+                                bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(sentPacket.packetId)
+                            }
                             transportStatus = transportForMessage.getTransportStatus()
                             messages.add(
                                 packetToChatMessage(
@@ -887,6 +1029,9 @@ fun MessengerApp() {
                                         }
 
                                         transportForMessage.receivePacket()
+                                        if (bluetoothDeviceState.lifecycleState == BluetoothLifecycleState.Connected) {
+                                            bluetoothPacketBridge = bluetoothPacketBridge.recordInbound(sentPacket.packetId)
+                                        }
                                         val deliveredPacket = messages[deliveredIndex].packet.copy(
                                             selectedTransport = liveDecision.route.label,
                                             deliveryStatus = MessageStatus.Delivered.label,
@@ -1036,7 +1181,129 @@ fun MessengerApp() {
                         item {
                             BluetoothPanel(
                                 bluetoothState = bluetoothState,
-                                onBluetoothStateChange = { bluetoothState = it }
+                                bluetoothDeviceState = bluetoothDeviceState,
+                                bluetoothSession = bluetoothSession,
+                                bluetoothPacketBridge = bluetoothPacketBridge,
+                                onScan = {
+                                    bluetoothDeviceState = bluetoothTransportManager.scan(bluetoothDeviceState)
+                                    bluetoothState = bluetoothState.copy(
+                                        discoveredNodes = fakeEsp32Nodes,
+                                        selectedNode = bluetoothState.selectedNode ?: fakeEsp32Nodes.first(),
+                                        connectedNode = null,
+                                        pairingStatus = PairingStatus.Scanning
+                                    )
+                                },
+                                onDeviceSelected = { device ->
+                                    bluetoothDeviceState = bluetoothDeviceState.copy(
+                                        selectedDevice = device,
+                                        lifecycleState = if (bluetoothSession.connectedDevice == device) {
+                                            BluetoothLifecycleState.Connected
+                                        } else {
+                                            BluetoothLifecycleState.Scanning
+                                        }
+                                    )
+                                    bluetoothState = bluetoothState.copy(
+                                        selectedNode = device,
+                                        pairingStatus = if (bluetoothState.connectedNode == device) {
+                                            PairingStatus.Paired
+                                        } else {
+                                            PairingStatus.Scanning
+                                        }
+                                    )
+                                },
+                                onPair = {
+                                    val pairedState = bluetoothTransportManager.pair(bluetoothDeviceState)
+                                    bluetoothDeviceState = pairedState
+                                    val selected = pairedState.pairedDevice ?: pairedState.selectedDevice
+                                    bluetoothState = if (selected == null) {
+                                        bluetoothState.copy(pairingStatus = PairingStatus.ConnectionFailed)
+                                    } else {
+                                        bluetoothState.copy(
+                                            selectedNode = selected,
+                                            pairingStatus = PairingStatus.Paired
+                                        )
+                                    }
+                                },
+                                onConnect = {
+                                    bluetoothDeviceState = bluetoothDeviceState.copy(
+                                        lifecycleState = BluetoothLifecycleState.Connecting
+                                    )
+                                    queueScope.launch {
+                                        delay(500L)
+                                        val result = bluetoothTransportManager.connect(
+                                            bluetoothDeviceState,
+                                            bluetoothSession
+                                        )
+                                        bluetoothDeviceState = result.first
+                                        bluetoothSession = result.second
+                                        bluetoothState = bluetoothState.copy(
+                                            selectedNode = result.first.selectedDevice,
+                                            connectedNode = result.second.connectedDevice,
+                                            pairingStatus = if (result.second.connectedDevice == null) {
+                                                PairingStatus.ConnectionFailed
+                                            } else {
+                                                PairingStatus.Paired
+                                            }
+                                        )
+                                    }
+                                },
+                                onExchangeHello = {
+                                    bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound("BT-HELLO")
+                                    queueScope.launch {
+                                        delay(450L)
+                                        bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("ESP32_ACK")
+                                        esp32BridgeConfig = esp32BridgeConfig.copy(
+                                            connectionStatus = "ESP32_ACK received over simulated Bluetooth layer",
+                                            lastHandshakeTime = currentTimeLabel(),
+                                            handshakeStatus = "ESP32_ACK received"
+                                        )
+                                    }
+                                },
+                                onDisconnect = {
+                                    val result = bluetoothTransportManager.disconnect(bluetoothDeviceState, bluetoothSession)
+                                    bluetoothDeviceState = result.first
+                                    bluetoothSession = result.second
+                                    bluetoothState = bluetoothState.copy(
+                                        connectedNode = null,
+                                        pairingStatus = PairingStatus.NotPaired
+                                    )
+                                },
+                                onSimulateTimeout = {
+                                    val failed = bluetoothTransportManager.failForTimeout(bluetoothDeviceState, bluetoothSession)
+                                    bluetoothDeviceState = failed.first
+                                    bluetoothSession = failed.second
+                                    bluetoothState = bluetoothState.copy(
+                                        connectedNode = null,
+                                        pairingStatus = PairingStatus.ConnectionFailed
+                                    )
+                                    val retry = bluetoothTransportManager.scheduleReconnect(
+                                        failed.first,
+                                        failed.second
+                                    )
+                                    bluetoothDeviceState = retry.first
+                                    bluetoothSession = retry.second
+                                    queueScope.launch {
+                                        for (remaining in 3 downTo 1) {
+                                            bluetoothSession = bluetoothSession.copy(reconnectCountdownSeconds = remaining)
+                                            delay(1000L)
+                                        }
+                                        val result = bluetoothTransportManager.connect(
+                                            bluetoothDeviceState,
+                                            bluetoothSession.copy(reconnectCountdownSeconds = 0)
+                                        )
+                                        bluetoothDeviceState = result.first
+                                        bluetoothSession = result.second
+                                        bluetoothState = bluetoothState.copy(
+                                            selectedNode = result.first.selectedDevice,
+                                            connectedNode = result.second.connectedDevice,
+                                            pairingStatus = if (result.second.connectedDevice == null) {
+                                                PairingStatus.ConnectionFailed
+                                            } else {
+                                                PairingStatus.Paired
+                                            }
+                                        )
+                                    }
+                                }
                             )
                         }
                         item {
@@ -1400,7 +1667,16 @@ private fun StatusRow(label: String, value: String) {
 @Composable
 private fun BluetoothPanel(
     bluetoothState: BluetoothState,
-    onBluetoothStateChange: (BluetoothState) -> Unit
+    bluetoothDeviceState: BluetoothDeviceState,
+    bluetoothSession: BluetoothConnectionSession,
+    bluetoothPacketBridge: BluetoothPacketBridge,
+    onScan: () -> Unit,
+    onDeviceSelected: (String) -> Unit,
+    onPair: () -> Unit,
+    onConnect: () -> Unit,
+    onExchangeHello: () -> Unit,
+    onDisconnect: () -> Unit,
+    onSimulateTimeout: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -1413,13 +1689,19 @@ private fun BluetoothPanel(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            text = "Bluetooth Pairing",
+            text = "Bluetooth Architecture",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "Future path: Android Bluetooth API -> BluetoothTransportManager -> Packet bridge -> MANET routing engine.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         StatusRow(label = "Bluetooth", value = bluetoothState.bluetoothStatus.label)
         StatusRow(label = "Connected ESP32 Node", value = bluetoothState.connectedNode ?: "None")
         StatusRow(label = "Pairing Status", value = bluetoothState.pairingStatus.label)
+        StatusRow(label = "Lifecycle", value = bluetoothDeviceState.lifecycleState.label)
         if (bluetoothLinkedToEsp32(bluetoothState)) {
             Text(
                 text = "LoRa transport is simulated through paired ESP32.",
@@ -1434,55 +1716,53 @@ private fun BluetoothPanel(
         ) {
             Button(
                 modifier = Modifier.weight(1f),
-                onClick = {
-                    onBluetoothStateChange(
-                        bluetoothState.copy(
-                            discoveredNodes = fakeEsp32Nodes,
-                            selectedNode = bluetoothState.selectedNode ?: fakeEsp32Nodes.first(),
-                            connectedNode = null,
-                            pairingStatus = PairingStatus.Scanning
-                        )
-                    )
-                }
+                onClick = onScan
             ) {
                 Text("Scan")
             }
             Button(
                 modifier = Modifier.weight(1f),
-                enabled = bluetoothState.discoveredNodes.isNotEmpty(),
-                onClick = {
-                    val node = bluetoothState.selectedNode ?: bluetoothState.discoveredNodes.firstOrNull()
-                    onBluetoothStateChange(
-                        if (node == null) {
-                            bluetoothState.copy(pairingStatus = PairingStatus.ConnectionFailed)
-                        } else {
-                            bluetoothState.copy(
-                                selectedNode = node,
-                                connectedNode = node,
-                                pairingStatus = PairingStatus.Paired
-                            )
-                        }
-                    )
-                }
+                enabled = bluetoothDeviceState.discoveredDevices.isNotEmpty(),
+                onClick = onPair
             ) {
                 Text("Pair")
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = bluetoothDeviceState.pairedDevice != null,
+                onClick = onConnect
+            ) {
+                Text("Connect")
+            }
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = bluetoothDeviceState.lifecycleState == BluetoothLifecycleState.Connected,
+                onClick = onExchangeHello
+            ) {
+                Text("HELLO")
             }
         }
         Button(
             modifier = Modifier.fillMaxWidth(),
             enabled = bluetoothState.connectedNode != null || bluetoothState.pairingStatus != PairingStatus.NotPaired,
-            onClick = {
-                onBluetoothStateChange(
-                    bluetoothState.copy(
-                        connectedNode = null,
-                        pairingStatus = PairingStatus.NotPaired
-                    )
-                )
-            }
+            onClick = onDisconnect
         ) {
             Text("Disconnect")
         }
-        if (bluetoothState.discoveredNodes.isEmpty()) {
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = bluetoothDeviceState.pairedDevice != null,
+            onClick = onSimulateTimeout
+        ) {
+            Text("Simulate Timeout / Reconnect")
+        }
+        if (bluetoothDeviceState.discoveredDevices.isEmpty()) {
             Text(
                 text = "No simulated ESP32 nodes scanned yet.",
                 style = MaterialTheme.typography.labelSmall,
@@ -1494,32 +1774,61 @@ private fun BluetoothPanel(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            bluetoothState.discoveredNodes.chunked(2).forEach { rowNodes ->
+            bluetoothDeviceState.discoveredDevices.chunked(2).forEach { rowNodes ->
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     rowNodes.forEach { nodeName ->
                         FilterChip(
-                            selected = bluetoothState.selectedNode == nodeName,
-                            onClick = {
-                                onBluetoothStateChange(
-                                    bluetoothState.copy(
-                                        selectedNode = nodeName,
-                                        pairingStatus = if (bluetoothState.connectedNode == nodeName) {
-                                            PairingStatus.Paired
-                                        } else {
-                                            PairingStatus.Scanning
-                                        }
-                                    )
-                                )
-                            },
+                            selected = bluetoothDeviceState.selectedDevice == nodeName,
+                            onClick = { onDeviceSelected(nodeName) },
                             label = { Text(nodeName) }
                         )
                     }
                 }
             }
         }
+        BluetoothDiagnosticsPanel(
+            bluetoothDeviceState = bluetoothDeviceState,
+            bluetoothSession = bluetoothSession,
+            bluetoothPacketBridge = bluetoothPacketBridge
+        )
+    }
+}
+
+@Composable
+private fun BluetoothDiagnosticsPanel(
+    bluetoothDeviceState: BluetoothDeviceState,
+    bluetoothSession: BluetoothConnectionSession,
+    bluetoothPacketBridge: BluetoothPacketBridge
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.background,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = "Bluetooth Diagnostics",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        StatusRow(label = "Current paired ESP32", value = bluetoothDeviceState.pairedDevice ?: "None")
+        StatusRow(label = "Signal placeholder", value = bluetoothDeviceState.signalPlaceholder)
+        StatusRow(label = "Packets sent", value = bluetoothPacketBridge.packetsSent.toString())
+        StatusRow(label = "Packets received", value = bluetoothPacketBridge.packetsReceived.toString())
+        StatusRow(label = "Last outbound", value = bluetoothPacketBridge.lastOutboundPacket)
+        StatusRow(label = "Last inbound", value = bluetoothPacketBridge.lastInboundPacket)
+        StatusRow(label = "Last reconnect", value = bluetoothSession.lastReconnectAttempt)
+        StatusRow(label = "Connection uptime", value = connectionUptimeLabel(bluetoothSession))
+        StatusRow(label = "Retry counter", value = bluetoothSession.retryCounter.toString())
+        StatusRow(label = "Reconnect countdown", value = "${bluetoothSession.reconnectCountdownSeconds}s")
+        StatusRow(label = "Timeout", value = bluetoothSession.timeoutStatus)
     }
 }
 
@@ -2844,6 +3153,12 @@ private fun simulationStatus(isAvailable: Boolean): String {
 
 private fun currentTimeLabel(): String {
     return SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+}
+
+private fun connectionUptimeLabel(session: BluetoothConnectionSession): String {
+    val startedAt = session.startedAt ?: return "0s"
+    val elapsedSeconds = ((System.currentTimeMillis() - startedAt) / 1000L).coerceAtLeast(0L)
+    return "${elapsedSeconds}s"
 }
 
 @Preview(showBackground = true)
