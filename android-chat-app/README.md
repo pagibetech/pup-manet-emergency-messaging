@@ -35,6 +35,7 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Transport selection dropdown for Simulation, Bluetooth Placeholder, WiFi Placeholder, and USB Serial Placeholder.
 - Compact field-use message cards with technical packet details moved to Logs.
 - Packet log panel showing recent generated packets, route, and delivery status.
+- Queue statistics panel showing queued/active, delivered, failed, and retry totals.
 - Local simulation controls for LoRa, WiFi, GSM, and simulated satellite link availability.
 - Simulated metrics for RSSI, SNR, hop count, gateway proximity, and simulated satellite link status.
 - Scrollable Network, Status, Simulation Controls, Metrics, and Messages content.
@@ -78,11 +79,11 @@ The app includes a local-only simulation engine for route and failover testing.
 - Messages use simulated store-and-forward routing through intermediate nodes.
 - Adaptive failover priority is LoRa, then WiFi, then GSM, then Simulated Satellite.
 - If the preferred route is unavailable across the path, the app automatically tries the next available route.
-- Messages can show `Queued`, `Relayed`, `Delivered`, or `Failed`.
+- Messages can show `Queued`, `Routing`, `Relaying`, `Retrying`, `Delivered`, or `Failed`.
 - Route labels include `LoRa`, `WiFi`, `GSM`, `Simulated Satellite`, or `No route`.
 - Message cards show route type, delivery status, path, hop count, RSSI, SNR, and failover/failure reason when relevant.
-- Message cards use different visual styles for Queued, Relayed, Delivered, and Failed.
-- Messages briefly progress through Queued, Relayed, and Delivered using local simulated delays based on hop count, route type, and RSSI quality.
+- Message cards use different visual styles for queued, routing, relaying, retrying, delivered, and failed states.
+- Messages progress through queued, routing, relaying, retrying, delivered, and failed states using local simulated delays based on routing, relay path, congestion, and retry timeout.
 - Route quality is displayed as Excellent, Good, Weak, or Critical.
 - Topology overview shows connected nodes, offline nodes, gateway node, current selected path, and node health.
 - The message input clears after a local send is queued.
@@ -120,6 +121,20 @@ Each generated packet includes:
 - Delivery status
 
 The packet remains local to the app. The Logs tab lists the latest generated packets with packet ID, route, source, destination, path, RSSI, SNR, hop count, and status.
+
+## Message Queue Engine
+
+Android Step 011 adds a local multi-message queue and delivery state engine.
+
+- Messages enter the queue before routing begins.
+- Routing and relay delays are simulated separately.
+- Congestion and partitioned network states can increase delivery delay.
+- Random packet drops can trigger retry behavior.
+- If a route becomes unavailable mid-send, the queue engine reroutes using the adaptive routing engine.
+- Retry attempts use the next best available route when possible.
+- The retry limit is configured in code as `MAX_RETRY_COUNT`.
+- Packets track queued, relay, and delivery timestamps.
+- The Logs tab includes queue statistics for queued/active, delivered, failed, and retry totals.
 
 ## ESP32 Communication Bridge Interface
 
@@ -187,7 +202,7 @@ The app opens on the Chat tab by default.
 - Nodes: network mode selection, current local node, target destination node, selected node information, and topology summary.
 - Route: adaptive routing decision details, route candidates, candidate visualization, and transport bridge.
 - Sim: Bluetooth pairing placeholder, simulation speed, network state, and LoRa/WiFi/GSM/Satellite toggles.
-- Logs: current status summary, metrics panel, packet log, and network event log.
+- Logs: current status summary, metrics panel, queue statistics, packet log, and network event log.
 
 The battery signal was removed from the Android UI and route scoring model. Routing now uses RSSI, SNR, hop count, node health, gateway availability, satellite availability, and transport availability.
 

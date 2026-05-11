@@ -76,9 +76,11 @@ enum class RouteLabel(val label: String) {
 
 enum class MessageStatus(val label: String) {
     Queued("Queued"),
-    Relayed("Relayed"),
+    Routing("Routing"),
+    Relaying("Relaying"),
     Delivered("Delivered"),
-    Failed("Failed")
+    Failed("Failed"),
+    Retrying("Retrying")
 }
 
 enum class BluetoothAvailability(val label: String) {
@@ -202,7 +204,29 @@ data class LoraManetPacket(
     val snr: Double,
     val gatewayStatus: String,
     val satelliteStatus: String,
-    val deliveryStatus: String
+    val deliveryStatus: String,
+    val queuedAt: Long,
+    val relayAt: Long? = null,
+    val deliveredAt: Long? = null
+)
+
+data class PendingPacket(
+    val packet: LoraManetPacket,
+    val retryCount: Int,
+    val status: MessageStatus
+)
+
+data class DeliveryTask(
+    val packetId: String,
+    val route: RouteLabel,
+    val maxRetries: Int
+)
+
+data class QueueStats(
+    val queuedCount: Int,
+    val deliveredCount: Int,
+    val failedCount: Int,
+    val retryCount: Int
 )
 
 data class TransportStatus(
@@ -246,7 +270,9 @@ data class ChatMessage(
     val progressStep: Int,
     val routeQuality: String,
     val delayMs: Long,
-    val packet: LoraManetPacket
+    val packet: LoraManetPacket,
+    val retryCount: Int,
+    val deliveryProgress: String
 )
 
 data class NetworkSimulationUpdate(
@@ -269,6 +295,8 @@ private val fakeEsp32Nodes = listOf(
     "ESP32-MANET-02",
     "ESP32-MANET-03"
 )
+
+private const val MAX_RETRY_COUNT = 2
 
 private open class BaseTransport(
     private val implementationName: String,
@@ -328,6 +356,97 @@ private class UsbSerialTransportPlaceholder : BaseTransport(
     implementationName = "UsbSerialTransportPlaceholder",
     connectedLabel = TransportConnectionState.PlaceholderReady.label
 )
+
+private class MessageQueueManager(
+    val maxRetryCount: Int = MAX_RETRY_COUNT
+) {
+    fun routingDelayMs(condition: SimulationCondition): Long {
+        return when (condition) {
+            SimulationCondition.Stable -> 450L
+            SimulationCondition.Recovering -> 700L
+            SimulationCondition.Congested -> 1100L
+            SimulationCondition.Partitioned -> 1500L
+        }
+    }
+
+    fun relayDelayMs(route: RouteLabel, hopCount: Int, condition: SimulationCondition): Long {
+        val routeBase = when (route) {
+            RouteLabel.Lora -> 520L
+            RouteLabel.Wifi -> 360L
+            RouteLabel.Gsm -> 780L
+            RouteLabel.Satellite -> 980L
+            RouteLabel.None -> 0L
+        }
+        val congestionPenalty = when (condition) {
+            SimulationCondition.Stable -> 0L
+            SimulationCondition.Recovering -> 240L
+            SimulationCondition.Congested -> 560L
+            SimulationCondition.Partitioned -> 900L
+        }
+        return routeBase + (hopCount * 260L) + congestionPenalty
+    }
+
+    fun retryDelayMs(retryCount: Int): Long {
+        return 650L + (retryCount * 350L)
+    }
+
+    fun shouldDropPacket(condition: SimulationCondition, route: RouteLabel): Boolean {
+        if (route == RouteLabel.None) {
+            return true
+        }
+        val baseChance = when (condition) {
+            SimulationCondition.Stable -> 4
+            SimulationCondition.Recovering -> 10
+            SimulationCondition.Congested -> 18
+            SimulationCondition.Partitioned -> 35
+        }
+        val routePenalty = when (route) {
+            RouteLabel.Lora -> 3
+            RouteLabel.Wifi -> 2
+            RouteLabel.Gsm -> 7
+            RouteLabel.Satellite -> 10
+            RouteLabel.None -> 100
+        }
+        return Random.nextInt(100) < baseChance + routePenalty
+    }
+
+    fun retryRoutingDecision(
+        routingDecision: RoutingDecision,
+        failedRoute: RouteLabel
+    ): RoutingDecision {
+        val nextCandidate = routingDecision.availableCandidates
+            .filter { it.route != failedRoute }
+            .maxByOrNull { it.score.total }
+
+        return if (nextCandidate == null) {
+            routingDecision.copy(
+                selectedRoute = RouteLabel.None,
+                routeScore = 0,
+                failoverReason = "No retry route available after ${failedRoute.label} failed."
+            )
+        } else {
+            routingDecision.copy(
+                selectedRoute = nextCandidate.route,
+                routeScore = nextCandidate.score.total,
+                failoverReason = "Failover to ${nextCandidate.route.label} after ${failedRoute.label} delivery timeout."
+            )
+        }
+    }
+
+    fun stats(messages: List<ChatMessage>): QueueStats {
+        return QueueStats(
+            queuedCount = messages.count {
+                it.status == MessageStatus.Queued ||
+                    it.status == MessageStatus.Routing ||
+                    it.status == MessageStatus.Relaying ||
+                    it.status == MessageStatus.Retrying
+            },
+            deliveredCount = messages.count { it.status == MessageStatus.Delivered },
+            failedCount = messages.count { it.status == MessageStatus.Failed },
+            retryCount = messages.sumOf { it.retryCount }
+        )
+    }
+}
 
 private class AdaptiveRoutingEngine {
     fun decide(
@@ -465,6 +584,7 @@ fun MessengerApp() {
     val packetLog = remember { mutableStateListOf<LoraManetPacket>() }
     val eventLog = remember { mutableStateListOf<String>() }
     val queueScope = rememberCoroutineScope()
+    val queueManager = remember { MessageQueueManager() }
     val routingEngine = remember { AdaptiveRoutingEngine() }
     val routedNetworkState = effectiveNetworkState(networkState, bluetoothState)
     val adaptiveRoutingDecision = routingEngine.decide(
@@ -546,35 +666,184 @@ fun MessengerApp() {
                             draftMessage = ""
                             if (decision.route != RouteLabel.None) {
                                 queueScope.launch {
-                                    delay(300L)
-                                    val queuedIndex = messages.indexOfFirst { it.id == messageId }
-                                    if (queuedIndex >= 0) {
-                                        val relayedPacket = messages[queuedIndex].packet.copy(
-                                            deliveryStatus = MessageStatus.Relayed.label
-                                        )
-                                        messages[queuedIndex] = messages[queuedIndex].copy(
-                                            status = MessageStatus.Relayed,
-                                            progressStep = if (decision.path.size > 1) 1 else 0,
-                                            packet = relayedPacket
-                                        )
-                                        updatePacketLog(packetLog, relayedPacket)
-                                    }
+                                    var attempt = 0
+                                    var currentDecision = decision
+                                    var delivered = false
 
-                                    delay(delayMs)
-                                    val relayIndex = messages.indexOfFirst { it.id == messageId }
-                                    if (relayIndex >= 0) {
-                                        val deliveredPacket = (transportForMessage.receivePacket() ?: messages[relayIndex].packet).copy(
-                                            deliveryStatus = MessageStatus.Delivered.label
+                                    while (attempt <= queueManager.maxRetryCount && !delivered) {
+                                        val task = DeliveryTask(
+                                            packetId = sentPacket.packetId,
+                                            route = currentDecision.route,
+                                            maxRetries = queueManager.maxRetryCount
                                         )
+                                        val routingIndex = messages.indexOfFirst { it.id == messageId }
+                                        if (routingIndex < 0) {
+                                            break
+                                        }
+                                        val routingPacket = messages[routingIndex].packet.copy(
+                                            deliveryStatus = MessageStatus.Routing.label
+                                        )
+                                        messages[routingIndex] = messages[routingIndex].copy(
+                                            status = MessageStatus.Routing,
+                                            packet = routingPacket,
+                                            retryCount = attempt,
+                                            deliveryProgress = "Routing via ${task.route.label}..."
+                                        )
+                                        updatePacketLog(packetLog, routingPacket)
+
+                                        delay(queueManager.routingDelayMs(simulationCondition))
+
+                                        val liveNetworkState = effectiveNetworkState(networkState, bluetoothState)
+                                        val liveRouting = routingEngine.decide(
+                                            selectedNetwork = selectedNetwork,
+                                            networkState = liveNetworkState,
+                                            localNode = localNode,
+                                            targetNode = targetNode,
+                                            nodes = simulatedNodes
+                                        )
+                                        val selectedRouting = if (queueManager.shouldDropPacket(simulationCondition, currentDecision.route)) {
+                                            queueManager.retryRoutingDecision(liveRouting, currentDecision.route)
+                                        } else {
+                                            liveRouting
+                                        }
+                                        val liveDecision = decideRoute(
+                                            selectedNetwork = selectedNetwork,
+                                            networkState = liveNetworkState,
+                                            bluetoothState = bluetoothState,
+                                            localNode = localNode,
+                                            targetNode = targetNode,
+                                            adaptiveRoutingDecision = selectedRouting,
+                                            nodes = simulatedNodes
+                                        )
+
+                                        if (liveDecision.route == RouteLabel.None) {
+                                            attempt += 1
+                                            val retryIndex = messages.indexOfFirst { it.id == messageId }
+                                            if (retryIndex < 0) {
+                                                break
+                                            }
+                                            val retryStatus = if (attempt > queueManager.maxRetryCount) {
+                                                MessageStatus.Failed
+                                            } else {
+                                                MessageStatus.Retrying
+                                            }
+                                            val retryPacket = messages[retryIndex].packet.copy(
+                                                selectedTransport = liveDecision.route.label,
+                                                deliveryStatus = retryStatus.label
+                                            )
+                                            messages[retryIndex] = messages[retryIndex].copy(
+                                                route = liveDecision.route,
+                                                status = retryStatus,
+                                                metrics = liveDecision.metrics,
+                                                path = liveDecision.path,
+                                                note = liveDecision.note,
+                                                packet = retryPacket,
+                                                retryCount = attempt,
+                                                deliveryProgress = if (retryStatus == MessageStatus.Failed) {
+                                                    "Failed after $attempt retries."
+                                                } else {
+                                                    "Retrying route discovery..."
+                                                }
+                                            )
+                                            updatePacketLog(packetLog, retryPacket)
+                                            eventLog.add(0, "Retry $attempt for ${sentPacket.packetId}: ${liveDecision.note}")
+                                            if (retryStatus == MessageStatus.Failed) {
+                                                break
+                                            }
+                                            delay(queueManager.retryDelayMs(attempt))
+                                            currentDecision = liveDecision
+                                            continue
+                                        }
+
+                                        val relayIndex = messages.indexOfFirst { it.id == messageId }
+                                        if (relayIndex < 0) {
+                                            break
+                                        }
+                                        val relayingPacket = messages[relayIndex].packet.copy(
+                                            selectedTransport = liveDecision.route.label,
+                                            deliveryStatus = MessageStatus.Relaying.label,
+                                            relayAt = System.currentTimeMillis() / 1000L
+                                        )
+                                        val relayNode = liveDecision.path.drop(1).dropLast(1).firstOrNull() ?: liveDecision.path.lastOrNull().orEmpty()
                                         messages[relayIndex] = messages[relayIndex].copy(
+                                            route = liveDecision.route,
+                                            status = MessageStatus.Relaying,
+                                            metrics = liveDecision.metrics,
+                                            path = liveDecision.path,
+                                            note = liveDecision.note,
+                                            progressStep = if (liveDecision.path.size > 1) 1 else 0,
+                                            packet = relayingPacket,
+                                            retryCount = attempt,
+                                            deliveryProgress = if (relayNode.isBlank()) {
+                                                "Relaying..."
+                                            } else {
+                                                "Relaying through $relayNode..."
+                                            }
+                                        )
+                                        updatePacketLog(packetLog, relayingPacket)
+
+                                        delay(queueManager.relayDelayMs(liveDecision.route, liveDecision.metrics.hopCount, simulationCondition))
+
+                                        val deliveredIndex = messages.indexOfFirst { it.id == messageId }
+                                        if (deliveredIndex < 0) {
+                                            break
+                                        }
+                                        if (queueManager.shouldDropPacket(simulationCondition, liveDecision.route)) {
+                                            attempt += 1
+                                            val retryPacket = messages[deliveredIndex].packet.copy(
+                                                deliveryStatus = if (attempt > queueManager.maxRetryCount) {
+                                                    MessageStatus.Failed.label
+                                                } else {
+                                                    MessageStatus.Retrying.label
+                                                }
+                                            )
+                                            val retryStatus = if (attempt > queueManager.maxRetryCount) {
+                                                MessageStatus.Failed
+                                            } else {
+                                                MessageStatus.Retrying
+                                            }
+                                            messages[deliveredIndex] = messages[deliveredIndex].copy(
+                                                status = retryStatus,
+                                                packet = retryPacket,
+                                                retryCount = attempt,
+                                                deliveryProgress = if (retryStatus == MessageStatus.Failed) {
+                                                    "Packet dropped after retry limit."
+                                                } else {
+                                                    "Retrying after packet drop..."
+                                                }
+                                            )
+                                            updatePacketLog(packetLog, retryPacket)
+                                            eventLog.add(0, "Packet drop on ${liveDecision.route.label}; retry $attempt for ${sentPacket.packetId}")
+                                            if (retryStatus == MessageStatus.Failed) {
+                                                break
+                                            }
+                                            currentDecision = liveDecision
+                                            delay(queueManager.retryDelayMs(attempt))
+                                            continue
+                                        }
+
+                                        transportForMessage.receivePacket()
+                                        val deliveredPacket = messages[deliveredIndex].packet.copy(
+                                            selectedTransport = liveDecision.route.label,
+                                            deliveryStatus = MessageStatus.Delivered.label,
+                                            deliveredAt = System.currentTimeMillis() / 1000L
+                                        )
+                                        messages[deliveredIndex] = messages[deliveredIndex].copy(
+                                            route = liveDecision.route,
                                             status = MessageStatus.Delivered,
-                                            progressStep = (decision.path.size - 1).coerceAtLeast(0),
-                                            packet = deliveredPacket
+                                            metrics = liveDecision.metrics,
+                                            path = liveDecision.path,
+                                            note = liveDecision.note,
+                                            progressStep = (liveDecision.path.size - 1).coerceAtLeast(0),
+                                            packet = deliveredPacket,
+                                            retryCount = attempt,
+                                            deliveryProgress = "Delivered"
                                         )
                                         updatePacketLog(packetLog, deliveredPacket)
                                         if (activeTransport === transportForMessage) {
                                             transportStatus = transportForMessage.getTransportStatus()
                                         }
+                                        delivered = true
                                     }
                                 }
                             }
@@ -694,6 +963,12 @@ fun MessengerApp() {
                                 localNode = localNode,
                                 targetNode = targetNode,
                                 nodes = simulatedNodes
+                            )
+                        }
+                        item {
+                            QueueStatsPanel(
+                                stats = queueManager.stats(messages),
+                                maxRetryCount = queueManager.maxRetryCount
                             )
                         }
                         item { PacketLogPanel(packets = packetLog) }
@@ -972,7 +1247,7 @@ private fun StatusPanel(
         StatusRow(label = "Satellite link", value = simulationStatus(networkState.satelliteAvailable))
         StatusRow(label = "Bluetooth status", value = bluetoothState.bluetoothStatus.label)
         StatusRow(label = "Connected ESP32", value = bluetoothState.connectedNode ?: "None")
-        StatusRow(label = "Message states", value = "Queued, Relayed, Delivered, Failed")
+        StatusRow(label = "Message states", value = "Queued, Routing, Relaying, Retrying, Delivered, Failed")
     }
 }
 
@@ -1381,6 +1656,34 @@ private fun EventLogPanel(events: List<String>) {
 }
 
 @Composable
+private fun QueueStatsPanel(
+    stats: QueueStats,
+    maxRetryCount: Int
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Queue Statistics",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        StatusRow(label = "Queued / active", value = stats.queuedCount.toString())
+        StatusRow(label = "Delivered", value = stats.deliveredCount.toString())
+        StatusRow(label = "Failed", value = stats.failedCount.toString())
+        StatusRow(label = "Retries", value = stats.retryCount.toString())
+        StatusRow(label = "Max retries", value = maxRetryCount.toString())
+    }
+}
+
+@Composable
 private fun RouteCandidateRow(candidate: RouteCandidate) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
@@ -1508,6 +1811,11 @@ private fun PacketLogPanel(packets: List<LoraManetPacket>) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Text(
+                        text = "Queued ${packet.queuedAt} | Relay ${packet.relayAt ?: "-"} | Delivered ${packet.deliveredAt ?: "-"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -1616,6 +1924,11 @@ private fun MessageBubble(message: ChatMessage) {
             color = statusColors.second
         )
         Text(
+            text = message.deliveryProgress,
+            style = MaterialTheme.typography.labelSmall,
+            color = statusColors.second
+        )
+        Text(
             text = "Progress: ${progressPath.joinToString(" -> ").ifBlank { "No active route" }}",
             style = MaterialTheme.typography.labelSmall,
             color = statusColors.second
@@ -1665,7 +1978,8 @@ private fun messageToPacket(
         snr = decision.metrics.snr,
         gatewayStatus = decision.metrics.gatewayProximity,
         satelliteStatus = decision.metrics.satelliteStatus,
-        deliveryStatus = decision.status.label
+        deliveryStatus = decision.status.label,
+        queuedAt = System.currentTimeMillis() / 1000L
     )
 }
 
@@ -1693,7 +2007,9 @@ private fun packetToChatMessage(
         progressStep = 0,
         routeQuality = routeQuality(decision.metrics),
         delayMs = delayMs,
-        packet = packet
+        packet = packet,
+        retryCount = 0,
+        deliveryProgress = "Queued..."
     )
 }
 
@@ -2039,7 +2355,9 @@ private fun routeAvailabilityLabel(node: SimNode): String {
 private fun messageStatusColors(status: MessageStatus): Pair<Color, Color> {
     return when (status) {
         MessageStatus.Queued -> Color(0xFFFFF3CD) to Color(0xFF5C4200)
-        MessageStatus.Relayed -> Color(0xFFDDEBFF) to Color(0xFF143C70)
+        MessageStatus.Routing -> Color(0xFFFFF3CD) to Color(0xFF5C4200)
+        MessageStatus.Relaying -> Color(0xFFDDEBFF) to Color(0xFF143C70)
+        MessageStatus.Retrying -> Color(0xFFFFE3C2) to Color(0xFF7A4100)
         MessageStatus.Delivered -> Color(0xFFD6F1E7) to Color(0xFF145C48)
         MessageStatus.Failed -> Color(0xFFFFDAD6) to Color(0xFF8C1D18)
     }
