@@ -74,11 +74,33 @@ enum class MessageStatus(val label: String) {
     Failed("Failed")
 }
 
+enum class BluetoothAvailability(val label: String) {
+    Available("Available"),
+    Disabled("Disabled"),
+    NotSupported("Not supported"),
+    Simulated("Simulated")
+}
+
+enum class PairingStatus(val label: String) {
+    NotPaired("Not paired"),
+    Scanning("Scanning"),
+    Paired("Paired"),
+    ConnectionFailed("Connection failed")
+}
+
 data class NetworkState(
     val loraAvailable: Boolean = true,
     val wifiAvailable: Boolean = true,
     val gsmAvailable: Boolean = true,
     val satelliteAvailable: Boolean = true
+)
+
+data class BluetoothState(
+    val bluetoothStatus: BluetoothAvailability = BluetoothAvailability.Simulated,
+    val discoveredNodes: List<String> = emptyList(),
+    val selectedNode: String? = null,
+    val connectedNode: String? = null,
+    val pairingStatus: PairingStatus = PairingStatus.NotPaired
 )
 
 data class SimMetrics(
@@ -135,6 +157,12 @@ private val simNodes = listOf(
     SimNode("Gateway Node", 97, -48, 17.4, 0, "Gateway", true, true, true, true)
 )
 
+private val fakeEsp32Nodes = listOf(
+    "ESP32-MANET-01",
+    "ESP32-MANET-02",
+    "ESP32-MANET-03"
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -155,12 +183,14 @@ class MainActivity : ComponentActivity() {
 fun MessengerApp() {
     var selectedNetwork by remember { mutableStateOf(NetworkMode.Auto) }
     var networkState by remember { mutableStateOf(NetworkState()) }
+    var bluetoothState by remember { mutableStateOf(BluetoothState()) }
     var localNode by remember { mutableStateOf(simNodes.first()) }
     var targetNode by remember { mutableStateOf(simNodes.last()) }
     var draftMessage by remember { mutableStateOf("") }
     var nextMessageId by remember { mutableStateOf(1L) }
     val messages = remember { mutableStateListOf<ChatMessage>() }
     val queueScope = rememberCoroutineScope()
+    val routedNetworkState = effectiveNetworkState(networkState, bluetoothState)
 
     Scaffold(
         bottomBar = {
@@ -172,7 +202,8 @@ fun MessengerApp() {
                     if (trimmedMessage.isNotEmpty()) {
                         val decision = decideRoute(
                             selectedNetwork = selectedNetwork,
-                            networkState = networkState,
+                            networkState = routedNetworkState,
+                            bluetoothState = bluetoothState,
                             localNode = localNode,
                             targetNode = targetNode
                         )
@@ -254,20 +285,27 @@ fun MessengerApp() {
                 NodeSummaryPanel(
                     localNode = localNode,
                     targetNode = targetNode,
-                    networkState = networkState
+                    networkState = routedNetworkState
                 )
             }
             item {
                 TopologyOverviewPanel(
                     localNode = localNode,
                     targetNode = targetNode,
-                    networkState = networkState
+                    networkState = routedNetworkState
                 )
             }
             item {
                 StatusPanel(
                     selectedNetwork = selectedNetwork,
-                    networkState = networkState
+                    networkState = networkState,
+                    bluetoothState = bluetoothState
+                )
+            }
+            item {
+                BluetoothPanel(
+                    bluetoothState = bluetoothState,
+                    onBluetoothStateChange = { bluetoothState = it }
                 )
             }
             item {
@@ -279,7 +317,8 @@ fun MessengerApp() {
             item {
                 MetricsPanel(
                     selectedNetwork = selectedNetwork,
-                    networkState = networkState,
+                    networkState = routedNetworkState,
+                    bluetoothState = bluetoothState,
                     localNode = localNode,
                     targetNode = targetNode
                 )
@@ -515,8 +554,14 @@ private fun TopologyOverviewPanel(
 @Composable
 private fun StatusPanel(
     selectedNetwork: NetworkMode,
-    networkState: NetworkState
+    networkState: NetworkState,
+    bluetoothState: BluetoothState
 ) {
+    val loraStatus = if (bluetoothLinkedToEsp32(bluetoothState)) {
+        "Bluetooth-linked to ESP32"
+    } else {
+        simulationStatus(networkState.loraAvailable)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -533,11 +578,12 @@ private fun StatusPanel(
             fontWeight = FontWeight.SemiBold
         )
         StatusRow(label = "Current selected network", value = selectedNetwork.label)
-        StatusRow(label = "LoRa status", value = simulationStatus(networkState.loraAvailable))
+        StatusRow(label = "LoRa status", value = loraStatus)
         StatusRow(label = "WiFi status", value = simulationStatus(networkState.wifiAvailable))
         StatusRow(label = "GSM status", value = simulationStatus(networkState.gsmAvailable))
         StatusRow(label = "Satellite link", value = simulationStatus(networkState.satelliteAvailable))
-        StatusRow(label = "Bluetooth status", value = "Not connected")
+        StatusRow(label = "Bluetooth status", value = bluetoothState.bluetoothStatus.label)
+        StatusRow(label = "Connected ESP32", value = bluetoothState.connectedNode ?: "None")
         StatusRow(label = "Message states", value = "Queued, Relayed, Delivered, Failed")
     }
 }
@@ -562,6 +608,132 @@ private fun StatusRow(label: String, value: String) {
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.End
         )
+    }
+}
+
+@Composable
+private fun BluetoothPanel(
+    bluetoothState: BluetoothState,
+    onBluetoothStateChange: (BluetoothState) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Bluetooth Pairing",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        StatusRow(label = "Bluetooth", value = bluetoothState.bluetoothStatus.label)
+        StatusRow(label = "Connected ESP32 Node", value = bluetoothState.connectedNode ?: "None")
+        StatusRow(label = "Pairing Status", value = bluetoothState.pairingStatus.label)
+        if (bluetoothLinkedToEsp32(bluetoothState)) {
+            Text(
+                text = "LoRa transport is simulated through paired ESP32.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    onBluetoothStateChange(
+                        bluetoothState.copy(
+                            discoveredNodes = fakeEsp32Nodes,
+                            selectedNode = bluetoothState.selectedNode ?: fakeEsp32Nodes.first(),
+                            connectedNode = null,
+                            pairingStatus = PairingStatus.Scanning
+                        )
+                    )
+                }
+            ) {
+                Text("Scan")
+            }
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = bluetoothState.discoveredNodes.isNotEmpty(),
+                onClick = {
+                    val node = bluetoothState.selectedNode ?: bluetoothState.discoveredNodes.firstOrNull()
+                    onBluetoothStateChange(
+                        if (node == null) {
+                            bluetoothState.copy(pairingStatus = PairingStatus.ConnectionFailed)
+                        } else {
+                            bluetoothState.copy(
+                                selectedNode = node,
+                                connectedNode = node,
+                                pairingStatus = PairingStatus.Paired
+                            )
+                        }
+                    )
+                }
+            ) {
+                Text("Pair")
+            }
+        }
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = bluetoothState.connectedNode != null || bluetoothState.pairingStatus != PairingStatus.NotPaired,
+            onClick = {
+                onBluetoothStateChange(
+                    bluetoothState.copy(
+                        connectedNode = null,
+                        pairingStatus = PairingStatus.NotPaired
+                    )
+                )
+            }
+        ) {
+            Text("Disconnect")
+        }
+        if (bluetoothState.discoveredNodes.isEmpty()) {
+            Text(
+                text = "No simulated ESP32 nodes scanned yet.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Text(
+                text = "Simulated ESP32 Nodes",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            bluetoothState.discoveredNodes.chunked(2).forEach { rowNodes ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    rowNodes.forEach { nodeName ->
+                        FilterChip(
+                            selected = bluetoothState.selectedNode == nodeName,
+                            onClick = {
+                                onBluetoothStateChange(
+                                    bluetoothState.copy(
+                                        selectedNode = nodeName,
+                                        pairingStatus = if (bluetoothState.connectedNode == nodeName) {
+                                            PairingStatus.Paired
+                                        } else {
+                                            PairingStatus.Scanning
+                                        }
+                                    )
+                                )
+                            },
+                            label = { Text(nodeName) }
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -639,10 +811,11 @@ private fun AvailabilityToggle(
 private fun MetricsPanel(
     selectedNetwork: NetworkMode,
     networkState: NetworkState,
+    bluetoothState: BluetoothState,
     localNode: SimNode,
     targetNode: SimNode
 ) {
-    val decision = decideRoute(selectedNetwork, networkState, localNode, targetNode)
+    val decision = decideRoute(selectedNetwork, networkState, bluetoothState, localNode, targetNode)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -817,6 +990,7 @@ private fun MessageBubble(message: ChatMessage) {
 private fun decideRoute(
     selectedNetwork: NetworkMode,
     networkState: NetworkState,
+    bluetoothState: BluetoothState,
     localNode: SimNode,
     targetNode: SimNode
 ): RouteDecision {
@@ -834,15 +1008,20 @@ private fun decideRoute(
 
     if (route != RouteLabel.None) {
         val preferred = preferredRoute(selectedNetwork)
+        val routeNote = if (route == RouteLabel.Lora && bluetoothLinkedToEsp32(bluetoothState)) {
+            " LoRa transport is simulated through paired ESP32 ${bluetoothState.connectedNode}."
+        } else {
+            ""
+        }
         return RouteDecision(
             route = route,
             status = MessageStatus.Queued,
             metrics = metricsFor(route, networkState, targetNode, path),
             path = path.map { it.name },
             note = if (route == preferred) {
-                "Preferred simulated route available end-to-end."
+                "Preferred simulated route available end-to-end.$routeNote"
             } else {
-                "Adaptive failover selected ${route.label} after preferred route became unavailable."
+                "Adaptive failover selected ${route.label} after preferred route became unavailable.$routeNote"
             }
         )
     }
@@ -923,6 +1102,21 @@ private fun nodeHasAnyAvailableRoute(node: SimNode, networkState: NetworkState):
         (node.wifiAvailable && networkState.wifiAvailable) ||
         (node.gsmAvailable && networkState.gsmAvailable) ||
         (node.satelliteAvailable && networkState.satelliteAvailable)
+}
+
+private fun bluetoothLinkedToEsp32(bluetoothState: BluetoothState): Boolean {
+    return bluetoothState.pairingStatus == PairingStatus.Paired && bluetoothState.connectedNode != null
+}
+
+private fun effectiveNetworkState(
+    networkState: NetworkState,
+    bluetoothState: BluetoothState
+): NetworkState {
+    return if (bluetoothLinkedToEsp32(bluetoothState)) {
+        networkState.copy(loraAvailable = true)
+    } else {
+        networkState
+    }
 }
 
 private fun nodeHealth(node: SimNode): String {

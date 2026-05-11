@@ -2,7 +2,7 @@
 
 This folder contains the Android Step 001 app shell for the PUP MANET Emergency Messaging System.
 
-The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It does not implement Bluetooth, GSM sending, WiFi backend communication, real LoRa, or Android-to-ESP32 hardware messaging yet.
+The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includes a placeholder Bluetooth pairing flow, but does not implement Bluetooth permissions, BLE, Classic Bluetooth, GSM sending, WiFi backend communication, real LoRa, or Android-to-ESP32 hardware messaging yet.
 
 ## Project Details
 
@@ -20,6 +20,8 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It does n
 - Multi-node MANET selectors for current local node and target destination node.
 - Simulated MANET node profiles for Node Alpha, Node Bravo, Node Charlie, Node Delta, and Gateway Node.
 - Status panel showing the current selected network and simulated communication states.
+- Bluetooth status panel showing simulated availability, connected ESP32 placeholder node, and pairing status.
+- Simulated Bluetooth pairing controls for scanning, selecting, pairing, and disconnecting fake ESP32 nodes.
 - Local simulation controls for LoRa, WiFi, GSM, and simulated satellite link availability.
 - Simulated metrics for RSSI, SNR, hop count, battery level, gateway proximity, and simulated satellite link status.
 - Scrollable Network, Status, Simulation Controls, Metrics, and Messages content.
@@ -74,11 +76,24 @@ The app includes a local-only simulation engine for route and failover testing.
 - Toggle controls can mark LoRa, WiFi, GSM, and the simulated satellite link available or unavailable.
 - The message composer is kept in the bottom bar while the rest of the simulation panels scroll.
 
+## Bluetooth Placeholder Simulation
+
+Android Step 005 adds a local-only Bluetooth placeholder flow for future ESP32 pairing.
+
+- Bluetooth status can display `Available`, `Disabled`, `Not supported`, or `Simulated`; the current implementation stays in `Simulated` mode.
+- Pairing status can show `Not paired`, `Scanning`, `Paired`, or `Connection failed`.
+- The fake ESP32 node list contains `ESP32-MANET-01`, `ESP32-MANET-02`, and `ESP32-MANET-03`.
+- Press **Scan** to reveal the simulated ESP32 nodes.
+- Select a fake node and press **Pair** to mark it as the connected ESP32 node.
+- Press **Disconnect** to clear the simulated connection.
+- When paired, LoRa is shown as `Bluetooth-linked to ESP32`, and route notes state that LoRa transport is simulated through the paired ESP32.
+- This flow does not request Android Bluetooth permissions and does not use BLE or Classic Bluetooth APIs.
+
 ## Current Limitations
 
 - Messages are stored only in local Compose state.
 - Route decisions and metrics are simulated only.
-- Bluetooth status is fixed at `Not connected`.
+- Bluetooth pairing is simulated only and uses fake ESP32 node names.
 - LoRa, WiFi, GSM, and simulated satellite statuses are controlled by local toggles only.
 - No messages leave the app.
 - No ESP32, Raspberry Pi, backend, or hardware integration is included.
