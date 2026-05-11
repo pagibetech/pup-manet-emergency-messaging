@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -88,6 +91,19 @@ enum class PairingStatus(val label: String) {
     ConnectionFailed("Connection failed")
 }
 
+enum class TransportOption(val label: String) {
+    Simulation("Simulation"),
+    BluetoothPlaceholder("Bluetooth Placeholder"),
+    WiFiPlaceholder("WiFi Placeholder"),
+    UsbSerialPlaceholder("USB Serial Placeholder")
+}
+
+enum class TransportConnectionState(val label: String) {
+    Connected("Connected"),
+    PlaceholderReady("Placeholder ready"),
+    Disconnected("Disconnected")
+}
+
 data class NetworkState(
     val loraAvailable: Boolean = true,
     val wifiAvailable: Boolean = true,
@@ -137,6 +153,21 @@ data class LoraManetPacket(
     val deliveryStatus: String
 )
 
+data class TransportStatus(
+    val activeImplementation: String,
+    val connectionState: String,
+    val lastPacketSent: String = "None",
+    val lastPacketReceived: String = "None"
+)
+
+interface ManetTransportInterface {
+    fun connect(): TransportStatus
+    fun disconnect(): TransportStatus
+    fun sendPacket(packet: LoraManetPacket): LoraManetPacket
+    fun receivePacket(): LoraManetPacket?
+    fun getTransportStatus(): TransportStatus
+}
+
 data class SimNode(
     val name: String,
     val batteryLevel: Int,
@@ -181,6 +212,65 @@ private val fakeEsp32Nodes = listOf(
     "ESP32-MANET-03"
 )
 
+private open class BaseTransport(
+    private val implementationName: String,
+    private val connectedLabel: String
+) : ManetTransportInterface {
+    private var connected = false
+    private var lastSentPacket: LoraManetPacket? = null
+    private var lastReceivedPacket: LoraManetPacket? = null
+
+    override fun connect(): TransportStatus {
+        connected = true
+        return getTransportStatus()
+    }
+
+    override fun disconnect(): TransportStatus {
+        connected = false
+        return getTransportStatus()
+    }
+
+    override fun sendPacket(packet: LoraManetPacket): LoraManetPacket {
+        lastSentPacket = packet
+        return packet
+    }
+
+    override fun receivePacket(): LoraManetPacket? {
+        val receivedPacket = lastSentPacket?.copy(deliveryStatus = MessageStatus.Delivered.label)
+        lastReceivedPacket = receivedPacket
+        return receivedPacket
+    }
+
+    override fun getTransportStatus(): TransportStatus {
+        return TransportStatus(
+            activeImplementation = implementationName,
+            connectionState = if (connected) connectedLabel else TransportConnectionState.Disconnected.label,
+            lastPacketSent = lastSentPacket?.packetId ?: "None",
+            lastPacketReceived = lastReceivedPacket?.packetId ?: "None"
+        )
+    }
+}
+
+private class SimulationTransport : BaseTransport(
+    implementationName = "SimulationTransport",
+    connectedLabel = TransportConnectionState.Connected.label
+)
+
+private class BluetoothTransportPlaceholder : BaseTransport(
+    implementationName = "BluetoothTransportPlaceholder",
+    connectedLabel = TransportConnectionState.PlaceholderReady.label
+)
+
+private class WiFiTransportPlaceholder : BaseTransport(
+    implementationName = "WiFiTransportPlaceholder",
+    connectedLabel = TransportConnectionState.PlaceholderReady.label
+)
+
+private class UsbSerialTransportPlaceholder : BaseTransport(
+    implementationName = "UsbSerialTransportPlaceholder",
+    connectedLabel = TransportConnectionState.PlaceholderReady.label
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -206,6 +296,11 @@ fun MessengerApp() {
     var targetNode by remember { mutableStateOf(simNodes.last()) }
     var draftMessage by remember { mutableStateOf("") }
     var nextMessageId by remember { mutableStateOf(1L) }
+    var selectedTransport by remember { mutableStateOf(TransportOption.Simulation) }
+    var activeTransport by remember {
+        mutableStateOf<ManetTransportInterface>(transportFor(TransportOption.Simulation))
+    }
+    var transportStatus by remember { mutableStateOf(activeTransport.connect()) }
     val messages = remember { mutableStateListOf<ChatMessage>() }
     val packetLog = remember { mutableStateListOf<LoraManetPacket>() }
     val queueScope = rememberCoroutineScope()
@@ -235,10 +330,13 @@ fun MessengerApp() {
                             targetNode = targetNode,
                             decision = decision
                         )
+                        val transportForMessage = activeTransport
+                        val sentPacket = transportForMessage.sendPacket(packet)
+                        transportStatus = transportForMessage.getTransportStatus()
                         messages.add(
                             packetToChatMessage(
                                 messageId = messageId,
-                                packet = packet,
+                                packet = sentPacket,
                                 decision = decision,
                                 sourceNodeName = localNode.name,
                                 targetNodeName = targetNode.name,
@@ -247,7 +345,7 @@ fun MessengerApp() {
                                 delayMs = delayMs
                             )
                         )
-                        packetLog.add(0, packet)
+                        packetLog.add(0, sentPacket)
                         if (packetLog.size > 8) {
                             packetLog.removeAt(packetLog.lastIndex)
                         }
@@ -271,7 +369,7 @@ fun MessengerApp() {
                                 delay(delayMs)
                                 val relayIndex = messages.indexOfFirst { it.id == messageId }
                                 if (relayIndex >= 0) {
-                                    val deliveredPacket = messages[relayIndex].packet.copy(
+                                    val deliveredPacket = (transportForMessage.receivePacket() ?: messages[relayIndex].packet).copy(
                                         deliveryStatus = MessageStatus.Delivered.label
                                     )
                                     messages[relayIndex] = messages[relayIndex].copy(
@@ -280,6 +378,9 @@ fun MessengerApp() {
                                         packet = deliveredPacket
                                     )
                                     updatePacketLog(packetLog, deliveredPacket)
+                                    if (activeTransport === transportForMessage) {
+                                        transportStatus = transportForMessage.getTransportStatus()
+                                    }
                                 }
                             }
                         }
@@ -356,6 +457,19 @@ fun MessengerApp() {
                     bluetoothState = bluetoothState,
                     localNode = localNode,
                     targetNode = targetNode
+                )
+            }
+            item {
+                TransportBridgePanel(
+                    selectedTransport = selectedTransport,
+                    transportStatus = transportStatus,
+                    onTransportSelected = { option ->
+                        activeTransport.disconnect()
+                        val nextTransport = transportFor(option)
+                        selectedTransport = option
+                        activeTransport = nextTransport
+                        transportStatus = nextTransport.connect()
+                    }
                 )
             }
             item {
@@ -882,6 +996,58 @@ private fun MetricsPanel(
 }
 
 @Composable
+private fun TransportBridgePanel(
+    selectedTransport: TransportOption,
+    transportStatus: TransportStatus,
+    onTransportSelected: (TransportOption) -> Unit
+) {
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Transport Bridge",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { dropdownExpanded = true }
+            ) {
+                Text(selectedTransport.label)
+            }
+            DropdownMenu(
+                expanded = dropdownExpanded,
+                onDismissRequest = { dropdownExpanded = false }
+            ) {
+                TransportOption.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.label) },
+                        onClick = {
+                            dropdownExpanded = false
+                            onTransportSelected(option)
+                        }
+                    )
+                }
+            }
+        }
+        StatusRow(label = "Active implementation", value = transportStatus.activeImplementation)
+        StatusRow(label = "Connection state", value = transportStatus.connectionState)
+        StatusRow(label = "Last packet sent", value = transportStatus.lastPacketSent)
+        StatusRow(label = "Last packet received", value = transportStatus.lastPacketReceived)
+    }
+}
+
+@Composable
 private fun PacketLogPanel(packets: List<LoraManetPacket>) {
     Column(
         modifier = Modifier
@@ -1165,6 +1331,15 @@ private fun packetIdFor(messageId: Long): String {
 
 private fun nodeId(node: SimNode): String {
     return node.name.uppercase(Locale.US).replace(" ", "_")
+}
+
+private fun transportFor(option: TransportOption): ManetTransportInterface {
+    return when (option) {
+        TransportOption.Simulation -> SimulationTransport()
+        TransportOption.BluetoothPlaceholder -> BluetoothTransportPlaceholder()
+        TransportOption.WiFiPlaceholder -> WiFiTransportPlaceholder()
+        TransportOption.UsbSerialPlaceholder -> UsbSerialTransportPlaceholder()
+    }
 }
 
 private fun decideRoute(

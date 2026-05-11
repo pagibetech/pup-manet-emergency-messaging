@@ -23,6 +23,9 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Bluetooth status panel showing simulated availability, connected ESP32 placeholder node, and pairing status.
 - Simulated Bluetooth pairing controls for scanning, selecting, pairing, and disconnecting fake ESP32 nodes.
 - LoRa/MANET packet abstraction for generated chat messages.
+- ESP32 communication bridge abstraction with simulation and placeholder transports.
+- Transport bridge status panel with active implementation, connection state, last sent packet, and last received packet.
+- Transport selection dropdown for Simulation, Bluetooth Placeholder, WiFi Placeholder, and USB Serial Placeholder.
 - Compact packet preview inside each message card.
 - Packet log panel showing recent generated packets, route, and delivery status.
 - Local simulation controls for LoRa, WiFi, GSM, and simulated satellite link availability.
@@ -111,12 +114,34 @@ Each generated packet includes:
 
 The packet remains local to the app. Message cards show a compact packet preview, and the packet log panel lists the latest generated packets with packet ID, route, and status.
 
+## ESP32 Communication Bridge Interface
+
+Android Step 007 adds a transport bridge abstraction for future ESP32 communication.
+
+The current app includes these local transport implementations:
+
+- `SimulationTransport`
+- `BluetoothTransportPlaceholder`
+- `WiFiTransportPlaceholder`
+- `UsbSerialTransportPlaceholder`
+
+Each implementation follows the same interface shape:
+
+- `connect()`
+- `disconnect()`
+- `sendPacket(packet)`
+- `receivePacket()`
+- `getTransportStatus()`
+
+`SimulationTransport` is the default active transport. Placeholder transports update local status only and do not perform real BLE, Classic Bluetooth, WiFi, USB serial, ESP32, or network communication. Packet sending is routed through the active transport abstraction before the existing local message simulation continues.
+
 ## Current Limitations
 
 - Messages are stored only in local Compose state.
 - Route decisions and metrics are simulated only.
 - Bluetooth pairing is simulated only and uses fake ESP32 node names.
 - LoRa/MANET packets are local data models only and are not sent to an ESP32.
+- Transport bridge implementations are local simulation/placeholder classes only.
 - LoRa, WiFi, GSM, and simulated satellite statuses are controlled by local toggles only.
 - No messages leave the app.
 - No ESP32, Raspberry Pi, backend, or hardware integration is included.
