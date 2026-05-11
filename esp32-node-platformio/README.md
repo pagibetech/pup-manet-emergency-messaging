@@ -91,6 +91,19 @@ ONLINE <NODE_ID>
 
 These mark a simulated neighbor offline or online for routing tests.
 
+Commands are parsed before the plain-text fallback path. For example, typing `STATUS` prints node state and counters; it is not routed as a message payload.
+
+`STATUS` prints:
+
+- Current node ID
+- Default destination
+- Online or offline state
+- Max hop count
+- Duplicate cache count
+- Message counter
+
+Plain text that does not match a command is still accepted as a fallback and routed to `DEFAULT_DEST_ID`. Prefer `SEND <DEST> <MESSAGE>` for routing tests.
+
 ## How to Test with Serial Monitor
 
 Build and upload a node:
@@ -136,8 +149,10 @@ ONLINE NODE_B
 Expected logs include:
 
 - `[RECEIVED]` when the node accepts a new message.
+- `[STATUS]` when the node prints current node ID, default destination, online/offline state, duplicate cache count, and message counter.
+- `[NEIGHBORS]` when the node prints the simulated neighbor table.
 - `[ROUTE]` when the node chooses the next hop.
 - `[FORWARDED]` when the node forwards a message.
 - `[DELIVERED]` and `[DELIVERY]` when the message reaches its destination.
 - `[DROPPED]` when a packet is rejected because of duplicate ID, offline state, missing route, or max hop count.
-
+- `[FALLBACK]` when non-command plain text is routed to the default destination.

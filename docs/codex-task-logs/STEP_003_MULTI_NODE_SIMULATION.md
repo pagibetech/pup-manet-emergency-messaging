@@ -11,6 +11,8 @@
 - Added simulated local and neighbor offline/online states.
 - Added Serial commands: `SEND <DEST> <MESSAGE>`, `STATUS`, `NEIGHBORS`, `OFFLINE`, and `ONLINE`.
 - Added optional helper commands: `OFFLINE <NODE_ID>` and `ONLINE <NODE_ID>` for neighbor failure testing.
+- Fixed Serial command parsing so recognized commands are handled before plain-text fallback routing.
+- Updated `STATUS` output to include current node ID, default destination, online/offline state, duplicate cache count, and message counter.
 - Added routing, forwarding path, delivery, and dropped-packet reason logs.
 - Updated `esp32-node-platformio/README.md`.
 
@@ -37,6 +39,8 @@ OFFLINE <NODE_ID>
 ONLINE <NODE_ID>
 ```
 
+Plain text is supported only as a fallback after command parsing. `STATUS`, `NEIGHBORS`, `OFFLINE`, `ONLINE`, and `SEND` are never treated as message payloads when entered as commands.
+
 ## Message Format
 
 ```json
@@ -62,4 +66,3 @@ In this simulation, `timestamp` remains seconds since node boot.
 - Continue with the next workbook-defined step only.
 - Keep this Serial-only simulation stable before adding future packet abstractions.
 - Do not add LoRa, Bluetooth, WiFi, GSM, or Android app logic until a later workbook step explicitly requires it.
-
