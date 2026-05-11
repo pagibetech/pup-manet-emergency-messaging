@@ -36,6 +36,7 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Compact field-use message cards with technical packet details moved to Logs.
 - Packet log panel showing recent generated packets, route, and delivery status.
 - Queue statistics panel showing queued/active, delivered, failed, and retry totals.
+- Validation checklist in Logs with basic validation and reset controls.
 - Local simulation controls for LoRa, WiFi, GSM, and simulated satellite link availability.
 - Simulated metrics for RSSI, SNR, hop count, gateway proximity, and simulated satellite link status.
 - Scrollable Network, Status, Simulation Controls, Metrics, and Messages content.
@@ -136,6 +137,27 @@ Android Step 011 adds a local multi-message queue and delivery state engine.
 - Packets track queued, relay, and delivery timestamps.
 - The Logs tab includes queue statistics for queued/active, delivered, failed, and retry totals.
 
+## Simulation Validation Checklist
+
+Android Step 012 adds an in-app validation section in the Logs tab.
+
+The checklist includes:
+
+- App opens on Chat tab
+- Message send works
+- Message queue states work
+- Routing decision updates
+- Failover works
+- Packet log updates
+- Event log updates
+- Transport bridge status updates
+- Bluetooth placeholder pairing works
+- No battery level appears
+- Simulation speed control works
+- Network toggles work
+
+Each item can show `Pass`, `Fail`, or `Not tested`. **Run Basic** checks what can be verified from current app state. Manual-only checks remain `Not tested` until the user performs the relevant action. **Reset** clears all checklist items back to `Not tested`.
+
 ## ESP32 Communication Bridge Interface
 
 Android Step 007 adds a transport bridge abstraction for future ESP32 communication.
@@ -202,7 +224,7 @@ The app opens on the Chat tab by default.
 - Nodes: network mode selection, current local node, target destination node, selected node information, and topology summary.
 - Route: adaptive routing decision details, route candidates, candidate visualization, and transport bridge.
 - Sim: Bluetooth pairing placeholder, simulation speed, network state, and LoRa/WiFi/GSM/Satellite toggles.
-- Logs: current status summary, metrics panel, queue statistics, packet log, and network event log.
+- Logs: current status summary, metrics panel, queue statistics, validation checklist, packet log, and network event log.
 
 The battery signal was removed from the Android UI and route scoring model. Routing now uses RSSI, SNR, hop count, node health, gateway availability, satellite availability, and transport availability.
 

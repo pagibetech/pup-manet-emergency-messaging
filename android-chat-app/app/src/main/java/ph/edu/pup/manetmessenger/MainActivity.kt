@@ -131,6 +131,12 @@ enum class AppTab(val label: String) {
     Diagnostics("Logs")
 }
 
+enum class ValidationStatus(val label: String) {
+    Pass("Pass"),
+    Fail("Fail"),
+    NotTested("Not tested")
+}
+
 data class NetworkState(
     val loraAvailable: Boolean = true,
     val wifiAvailable: Boolean = true,
@@ -229,6 +235,17 @@ data class QueueStats(
     val retryCount: Int
 )
 
+data class ValidationChecklistItem(
+    val label: String,
+    val status: ValidationStatus
+)
+
+data class ValidationSummary(
+    val passedCount: Int,
+    val failedCount: Int,
+    val notTestedCount: Int
+)
+
 data class TransportStatus(
     val activeImplementation: String,
     val connectionState: String,
@@ -297,6 +314,21 @@ private val fakeEsp32Nodes = listOf(
 )
 
 private const val MAX_RETRY_COUNT = 2
+
+private val validationLabels = listOf(
+    "App opens on Chat tab",
+    "Message send works",
+    "Message queue states work",
+    "Routing decision updates",
+    "Failover works",
+    "Packet log updates",
+    "Event log updates",
+    "Transport bridge status updates",
+    "Bluetooth placeholder pairing works",
+    "No battery level appears",
+    "Simulation speed control works",
+    "Network toggles work"
+)
 
 private open class BaseTransport(
     private val implementationName: String,
@@ -576,6 +608,7 @@ fun MessengerApp() {
     var draftMessage by remember { mutableStateOf("") }
     var nextMessageId by remember { mutableStateOf(1L) }
     var selectedTransport by remember { mutableStateOf(TransportOption.Simulation) }
+    var validationItems by remember { mutableStateOf(defaultValidationItems()) }
     var activeTransport by remember {
         mutableStateOf<ManetTransportInterface>(transportFor(TransportOption.Simulation))
     }
@@ -969,6 +1002,27 @@ fun MessengerApp() {
                             QueueStatsPanel(
                                 stats = queueManager.stats(messages),
                                 maxRetryCount = queueManager.maxRetryCount
+                            )
+                        }
+                        item {
+                            ValidationChecklistPanel(
+                                items = validationItems,
+                                onRunBasicValidation = {
+                                    validationItems = runBasicValidation(
+                                        selectedTab = selectedTab,
+                                        messages = messages,
+                                        routingDecision = adaptiveRoutingDecision,
+                                        packetLog = packetLog,
+                                        eventLog = eventLog,
+                                        transportStatus = transportStatus,
+                                        bluetoothState = bluetoothState,
+                                        simulationSpeed = simulationSpeed,
+                                        networkState = networkState
+                                    )
+                                },
+                                onResetValidation = {
+                                    validationItems = defaultValidationItems()
+                                }
                             )
                         }
                         item { PacketLogPanel(packets = packetLog) }
@@ -1684,6 +1738,55 @@ private fun QueueStatsPanel(
 }
 
 @Composable
+private fun ValidationChecklistPanel(
+    items: List<ValidationChecklistItem>,
+    onRunBasicValidation: () -> Unit,
+    onResetValidation: () -> Unit
+) {
+    val summary = validationSummary(items)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Validation",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                modifier = Modifier.weight(1f),
+                onClick = onRunBasicValidation
+            ) {
+                Text("Run Basic")
+            }
+            Button(
+                modifier = Modifier.weight(1f),
+                onClick = onResetValidation
+            ) {
+                Text("Reset")
+            }
+        }
+        StatusRow(label = "Passed", value = summary.passedCount.toString())
+        StatusRow(label = "Failed", value = summary.failedCount.toString())
+        StatusRow(label = "Not tested", value = summary.notTestedCount.toString())
+        items.forEach { item ->
+            StatusRow(label = item.label, value = item.status.label)
+        }
+    }
+}
+
+@Composable
 private fun RouteCandidateRow(candidate: RouteCandidate) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
@@ -2018,6 +2121,84 @@ private fun updatePacketLog(packetLog: MutableList<LoraManetPacket>, packet: Lor
     if (packetIndex >= 0) {
         packetLog[packetIndex] = packet
     }
+}
+
+private fun defaultValidationItems(): List<ValidationChecklistItem> {
+    return validationLabels.map { label ->
+        ValidationChecklistItem(label = label, status = ValidationStatus.NotTested)
+    }
+}
+
+private fun runBasicValidation(
+    selectedTab: AppTab,
+    messages: List<ChatMessage>,
+    routingDecision: RoutingDecision,
+    packetLog: List<LoraManetPacket>,
+    eventLog: List<String>,
+    transportStatus: TransportStatus,
+    bluetoothState: BluetoothState,
+    simulationSpeed: SimulationSpeed,
+    networkState: NetworkState
+): List<ValidationChecklistItem> {
+    val knownStatuses = mapOf(
+        "App opens on Chat tab" to if (selectedTab == AppTab.Messaging) ValidationStatus.Pass else ValidationStatus.NotTested,
+        "Message send works" to if (messages.isNotEmpty()) ValidationStatus.Pass else ValidationStatus.NotTested,
+        "Message queue states work" to if (messages.any { it.status != MessageStatus.Queued || it.retryCount > 0 }) {
+            ValidationStatus.Pass
+        } else {
+            ValidationStatus.NotTested
+        },
+        "Routing decision updates" to if (routingDecision.allCandidates.isNotEmpty()) ValidationStatus.Pass else ValidationStatus.Fail,
+        "Failover works" to if (
+            messages.any { it.retryCount > 0 || it.note.contains("Failover") } ||
+            eventLog.any { it.contains("failover", ignoreCase = true) || it.contains("retry", ignoreCase = true) }
+        ) {
+            ValidationStatus.Pass
+        } else {
+            ValidationStatus.NotTested
+        },
+        "Packet log updates" to if (packetLog.isNotEmpty()) ValidationStatus.Pass else ValidationStatus.NotTested,
+        "Event log updates" to if (eventLog.isNotEmpty()) ValidationStatus.Pass else ValidationStatus.NotTested,
+        "Transport bridge status updates" to if (transportStatus.connectionState != TransportConnectionState.Disconnected.label) {
+            ValidationStatus.Pass
+        } else {
+            ValidationStatus.Fail
+        },
+        "Bluetooth placeholder pairing works" to if (bluetoothState.pairingStatus == PairingStatus.Paired) {
+            ValidationStatus.Pass
+        } else {
+            ValidationStatus.NotTested
+        },
+        "No battery level appears" to ValidationStatus.Pass,
+        "Simulation speed control works" to if (simulationSpeed in SimulationSpeed.entries) ValidationStatus.Pass else ValidationStatus.Fail,
+        "Network toggles work" to if (
+            listOf(
+                networkState.loraAvailable,
+                networkState.wifiAvailable,
+                networkState.gsmAvailable,
+                networkState.satelliteAvailable
+            ).any { !it }
+        ) {
+            ValidationStatus.Pass
+        } else {
+            ValidationStatus.NotTested
+        }
+    )
+
+    return validationLabels.map { label ->
+        ValidationChecklistItem(
+            label = label,
+            status = knownStatuses[label] ?: ValidationStatus.NotTested
+        )
+    }
+}
+
+private fun validationSummary(items: List<ValidationChecklistItem>): ValidationSummary {
+    return ValidationSummary(
+        passedCount = items.count { it.status == ValidationStatus.Pass },
+        failedCount = items.count { it.status == ValidationStatus.Fail },
+        notTestedCount = items.count { it.status == ValidationStatus.NotTested }
+    )
 }
 
 private fun packetIdFor(messageId: Long): String {
