@@ -1,8 +1,8 @@
 # PUP MANET Messenger Android App
 
-This folder contains the Android Step 001 app shell for the PUP MANET Emergency Messaging System.
+This folder contains the Android app for the PUP MANET Emergency Messaging System.
 
-The app is Kotlin-based, uses Jetpack Compose, and is simulation-first. It includes a placeholder Bluetooth pairing flow, Android Bluetooth permission declarations/readiness controls, and a Classic Bluetooth SPP socket layer for paired ESP32 devices. It does not implement BLE, GSM sending, WiFi backend communication, real LoRa, or end-to-end Android-to-LoRa messaging yet.
+The app is Kotlin-based, uses Jetpack Compose, and is simulation-first. It includes a placeholder Bluetooth pairing flow, Android Bluetooth permission declarations/readiness controls, a Classic Bluetooth SPP socket layer for paired ESP32 devices, and the Step 023 Android-to-LoRa-to-Android test controls. It does not implement BLE, GSM sending, WiFi backend communication, Raspberry Pi gateway logic, or production chat delivery yet.
 
 ## Project Details
 
@@ -24,7 +24,7 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-first. It inclu
 - Simulated Bluetooth pairing controls for scanning, selecting, pairing, and disconnecting fake ESP32 nodes.
 - Bluetooth architecture layer with simulated lifecycle states, packet bridge counters, reconnect timing, and diagnostics.
 - Bluetooth permission readiness panel and runtime permission request action for the future Android-to-ESP32 Bluetooth transport.
-- Real Bluetooth socket panel for loading paired devices, opening an ESP32 SPP socket, sending a `BT-MANET-1.0` `HELLO`, and closing the socket.
+- Real Bluetooth socket panel for loading paired devices, opening an ESP32 SPP socket, sending a `BT-MANET-1.0` `HELLO`, running the live packet test, sending one LoRa bridge message, checking for one incoming bridged LoRa packet, and closing the socket.
 - ESP32 Bluetooth packet protocol preview with supported packet types, serialization placeholder, checksum placeholder, and validation status.
 - Bluetooth readiness and hardware test plan panels for ESP32 firmware, protocol test cases, architecture, and next implementation stages.
 - LoRa/MANET packet abstraction for generated chat messages.
@@ -134,7 +134,7 @@ The simulated lifecycle supports `Idle`, `Scanning`, `Pairing`, `Connecting`, `C
 
 Bluetooth diagnostics show the current paired ESP32, signal placeholder, packet counters, last reconnect attempt, connection uptime, retry counter, reconnect countdown, and timeout status. These diagnostics remain local Compose state only.
 
-Android Bluetooth permissions are declared and can be requested as of Step 019. Classic Bluetooth socket connection support is available as of Step 020. BLE APIs, ESP32 firmware logic, LoRa forwarding, and Raspberry Pi logic are not included in the Android app.
+Android Bluetooth permissions are declared and can be requested as of Step 019. Classic Bluetooth socket connection support is available as of Step 020. The Step 023 test can send one protocol message through an ESP32 LoRa bridge and read one incoming protocol packet on demand. BLE APIs, Raspberry Pi logic, and production background receive are not included in the Android app.
 
 ## Android Bluetooth Permissions
 
@@ -180,6 +180,34 @@ After pairing and connecting to the ESP32, press **Run Test** in the Real Blueto
 - simulation-safe `MESSAGE` with `MODE=AUTO` expects `ACK`
 
 The panel records live test status, passed count, failed count, last sent packet, last received packet, and last error. This confirms Android-to-ESP32 packet exchange only. ESP32-to-ESP32 LoRa messaging remains a later workbook step.
+
+## Android to LoRa to Android Test
+
+Android Step 023 adds a narrow end-to-end hardware test:
+
+```text
+Android Phone A <-> Bluetooth <-> NODE_A <-> LoRa <-> NODE_B <-> Bluetooth <-> Android Phone B
+```
+
+Beginner workflow:
+
+1. Flash `node_a_lora` to the ESP32 for Phone A.
+2. Flash `node_b_lora` to the ESP32 for Phone B.
+3. Pair Phone A with `PUP-MANET-NODE_A` in Android Bluetooth settings.
+4. Pair Phone B with `PUP-MANET-NODE_B` in Android Bluetooth settings.
+5. In the app on both phones, open the Sim tab.
+6. Press **Load Paired**, select the matching ESP32, then press **Connect ESP32**.
+7. On Phone A, press **Send LoRa**.
+8. On Phone B, press **Check In**.
+
+Expected result:
+
+- Phone A receives an ACK containing `FORWARDED_OVER_LORA`.
+- NODE_A prints `[LORA_TX]`.
+- NODE_B prints `[LORA_RX]` and `[BT_TX_FROM_LORA]`.
+- Phone B shows the incoming `BT-MANET-1.0` packet in Last received.
+
+The receiving phone reads one packet when **Check In** is pressed. Continuous background socket listening is intentionally left for a later workbook step.
 
 ## ESP32 Bluetooth Packet Protocol
 

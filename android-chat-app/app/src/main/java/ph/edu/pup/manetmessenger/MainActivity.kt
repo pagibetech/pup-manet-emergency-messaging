@@ -1647,6 +1647,84 @@ fun MessengerApp() {
                                         )
                                     }
                                 },
+                                onSendLoRaMessage = {
+                                    val destinationNode = peerNodeForConnectedEsp32(realBluetoothSocketState.connectedDevice)
+                                    val packet = createBluetoothProtocolPacket(
+                                        packetType = BluetoothProtocolPacketType.Message,
+                                        payload = "MODE=LORA;END_TO_END_TEST_MESSAGE",
+                                        destinationNode = destinationNode,
+                                        status = "QUEUED_FOR_LORA"
+                                    )
+                                    val line = compactSerializedPacketText(packet)
+
+                                    realBluetoothSocketState = realBluetoothSocketState.copy(
+                                        liveTestStatus = "Sending LoRa message to $destinationNode",
+                                        lastError = "None"
+                                    )
+
+                                    queueScope.launch {
+                                        val result = androidBluetoothSocketClient.sendLineAndWaitForResponse(line, 5000L)
+                                        realBluetoothSocketState = result.fold(
+                                            onSuccess = { exchange ->
+                                                val response = exchange.second
+                                                val forwarded = response?.contains("FORWARDED_OVER_LORA") == true
+                                                bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(packet.packetId)
+                                                if (forwarded) {
+                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_ACK")
+                                                }
+                                                realBluetoothSocketState.copy(
+                                                    liveTestStatus = if (forwarded) {
+                                                        "LoRa message forwarded to $destinationNode"
+                                                    } else {
+                                                        "LoRa message sent; check ESP32 logs"
+                                                    },
+                                                    lastSentLine = exchange.first,
+                                                    lastReceivedLine = response ?: "No response before timeout",
+                                                    lastError = if (forwarded) {
+                                                        "None"
+                                                    } else {
+                                                        "Expected FORWARDED_OVER_LORA ACK"
+                                                    }
+                                                )
+                                            },
+                                            onFailure = { error ->
+                                                realBluetoothSocketState.copy(
+                                                    liveTestStatus = "LoRa message failed",
+                                                    lastSentLine = line,
+                                                    lastError = error.message ?: "Unknown LoRa message error"
+                                                )
+                                            }
+                                        )
+                                    }
+                                },
+                                onReadIncomingPacket = {
+                                    queueScope.launch {
+                                        val received = androidBluetoothSocketClient.readAvailableLine()
+                                        realBluetoothSocketState = received.fold(
+                                            onSuccess = { line ->
+                                                if (line.isNullOrBlank()) {
+                                                    realBluetoothSocketState.copy(
+                                                        liveTestStatus = "No incoming packet yet",
+                                                        lastError = "No Bluetooth line available"
+                                                    )
+                                                } else {
+                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_INCOMING")
+                                                    realBluetoothSocketState.copy(
+                                                        liveTestStatus = "Incoming LoRa packet received",
+                                                        lastReceivedLine = line,
+                                                        lastError = "None"
+                                                    )
+                                                }
+                                            },
+                                            onFailure = { error ->
+                                                realBluetoothSocketState.copy(
+                                                    liveTestStatus = "Incoming read failed",
+                                                    lastError = error.message ?: "Unknown Bluetooth read error"
+                                                )
+                                            }
+                                        )
+                                    }
+                                },
                                 onRealSocketDisconnect = {
                                     androidBluetoothSocketClient.disconnect()
                                     realBluetoothSocketState = realBluetoothSocketState.copy(
@@ -2158,6 +2236,8 @@ private fun BluetoothPanel(
     onRealSocketConnect: () -> Unit,
     onRealSocketHello: () -> Unit,
     onRunLivePacketTest: () -> Unit,
+    onSendLoRaMessage: () -> Unit,
+    onReadIncomingPacket: () -> Unit,
     onRealSocketDisconnect: () -> Unit,
     onScan: () -> Unit,
     onDeviceSelected: (String) -> Unit,
@@ -2203,6 +2283,8 @@ private fun BluetoothPanel(
             onConnect = onRealSocketConnect,
             onSendHello = onRealSocketHello,
             onRunLivePacketTest = onRunLivePacketTest,
+            onSendLoRaMessage = onSendLoRaMessage,
+            onReadIncomingPacket = onReadIncomingPacket,
             onDisconnect = onRealSocketDisconnect
         )
         if (bluetoothLinkedToEsp32(bluetoothState)) {
@@ -2309,6 +2391,8 @@ private fun RealBluetoothSocketPanel(
     onConnect: () -> Unit,
     onSendHello: () -> Unit,
     onRunLivePacketTest: () -> Unit,
+    onSendLoRaMessage: () -> Unit,
+    onReadIncomingPacket: () -> Unit,
     onDisconnect: () -> Unit
 ) {
     Column(
@@ -2375,6 +2459,26 @@ private fun RealBluetoothSocketPanel(
                 Text("Run Test")
             }
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = socketState.connected,
+                onClick = onSendLoRaMessage
+            ) {
+                Text("Send LoRa")
+            }
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = socketState.connected,
+                onClick = onReadIncomingPacket
+            ) {
+                Text("Check In")
+            }
+        }
         Button(
             modifier = Modifier.fillMaxWidth(),
             enabled = socketState.connected,
@@ -2410,7 +2514,7 @@ private fun RealBluetoothSocketPanel(
             }
         }
         Text(
-            text = "Step 021 tests Android-to-ESP32 HELLO, STATUS, and simulation-safe MESSAGE packets. LoRa forwarding remains a later step.",
+            text = "Step 023 sends one Android MESSAGE through Bluetooth to the ESP32 LoRa bridge. Use two phones and two ESP32 nodes for Android to LoRa to Android testing.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -3627,19 +3731,28 @@ private fun packetPreviewText(packet: LoraManetPacket): String {
 
 private fun createBluetoothProtocolPacket(
     packetType: BluetoothProtocolPacketType,
-    payload: String
+    payload: String,
+    destinationNode: String = "ESP32_BRIDGE",
+    status: String = "REQUEST"
 ): BluetoothProtocolPacket {
     return BluetoothProtocolPacket(
         packetType = packetType,
         packetId = "BT-${packetType.wireName}-${System.currentTimeMillis()}",
         sourceNode = "ANDROID_APP",
-        destinationNode = "ESP32_BRIDGE",
+        destinationNode = destinationNode,
         payload = payload,
-        hopPath = listOf("ANDROID_APP", "ESP32_BRIDGE"),
+        hopPath = listOf("ANDROID_APP", destinationNode),
         retryCount = 0,
         timestamp = System.currentTimeMillis() / 1000L,
-        status = "REQUEST"
+        status = status
     )
+}
+
+private fun peerNodeForConnectedEsp32(connectedDevice: String?): String {
+    return when {
+        connectedDevice?.contains("NODE_B", ignoreCase = true) == true -> "NODE_A"
+        else -> "NODE_B"
+    }
 }
 
 private fun protocolPacketFromManetPacket(

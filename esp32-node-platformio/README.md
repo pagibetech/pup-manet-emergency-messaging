@@ -2,13 +2,15 @@
 
 This PlatformIO project contains the ESP32 node firmware for the PUP MANET Emergency Messaging System. It uses the Arduino framework, Serial input/output, an ESP32 Classic Bluetooth SPP service, and optional SX1278 LoRa live-test environments.
 
-WiFi, GSM, Android-side socket code, Raspberry Pi gateway logic, and end-to-end Android-to-LoRa chat delivery are outside this firmware step.
+WiFi, GSM, Raspberry Pi gateway logic, and production chat delivery are outside this firmware step.
 
 Step 017 adds a firmware-side parser for the future Android-to-ESP32 Bluetooth packet protocol. The parser is tested through Serial Monitor only; it does not enable Bluetooth or LoRa hardware communication yet.
 
 Step 018 enables the ESP32 Bluetooth service for the Android-to-ESP32 transport path. The service accepts newline-delimited `BT-MANET-1.0` JSON packets over Classic Bluetooth SPP, validates them with the Step 017 parser, and returns protocol `ACK`, `STATUS`, or `ERROR` packets. LoRa forwarding remains a simulation placeholder.
 
 Step 022 adds controlled SX1278 LoRa live-test environments for ESP32-to-ESP32 packet exchange. Simulation environments remain available and unchanged.
+
+Step 023 bridges Android `BT-MANET-1.0` `MESSAGE` packets from Classic Bluetooth SPP onto SX1278 LoRa when the message targets another ESP32 node. A receiving LoRa node forwards valid protocol packets to its connected Android Bluetooth client.
 
 ## Build Environments
 
@@ -143,11 +145,12 @@ Android Phone <-> Bluetooth <-> ESP32 <-> LoRa placeholder
 
 USB Serial remains a firmware debug/test path only. It is not part of Android scope.
 
-Bluetooth input expects one newline-delimited `BT-MANET-1.0` JSON packet per line. Supported Bluetooth behavior in Step 018:
+Bluetooth input expects one newline-delimited `BT-MANET-1.0` JSON packet per line. Supported Bluetooth behavior:
 
 - `HELLO` returns an `ACK`.
 - `STATUS` returns a `STATUS` response with node state, Bluetooth service state, client state, and supported manual modes.
-- `MESSAGE` validates the packet and returns an `ACK` with `QUEUED_FOR_SIMULATION`; LoRa forwarding is not started in Step 018.
+- `MESSAGE` validates the packet and returns an `ACK`.
+- In LoRa-enabled builds, `MESSAGE` packets with `MODE=LORA` or `MODE=AUTO` and a different ESP32 destination are forwarded over LoRa.
 - Invalid packets return an `ERROR`.
 
 Manual routing mode placeholders are recognized when the `MESSAGE` payload contains `MODE=AUTO`, `MODE=LORA`, `MODE=WIFI`, or `MODE=GSM`. Unsupported modes return an `ERROR`.
@@ -197,7 +200,27 @@ LORA_SEND NODE_B Hello from NODE_A
 
 5. ESP32 B should print `[LORA_RX]`, then `[RECEIVED]`, `[DELIVERED]`, and `[DELIVERY]`.
 
-This live test confirms ESP32-to-ESP32 LoRa packet exchange only. Android-to-LoRa chat delivery and multi-hop LoRa routing remain later workbook work.
+This live test confirms ESP32-to-ESP32 LoRa packet exchange.
+
+## End-to-End Android to LoRa to Android Test
+
+Step 023 uses two Android phones and two ESP32 LoRa nodes:
+
+```text
+Android Phone A <-> Bluetooth <-> NODE_A <-> LoRa <-> NODE_B <-> Bluetooth <-> Android Phone B
+```
+
+Physical workflow:
+
+1. Upload `node_a_lora` to the ESP32 paired with Android Phone A.
+2. Upload `node_b_lora` to the ESP32 paired with Android Phone B.
+3. Pair each phone with its own ESP32 in Android Bluetooth settings.
+4. In the Android app on both phones, open the Sim tab, press **Load Paired**, select the correct `PUP-MANET-NODE_*`, then press **Connect ESP32**.
+5. On Phone A, press **Send LoRa**.
+6. On Phone B, press **Check In**.
+7. NODE_A should log `[LORA_TX]`, NODE_B should log `[LORA_RX]` and `[BT_TX_FROM_LORA]`, and Phone B should show the incoming protocol packet.
+
+The receiving Android phone reads the incoming packet on demand with **Check In**. Continuous background receive remains reserved for a later workbook step.
 
 ## Neighbor Table
 

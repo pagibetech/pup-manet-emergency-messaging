@@ -591,6 +591,51 @@ void processIncomingMessage(const String &line) {
   routeMessage(message);
 }
 
+bool protocolPacketTargetsLocalNode(const ProtocolPacket &packet) {
+  return packet.destinationNode == String(SIM_NODE_ID) ||
+         packet.destinationNode == "ESP32_BRIDGE" ||
+         packet.destinationNode == "ANDROID_APP";
+}
+
+void processIncomingLoRaProtocolPacket(const String &line) {
+  const PacketParseResult result = parseProtocolPacket(line);
+  if (!result.valid) {
+    Serial.print("[LORA_PROTOCOL_ERROR] ");
+    Serial.println(result.errorReason);
+    return;
+  }
+
+  Serial.print("[LORA_PROTOCOL_RX] packet_id=");
+  Serial.print(result.packet.packetId);
+  Serial.print(" src=");
+  Serial.print(result.packet.sourceNode);
+  Serial.print(" dest=");
+  Serial.println(result.packet.destinationNode);
+
+  if (hasSeenMessage(result.packet.packetId)) {
+    Serial.print("[LORA_PROTOCOL_DUPLICATE] packet_id=");
+    Serial.println(result.packet.packetId);
+    return;
+  }
+  rememberMessage(result.packet.packetId);
+
+  if (!protocolPacketTargetsLocalNode(result.packet)) {
+    Serial.print("[LORA_PROTOCOL_IGNORED] destination=");
+    Serial.println(result.packet.destinationNode);
+    return;
+  }
+
+  const String serialized = serializeProtocolPacket(result.packet);
+  if (SerialBT.hasClient()) {
+    SerialBT.println(serialized);
+    Serial.print("[BT_TX_FROM_LORA] ");
+    Serial.println(serialized);
+  } else {
+    Serial.print("[BT_PENDING_FROM_LORA] no Android Bluetooth client for packet_id=");
+    Serial.println(result.packet.packetId);
+  }
+}
+
 void processIncomingLoRaLine(const String &line, int rssi, float snr) {
   ++loraRxCounter;
   Serial.print("[LORA_RX] rssi=");
@@ -601,7 +646,11 @@ void processIncomingLoRaLine(const String &line, int rssi, float snr) {
   Serial.println(line);
 
   if (line.startsWith("{")) {
-    processIncomingMessage(line);
+    if (line.indexOf("\"protocolVersion\"") >= 0) {
+      processIncomingLoRaProtocolPacket(line);
+    } else {
+      processIncomingMessage(line);
+    }
   } else {
     Serial.println("[LORA_ERROR] Expected simulation JSON packet from LoRa peer.");
   }
@@ -762,11 +811,23 @@ void processIncomingBluetoothProtocolPacket(const String &line) {
       return;
     }
 
+    const bool shouldForwardToLoRa =
+      (requestedMode == "LORA" || requestedMode == "AUTO") &&
+      result.packet.destinationNode != String(SIM_NODE_ID) &&
+      result.packet.destinationNode != "ESP32_BRIDGE";
+    bool forwardedToLoRa = false;
+
+    if (shouldForwardToLoRa) {
+      forwardedToLoRa = sendLoRaLine(serializeProtocolPacket(result.packet));
+    }
+
     String payload = "accepted=" + result.packet.packetId;
     payload += ";mode=" + requestedMode;
-    payload += ";loRa=SIMULATION_PLACEHOLDER";
-    payload += ";forwarding=NOT_STARTED_STEP_018";
-    sendBluetoothPacket(createAckPacket(result.packet, "QUEUED_FOR_SIMULATION", payload));
+    payload += ";destination=" + result.packet.destinationNode;
+    payload += ";loRa=" + String(loraReady ? "READY" : "SIMULATION_PLACEHOLDER");
+    payload += ";forwarding=";
+    payload += forwardedToLoRa ? "FORWARDED_OVER_LORA" : (shouldForwardToLoRa ? "LORA_NOT_READY" : "LOCAL_OR_SIMULATION_ONLY");
+    sendBluetoothPacket(createAckPacket(result.packet, forwardedToLoRa ? "FORWARDED_OVER_LORA" : "QUEUED_FOR_SIMULATION", payload));
     return;
   }
 
