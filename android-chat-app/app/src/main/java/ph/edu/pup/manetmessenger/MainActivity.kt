@@ -264,6 +264,7 @@ data class RealBluetoothSocketState(
     val liveTestStatus: String = "Not started",
     val liveTestPassed: Int = 0,
     val liveTestFailed: Int = 0,
+    val lastDemoMessage: String = "None",
     val lastSentLine: String = "None",
     val lastReceivedLine: String = "None",
     val lastError: String = "None"
@@ -1018,6 +1019,7 @@ fun MessengerApp() {
         mutableStateOf(currentBluetoothPermissionStatus(context))
     }
     var realBluetoothSocketState by remember { mutableStateOf(RealBluetoothSocketState()) }
+    var demoLoRaMessage by remember { mutableStateOf("Emergency message from Phone A") }
     var validationItems by remember { mutableStateOf(defaultValidationItems()) }
     var activeTransport by remember {
         mutableStateOf<ManetTransportInterface>(transportFor(TransportOption.Simulation))
@@ -1462,6 +1464,7 @@ fun MessengerApp() {
                                 bluetoothPacketBridge = bluetoothPacketBridge,
                                 bluetoothPermissionStatus = bluetoothPermissionStatus,
                                 realBluetoothSocketState = realBluetoothSocketState,
+                                demoLoRaMessage = demoLoRaMessage,
                                 onRequestBluetoothPermissions = {
                                     bluetoothPermissionLauncher.launch(bluetoothRuntimePermissions())
                                 },
@@ -1647,18 +1650,23 @@ fun MessengerApp() {
                                         )
                                     }
                                 },
+                                onDemoLoRaMessageChanged = { value ->
+                                    demoLoRaMessage = sanitizeDemoMessageText(value)
+                                },
                                 onSendLoRaMessage = {
                                     val destinationNode = peerNodeForConnectedEsp32(realBluetoothSocketState.connectedDevice)
+                                    val demoText = sanitizeDemoMessageText(demoLoRaMessage)
                                     val packet = createBluetoothProtocolPacket(
                                         packetType = BluetoothProtocolPacketType.Message,
-                                        payload = "MODE=LORA;END_TO_END_TEST_MESSAGE",
+                                        payload = "MODE=LORA;TEXT=$demoText",
                                         destinationNode = destinationNode,
                                         status = "QUEUED_FOR_LORA"
                                     )
                                     val line = compactSerializedPacketText(packet)
 
                                     realBluetoothSocketState = realBluetoothSocketState.copy(
-                                        liveTestStatus = "Sending LoRa message to $destinationNode",
+                                        liveTestStatus = "Sending \"$demoText\" to $destinationNode",
+                                        lastDemoMessage = demoText,
                                         lastError = "None"
                                     )
 
@@ -1674,7 +1682,7 @@ fun MessengerApp() {
                                                 }
                                                 realBluetoothSocketState.copy(
                                                     liveTestStatus = if (forwarded) {
-                                                        "LoRa message forwarded to $destinationNode"
+                                                        "Sent to $destinationNode: $demoText"
                                                     } else {
                                                         "LoRa message sent; check ESP32 logs"
                                                     },
@@ -1708,9 +1716,11 @@ fun MessengerApp() {
                                                         lastError = "No Bluetooth line available"
                                                     )
                                                 } else {
+                                                    val incomingText = readableDemoMessageFromProtocolLine(line)
                                                     bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_INCOMING")
                                                     realBluetoothSocketState.copy(
-                                                        liveTestStatus = "Incoming LoRa packet received",
+                                                        liveTestStatus = "Incoming: $incomingText",
+                                                        lastDemoMessage = incomingText,
                                                         lastReceivedLine = line,
                                                         lastError = "None"
                                                     )
@@ -2230,12 +2240,14 @@ private fun BluetoothPanel(
     bluetoothPacketBridge: BluetoothPacketBridge,
     bluetoothPermissionStatus: BluetoothPermissionStatus,
     realBluetoothSocketState: RealBluetoothSocketState,
+    demoLoRaMessage: String,
     onRequestBluetoothPermissions: () -> Unit,
     onRefreshBondedDevices: () -> Unit,
     onRealDeviceSelected: (String) -> Unit,
     onRealSocketConnect: () -> Unit,
     onRealSocketHello: () -> Unit,
     onRunLivePacketTest: () -> Unit,
+    onDemoLoRaMessageChanged: (String) -> Unit,
     onSendLoRaMessage: () -> Unit,
     onReadIncomingPacket: () -> Unit,
     onRealSocketDisconnect: () -> Unit,
@@ -2277,12 +2289,14 @@ private fun BluetoothPanel(
         )
         RealBluetoothSocketPanel(
             socketState = realBluetoothSocketState,
+            demoLoRaMessage = demoLoRaMessage,
             permissionsReady = bluetoothPermissionStatus.allRuntimeGranted,
             onRefreshBondedDevices = onRefreshBondedDevices,
             onDeviceSelected = onRealDeviceSelected,
             onConnect = onRealSocketConnect,
             onSendHello = onRealSocketHello,
             onRunLivePacketTest = onRunLivePacketTest,
+            onDemoLoRaMessageChanged = onDemoLoRaMessageChanged,
             onSendLoRaMessage = onSendLoRaMessage,
             onReadIncomingPacket = onReadIncomingPacket,
             onDisconnect = onRealSocketDisconnect
@@ -2385,12 +2399,14 @@ private fun BluetoothPanel(
 @Composable
 private fun RealBluetoothSocketPanel(
     socketState: RealBluetoothSocketState,
+    demoLoRaMessage: String,
     permissionsReady: Boolean,
     onRefreshBondedDevices: () -> Unit,
     onDeviceSelected: (String) -> Unit,
     onConnect: () -> Unit,
     onSendHello: () -> Unit,
     onRunLivePacketTest: () -> Unit,
+    onDemoLoRaMessageChanged: (String) -> Unit,
     onSendLoRaMessage: () -> Unit,
     onReadIncomingPacket: () -> Unit,
     onDisconnect: () -> Unit
@@ -2416,6 +2432,7 @@ private fun RealBluetoothSocketPanel(
         StatusRow(label = "Failed", value = socketState.liveTestFailed.toString())
         StatusRow(label = "Selected", value = socketState.selectedDevice ?: "None")
         StatusRow(label = "Connected", value = socketState.connectedDevice ?: "None")
+        StatusRow(label = "Demo message", value = socketState.lastDemoMessage)
         StatusRow(label = "Last sent", value = socketState.lastSentLine)
         StatusRow(label = "Last received", value = socketState.lastReceivedLine)
         StatusRow(label = "Last error", value = socketState.lastError)
@@ -2459,6 +2476,14 @@ private fun RealBluetoothSocketPanel(
                 Text("Run Test")
             }
         }
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = demoLoRaMessage,
+            onValueChange = onDemoLoRaMessageChanged,
+            enabled = socketState.connected,
+            singleLine = true,
+            label = { Text("Message to send") }
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2466,10 +2491,10 @@ private fun RealBluetoothSocketPanel(
         ) {
             Button(
                 modifier = Modifier.weight(1f),
-                enabled = socketState.connected,
+                enabled = socketState.connected && demoLoRaMessage.isNotBlank(),
                 onClick = onSendLoRaMessage
             ) {
-                Text("Send LoRa")
+                Text("Send Msg")
             }
             Button(
                 modifier = Modifier.weight(1f),
@@ -2514,7 +2539,7 @@ private fun RealBluetoothSocketPanel(
             }
         }
         Text(
-            text = "Step 023 sends one Android MESSAGE through Bluetooth to the ESP32 LoRa bridge. Use two phones and two ESP32 nodes for Android to LoRa to Android testing.",
+            text = "Demo flow: type a short message on Phone A, press Send Msg, then press Check In on Phone B.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -3753,6 +3778,34 @@ private fun peerNodeForConnectedEsp32(connectedDevice: String?): String {
         connectedDevice?.contains("NODE_B", ignoreCase = true) == true -> "NODE_A"
         else -> "NODE_B"
     }
+}
+
+private fun sanitizeDemoMessageText(value: String): String {
+    return value
+        .replace("|", "/")
+        .replace(";", ",")
+        .replace("\"", "'")
+        .replace("\\", "/")
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .take(64)
+}
+
+private fun readableDemoMessageFromProtocolLine(line: String): String {
+    val packet = deserializeBluetoothProtocolPacket(line) ?: return "Packet received"
+    return demoTextFromPayload(packet.payload)
+}
+
+private fun demoTextFromPayload(payload: String): String {
+    val marker = "TEXT="
+    val start = payload.indexOf(marker)
+    if (start < 0) {
+        return payload.ifBlank { "Message received" }
+    }
+
+    return payload.substring(start + marker.length)
+        .substringBefore(";")
+        .ifBlank { "Message received" }
 }
 
 private fun protocolPacketFromManetPacket(

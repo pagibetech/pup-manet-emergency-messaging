@@ -24,7 +24,7 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-first. It inclu
 - Simulated Bluetooth pairing controls for scanning, selecting, pairing, and disconnecting fake ESP32 nodes.
 - Bluetooth architecture layer with simulated lifecycle states, packet bridge counters, reconnect timing, and diagnostics.
 - Bluetooth permission readiness panel and runtime permission request action for the future Android-to-ESP32 Bluetooth transport.
-- Real Bluetooth socket panel for loading paired devices, opening an ESP32 SPP socket, sending a `BT-MANET-1.0` `HELLO`, running the live packet test, sending one LoRa bridge message, checking for one incoming bridged LoRa packet, and closing the socket.
+- Real Bluetooth socket panel for loading paired devices, opening an ESP32 SPP socket, sending a `BT-MANET-1.0` `HELLO`, running the live packet test, typing a short demo message, sending it through the LoRa bridge, checking for one incoming bridged LoRa packet, and closing the socket.
 - ESP32 Bluetooth packet protocol preview with supported packet types, serialization placeholder, checksum placeholder, and validation status.
 - Bluetooth readiness and hardware test plan panels for ESP32 firmware, protocol test cases, architecture, and next implementation stages.
 - LoRa/MANET packet abstraction for generated chat messages.
@@ -197,17 +197,50 @@ Beginner workflow:
 4. Pair Phone B with `PUP-MANET-NODE_B` in Android Bluetooth settings.
 5. In the app on both phones, open the Sim tab.
 6. Press **Load Paired**, select the matching ESP32, then press **Connect ESP32**.
-7. On Phone A, press **Send LoRa**.
-8. On Phone B, press **Check In**.
+7. On Phone A, type a short message in **Message to send**.
+8. On Phone A, press **Send Msg**.
+9. On Phone B, press **Check In**.
 
 Expected result:
 
-- Phone A receives an ACK containing `FORWARDED_OVER_LORA`.
+- Phone A shows `Sent to NODE_B: <message>`.
 - NODE_A prints `[LORA_TX]`.
 - NODE_B prints `[LORA_RX]` and `[BT_TX_FROM_LORA]`.
-- Phone B shows the incoming `BT-MANET-1.0` packet in Last received.
+- Phone B shows `Incoming: <message>`.
 
 The receiving phone reads one packet when **Check In** is pressed. Continuous background socket listening is intentionally left for a later workbook step.
+
+## Demo APK
+
+Build an installable debug APK from Android Studio with **Build > Build Bundle(s) / APK(s) > Build APK(s)**, or from terminal:
+
+```sh
+./gradlew :app:assembleDebug
+```
+
+The generated APK is:
+
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+For a client demo:
+
+1. Install the APK on both Android phones.
+2. Pair Phone A with `PUP-MANET-NODE_A`.
+3. Pair Phone B with `PUP-MANET-NODE_B`.
+4. Open the app on both phones.
+5. Sim tab -> **Load Paired** -> select the matching ESP32 -> **Connect ESP32**.
+6. Phone A: type the message and press **Send Msg**.
+7. Phone B: press **Check In**.
+
+Expected Phone B result:
+
+```text
+Incoming: <message>
+```
+
+The debug APK is intended for local prototype/demo installation only.
 
 ## ESP32 Bluetooth Packet Protocol
 
