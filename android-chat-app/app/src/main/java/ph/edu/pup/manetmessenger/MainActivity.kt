@@ -261,6 +261,9 @@ data class RealBluetoothSocketState(
     val selectedDevice: String? = null,
     val connectedDevice: String? = null,
     val socketStatus: String = "Not connected",
+    val liveTestStatus: String = "Not started",
+    val liveTestPassed: Int = 0,
+    val liveTestFailed: Int = 0,
     val lastSentLine: String = "None",
     val lastReceivedLine: String = "None",
     val lastError: String = "None"
@@ -660,6 +663,38 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
             }
         }
         Result.success(bytes.toByteArray().toString(Charsets.UTF_8))
+    }
+
+    suspend fun sendLineAndWaitForResponse(
+        line: String,
+        timeoutMs: Long = 3000L
+    ): Result<Pair<String, String?>> = withContext(Dispatchers.IO) {
+        val activeSocket = socket
+            ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
+
+        activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
+        activeSocket.outputStream.flush()
+
+        val deadline = System.currentTimeMillis() + timeoutMs
+        val input = activeSocket.inputStream
+        while (System.currentTimeMillis() < deadline) {
+            if (input.available() > 0) {
+                val bytes = mutableListOf<Byte>()
+                while (input.available() > 0) {
+                    val value = input.read()
+                    if (value < 0 || value.toChar() == '\n') {
+                        break
+                    }
+                    if (value.toChar() != '\r') {
+                        bytes.add(value.toByte())
+                    }
+                }
+                return@withContext Result.success(line to bytes.toByteArray().toString(Charsets.UTF_8))
+            }
+            Thread.sleep(100L)
+        }
+
+        Result.success(line to null)
     }
 
     fun disconnect() {
@@ -1535,6 +1570,83 @@ fun MessengerApp() {
                                         )
                                     }
                                 },
+                                onRunLivePacketTest = {
+                                    val tests = listOf(
+                                        createBluetoothProtocolPacket(
+                                            packetType = BluetoothProtocolPacketType.Hello,
+                                            payload = "HELLO"
+                                        ) to "ACK",
+                                        createBluetoothProtocolPacket(
+                                            packetType = BluetoothProtocolPacketType.Status,
+                                            payload = "REQUEST_STATUS"
+                                        ) to "STATUS",
+                                        createBluetoothProtocolPacket(
+                                            packetType = BluetoothProtocolPacketType.Message,
+                                            payload = "MODE=AUTO;LIVE_TEST_MESSAGE"
+                                        ) to "ACK"
+                                    )
+
+                                    realBluetoothSocketState = realBluetoothSocketState.copy(
+                                        liveTestStatus = "Running ${tests.size} packet tests",
+                                        liveTestPassed = 0,
+                                        liveTestFailed = 0,
+                                        lastError = "None"
+                                    )
+
+                                    queueScope.launch {
+                                        var passed = 0
+                                        var failed = 0
+                                        tests.forEachIndexed { index, test ->
+                                            val packet = test.first
+                                            val expectedType = test.second
+                                            val line = compactSerializedPacketText(packet)
+                                            val result = androidBluetoothSocketClient.sendLineAndWaitForResponse(line)
+
+                                            result.fold(
+                                                onSuccess = { exchange ->
+                                                    val response = exchange.second
+                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(packet.packetId)
+                                                    val matched = response?.contains("\"packetType\":\"$expectedType\"") == true
+                                                    if (matched) {
+                                                        passed += 1
+                                                        bluetoothPacketBridge = bluetoothPacketBridge.recordInbound(expectedType)
+                                                    } else {
+                                                        failed += 1
+                                                    }
+                                                    realBluetoothSocketState = realBluetoothSocketState.copy(
+                                                        liveTestStatus = "Test ${index + 1}/${tests.size}: ${packet.packetType.wireName}",
+                                                        liveTestPassed = passed,
+                                                        liveTestFailed = failed,
+                                                        lastSentLine = exchange.first,
+                                                        lastReceivedLine = response ?: "No response before timeout",
+                                                        lastError = if (matched) {
+                                                            "None"
+                                                        } else {
+                                                            "Expected $expectedType response"
+                                                        }
+                                                    )
+                                                },
+                                                onFailure = { error ->
+                                                    failed += 1
+                                                    realBluetoothSocketState = realBluetoothSocketState.copy(
+                                                        liveTestStatus = "Test ${index + 1}/${tests.size} failed",
+                                                        liveTestPassed = passed,
+                                                        liveTestFailed = failed,
+                                                        lastSentLine = line,
+                                                        lastError = error.message ?: "Unknown live test error"
+                                                    )
+                                                }
+                                            )
+                                        }
+                                        realBluetoothSocketState = realBluetoothSocketState.copy(
+                                            liveTestStatus = if (failed == 0) {
+                                                "Passed: Android to ESP32 live packet test"
+                                            } else {
+                                                "Needs attention: $failed test(s) failed"
+                                            }
+                                        )
+                                    }
+                                },
                                 onRealSocketDisconnect = {
                                     androidBluetoothSocketClient.disconnect()
                                     realBluetoothSocketState = realBluetoothSocketState.copy(
@@ -2045,6 +2157,7 @@ private fun BluetoothPanel(
     onRealDeviceSelected: (String) -> Unit,
     onRealSocketConnect: () -> Unit,
     onRealSocketHello: () -> Unit,
+    onRunLivePacketTest: () -> Unit,
     onRealSocketDisconnect: () -> Unit,
     onScan: () -> Unit,
     onDeviceSelected: (String) -> Unit,
@@ -2089,6 +2202,7 @@ private fun BluetoothPanel(
             onDeviceSelected = onRealDeviceSelected,
             onConnect = onRealSocketConnect,
             onSendHello = onRealSocketHello,
+            onRunLivePacketTest = onRunLivePacketTest,
             onDisconnect = onRealSocketDisconnect
         )
         if (bluetoothLinkedToEsp32(bluetoothState)) {
@@ -2194,6 +2308,7 @@ private fun RealBluetoothSocketPanel(
     onDeviceSelected: (String) -> Unit,
     onConnect: () -> Unit,
     onSendHello: () -> Unit,
+    onRunLivePacketTest: () -> Unit,
     onDisconnect: () -> Unit
 ) {
     Column(
@@ -2212,6 +2327,9 @@ private fun RealBluetoothSocketPanel(
             fontWeight = FontWeight.SemiBold
         )
         StatusRow(label = "Socket", value = socketState.socketStatus)
+        StatusRow(label = "Live test", value = socketState.liveTestStatus)
+        StatusRow(label = "Passed", value = socketState.liveTestPassed.toString())
+        StatusRow(label = "Failed", value = socketState.liveTestFailed.toString())
         StatusRow(label = "Selected", value = socketState.selectedDevice ?: "None")
         StatusRow(label = "Connected", value = socketState.connectedDevice ?: "None")
         StatusRow(label = "Last sent", value = socketState.lastSentLine)
@@ -2252,10 +2370,17 @@ private fun RealBluetoothSocketPanel(
             Button(
                 modifier = Modifier.weight(1f),
                 enabled = socketState.connected,
-                onClick = onDisconnect
+                onClick = onRunLivePacketTest
             ) {
-                Text("Close Socket")
+                Text("Run Test")
             }
+        }
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = socketState.connected,
+            onClick = onDisconnect
+        ) {
+            Text("Close Socket")
         }
         if (socketState.bondedDevices.isEmpty()) {
             Text(
@@ -2285,7 +2410,7 @@ private fun RealBluetoothSocketPanel(
             }
         }
         Text(
-            text = "Step 020 opens a Bluetooth SPP socket and sends BT-MANET-1.0 HELLO only. LoRa forwarding remains a later step.",
+            text = "Step 021 tests Android-to-ESP32 HELLO, STATUS, and simulation-safe MESSAGE packets. LoRa forwarding remains a later step.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -3125,7 +3250,8 @@ private fun BluetoothReadinessAndTestPlanPanel(
                 "SX1278 LoRa wiring pending" to "Pending",
                 "LoRa send/receive test pending" to "Pending",
                 "Android Bluetooth permissions" to "Ready",
-                "Android Bluetooth socket layer" to "Ready"
+                "Android Bluetooth socket layer" to "Ready",
+                "Android to ESP32 live packet test" to "Ready"
             )
         )
         ChecklistPanel(

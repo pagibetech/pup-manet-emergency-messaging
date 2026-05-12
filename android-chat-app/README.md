@@ -169,6 +169,18 @@ Workflow:
 
 This step only opens/closes the socket and sends the protocol `HELLO`. It does not implement message chat delivery over Bluetooth, real scanning/discovery, LoRa forwarding, or Android-to-ESP32 live packet test automation.
 
+## Android to ESP32 Live Packet Test
+
+Android Step 021 adds a guided live packet test on top of the Step 020 socket layer.
+
+After pairing and connecting to the ESP32, press **Run Test** in the Real Bluetooth Socket panel. The app sends these newline-delimited `BT-MANET-1.0` packets and checks for matching ESP32 responses:
+
+- `HELLO` expects `ACK`
+- `STATUS` expects `STATUS`
+- simulation-safe `MESSAGE` with `MODE=AUTO` expects `ACK`
+
+The panel records live test status, passed count, failed count, last sent packet, last received packet, and last error. This confirms Android-to-ESP32 packet exchange only. ESP32-to-ESP32 LoRa messaging remains a later workbook step.
+
 ## ESP32 Bluetooth Packet Protocol
 
 Android Step 015 defines the packet format that future Bluetooth communication will use between Android and ESP32.
@@ -205,7 +217,7 @@ The Route tab shows a protocol preview panel with:
 - String-to-packet deserialization placeholder.
 - Validation status for protocol version, required fields, supported packet type, and checksum placeholder.
 
-The checksum remains `checksum pending / simulated`; no CRC is implemented yet. Step 020 can send a `HELLO` packet over a Bluetooth socket, while chat `MESSAGE` sending remains simulation-only until a later workbook step.
+The checksum remains `checksum pending / simulated`; no CRC is implemented yet. Step 021 can send `HELLO`, `STATUS`, and simulation-safe `MESSAGE` packets over a Bluetooth socket, while chat delivery and LoRa forwarding remain simulation-only until later workbook steps.
 
 ## Bluetooth Readiness and Hardware Test Plan
 
@@ -226,7 +238,7 @@ Hardware architecture note:
 Android Phone <-> Bluetooth <-> ESP32 <-> LoRa <-> ESP32 <-> Bluetooth <-> Android Phone
 ```
 
-Readiness checks include Android Bluetooth architecture, packet protocol definition, ESP32 firmware packet parser, ESP32 Bluetooth service, SX1278 LoRa wiring, LoRa send/receive testing, Android Bluetooth permissions, and Android Bluetooth socket/service implementation. Android Bluetooth permissions are ready as of Step 019; the initial socket layer is ready as of Step 020.
+Readiness checks include Android Bluetooth architecture, packet protocol definition, ESP32 firmware packet parser, ESP32 Bluetooth service, SX1278 LoRa wiring, LoRa send/receive testing, Android Bluetooth permissions, Android Bluetooth socket/service implementation, and Android-to-ESP32 live packet testing. Android-to-ESP32 live packet testing is ready as of Step 021.
 
 ## LoRa/MANET Packet Abstraction
 
