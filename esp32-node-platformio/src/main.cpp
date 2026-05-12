@@ -9,6 +9,19 @@
 #define DEFAULT_DEST_ID "NODE_B"
 #endif
 
+const String PROTOCOL_VERSION = "BT-MANET-1.0";
+const String CHECKSUM_PLACEHOLDER = "checksum pending / simulated";
+const char *SUPPORTED_PACKET_TYPES[] = {
+  "HELLO",
+  "ACK",
+  "MESSAGE",
+  "ROUTE_DISCOVERY",
+  "ROUTE_REPLY",
+  "STATUS",
+  "ERROR"
+};
+constexpr size_t SUPPORTED_PACKET_TYPE_COUNT = sizeof(SUPPORTED_PACKET_TYPES) / sizeof(SUPPORTED_PACKET_TYPES[0]);
+
 struct SimMessage {
   String msgId;
   String src;
@@ -23,6 +36,26 @@ struct Neighbor {
   int rssi;
   unsigned long lastSeen;
   bool online;
+};
+
+struct ProtocolPacket {
+  String protocolVersion;
+  String packetType;
+  String packetId;
+  String sourceNode;
+  String destinationNode;
+  String payload;
+  String hopPath;
+  int retryCount;
+  unsigned long timestamp;
+  String status;
+  String checksum;
+};
+
+struct PacketParseResult {
+  bool valid;
+  String errorReason;
+  ProtocolPacket packet;
 };
 
 constexpr int MAX_HOP_COUNT = 5;
@@ -134,6 +167,15 @@ long extractJsonInteger(const String &json, const String &key, long fallback) {
   return json.substring(valueStart, valueEnd).toInt();
 }
 
+bool hasJsonField(const String &json, const String &key) {
+  const String marker = "\"" + key + "\"";
+  const int keyIndex = json.indexOf(marker);
+  if (keyIndex < 0) {
+    return false;
+  }
+  return json.indexOf(':', keyIndex + marker.length()) >= 0;
+}
+
 bool parseMessage(const String &line, SimMessage &message) {
   message.msgId = extractJsonString(line, "msg_id");
   message.src = extractJsonString(line, "src");
@@ -147,6 +189,91 @@ bool parseMessage(const String &line, SimMessage &message) {
          message.dest.length() > 0;
 }
 
+bool isSupportedPacketType(const String &packetType) {
+  for (size_t i = 0; i < SUPPORTED_PACKET_TYPE_COUNT; ++i) {
+    if (packetType == SUPPORTED_PACKET_TYPES[i]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+ProtocolPacket emptyProtocolPacket() {
+  ProtocolPacket packet;
+  packet.protocolVersion = "";
+  packet.packetType = "";
+  packet.packetId = "";
+  packet.sourceNode = "";
+  packet.destinationNode = "";
+  packet.payload = "";
+  packet.hopPath = "";
+  packet.retryCount = 0;
+  packet.timestamp = 0;
+  packet.status = "";
+  packet.checksum = "";
+  return packet;
+}
+
+PacketParseResult parseProtocolPacket(const String &line) {
+  PacketParseResult result;
+  result.valid = false;
+  result.errorReason = "";
+  result.packet = emptyProtocolPacket();
+
+  result.packet.protocolVersion = extractJsonString(line, "protocolVersion");
+  result.packet.packetType = extractJsonString(line, "packetType");
+  result.packet.packetId = extractJsonString(line, "packetId");
+  result.packet.sourceNode = extractJsonString(line, "sourceNode");
+  result.packet.destinationNode = extractJsonString(line, "destinationNode");
+  result.packet.payload = extractJsonString(line, "payload");
+  result.packet.hopPath = extractJsonString(line, "hopPath");
+  result.packet.retryCount = static_cast<int>(extractJsonInteger(line, "retryCount", 0));
+  result.packet.timestamp = static_cast<unsigned long>(extractJsonInteger(line, "timestamp", 0));
+  result.packet.status = extractJsonString(line, "status");
+  result.packet.checksum = extractJsonString(line, "checksum");
+
+  if (!hasJsonField(line, "protocolVersion") ||
+      !hasJsonField(line, "packetType") ||
+      !hasJsonField(line, "packetId") ||
+      !hasJsonField(line, "sourceNode") ||
+      !hasJsonField(line, "destinationNode") ||
+      !hasJsonField(line, "payload") ||
+      !hasJsonField(line, "hopPath") ||
+      !hasJsonField(line, "retryCount") ||
+      !hasJsonField(line, "timestamp") ||
+      !hasJsonField(line, "status") ||
+      !hasJsonField(line, "checksum") ||
+      result.packet.protocolVersion.length() == 0 ||
+      result.packet.packetType.length() == 0 ||
+      result.packet.packetId.length() == 0 ||
+      result.packet.sourceNode.length() == 0 ||
+      result.packet.destinationNode.length() == 0 ||
+      result.packet.status.length() == 0 ||
+      result.packet.checksum.length() == 0) {
+    result.errorReason = "missing required field";
+    return result;
+  }
+
+  if (result.packet.protocolVersion != PROTOCOL_VERSION) {
+    result.errorReason = "unsupported protocol version";
+    return result;
+  }
+
+  if (!isSupportedPacketType(result.packet.packetType)) {
+    result.errorReason = "unsupported packet type";
+    return result;
+  }
+
+  if (result.packet.checksum != CHECKSUM_PLACEHOLDER) {
+    result.errorReason = "checksum placeholder invalid";
+    return result;
+  }
+
+  result.valid = true;
+  result.errorReason = "valid";
+  return result;
+}
+
 String serializeMessage(const SimMessage &message) {
   String json = "{";
   json += "\"msg_id\":\"" + jsonEscape(message.msgId) + "\",";
@@ -155,6 +282,23 @@ String serializeMessage(const SimMessage &message) {
   json += "\"hop\":" + String(message.hop) + ",";
   json += "\"payload\":\"" + jsonEscape(message.payload) + "\",";
   json += "\"timestamp\":\"" + String(message.timestamp) + "\"";
+  json += "}";
+  return json;
+}
+
+String serializeProtocolPacket(const ProtocolPacket &packet) {
+  String json = "{";
+  json += "\"protocolVersion\":\"" + jsonEscape(packet.protocolVersion) + "\",";
+  json += "\"packetType\":\"" + jsonEscape(packet.packetType) + "\",";
+  json += "\"packetId\":\"" + jsonEscape(packet.packetId) + "\",";
+  json += "\"sourceNode\":\"" + jsonEscape(packet.sourceNode) + "\",";
+  json += "\"destinationNode\":\"" + jsonEscape(packet.destinationNode) + "\",";
+  json += "\"payload\":\"" + jsonEscape(packet.payload) + "\",";
+  json += "\"hopPath\":\"" + jsonEscape(packet.hopPath) + "\",";
+  json += "\"retryCount\":\"" + String(packet.retryCount) + "\",";
+  json += "\"timestamp\":\"" + String(packet.timestamp) + "\",";
+  json += "\"status\":\"" + jsonEscape(packet.status) + "\",";
+  json += "\"checksum\":\"" + jsonEscape(packet.checksum) + "\"";
   json += "}";
   return json;
 }
@@ -333,6 +477,154 @@ void processIncomingMessage(const String &line) {
   routeMessage(message);
 }
 
+ProtocolPacket createProtocolPacket(
+  const String &packetType,
+  const String &packetId,
+  const String &sourceNode,
+  const String &destinationNode,
+  const String &payload,
+  const String &hopPath,
+  int retryCount,
+  const String &status
+) {
+  ProtocolPacket packet;
+  packet.protocolVersion = PROTOCOL_VERSION;
+  packet.packetType = packetType;
+  packet.packetId = packetId;
+  packet.sourceNode = sourceNode;
+  packet.destinationNode = destinationNode;
+  packet.payload = payload;
+  packet.hopPath = hopPath;
+  packet.retryCount = retryCount;
+  packet.timestamp = simulationTimestamp();
+  packet.status = status;
+  packet.checksum = CHECKSUM_PLACEHOLDER;
+  return packet;
+}
+
+void printProtocolPacketFields(const ProtocolPacket &packet) {
+  Serial.print("  protocolVersion=");
+  Serial.println(packet.protocolVersion);
+  Serial.print("  packetType=");
+  Serial.println(packet.packetType);
+  Serial.print("  packetId=");
+  Serial.println(packet.packetId);
+  Serial.print("  sourceNode=");
+  Serial.println(packet.sourceNode);
+  Serial.print("  destinationNode=");
+  Serial.println(packet.destinationNode);
+  Serial.print("  payload=");
+  Serial.println(packet.payload);
+  Serial.print("  hopPath=");
+  Serial.println(packet.hopPath);
+  Serial.print("  retryCount=");
+  Serial.println(packet.retryCount);
+  Serial.print("  timestamp=");
+  Serial.println(packet.timestamp);
+  Serial.print("  status=");
+  Serial.println(packet.status);
+  Serial.print("  checksum=");
+  Serial.println(packet.checksum);
+}
+
+void printProtocolParseResult(const String &label, const String &rawPacket) {
+  Serial.print("[");
+  Serial.print(label);
+  Serial.println("]");
+  Serial.print("  raw=");
+  Serial.println(rawPacket);
+
+  const PacketParseResult result = parseProtocolPacket(rawPacket);
+  Serial.print("  validation=");
+  Serial.println(result.valid ? "VALID" : "INVALID");
+  Serial.print("  reason=");
+  Serial.println(result.errorReason);
+  printProtocolPacketFields(result.packet);
+
+  if (result.valid) {
+    Serial.print("  serialized=");
+    Serial.println(serializeProtocolPacket(result.packet));
+  }
+}
+
+void processIncomingProtocolPacket(const String &line) {
+  printProtocolParseResult("PROTOCOL_PARSE", line);
+}
+
+String sampleHelloPacket() {
+  ProtocolPacket packet = createProtocolPacket(
+    "HELLO",
+    "BT-HELLO-001",
+    "ANDROID_APP",
+    String(SIM_NODE_ID),
+    "HELLO",
+    "ANDROID_APP>" + String(SIM_NODE_ID),
+    0,
+    "PENDING_ACK"
+  );
+  return serializeProtocolPacket(packet);
+}
+
+String sampleMessagePacket() {
+  ProtocolPacket packet = createProtocolPacket(
+    "MESSAGE",
+    "BT-MSG-001",
+    "ANDROID_APP",
+    String(DEFAULT_DEST_ID),
+    "Emergency test message",
+    "ANDROID_APP>" + String(SIM_NODE_ID) + ">" + String(DEFAULT_DEST_ID),
+    0,
+    "QUEUED"
+  );
+  return serializeProtocolPacket(packet);
+}
+
+String sampleStatusPacket() {
+  ProtocolPacket packet = createProtocolPacket(
+    "STATUS",
+    "BT-STATUS-001",
+    "ANDROID_APP",
+    String(SIM_NODE_ID),
+    "REQUEST_STATUS",
+    "ANDROID_APP>" + String(SIM_NODE_ID),
+    0,
+    "REQUEST"
+  );
+  return serializeProtocolPacket(packet);
+}
+
+String sampleBadPacket() {
+  ProtocolPacket packet = createProtocolPacket(
+    "UNKNOWN",
+    "BT-BAD-001",
+    "ANDROID_APP",
+    String(SIM_NODE_ID),
+    "BAD_PACKET",
+    "ANDROID_APP>" + String(SIM_NODE_ID),
+    0,
+    "REQUEST"
+  );
+  packet.protocolVersion = "BT-MANET-0.0";
+  packet.checksum = "invalid checksum";
+  return serializeProtocolPacket(packet);
+}
+
+void printProtocolSpec() {
+  Serial.println("[PROTOCOL]");
+  Serial.print("  protocolVersion=");
+  Serial.println(PROTOCOL_VERSION);
+  Serial.print("  checksum_placeholder=");
+  Serial.println(CHECKSUM_PLACEHOLDER);
+  Serial.println("  supported_packet_types=");
+  for (size_t i = 0; i < SUPPORTED_PACKET_TYPE_COUNT; ++i) {
+    Serial.print("    - ");
+    Serial.println(SUPPORTED_PACKET_TYPES[i]);
+  }
+  Serial.println("  required_fields=protocolVersion, packetType, packetId, sourceNode, destinationNode, payload, hopPath, retryCount, timestamp, status, checksum");
+  Serial.println("  sample_message=");
+  Serial.println(sampleMessagePacket());
+}
+
 void sendCommand(const String &line) {
   String trimmedLine = line;
   trimmedLine.trim();
@@ -445,7 +737,11 @@ void processSerialLine(String line) {
   }
 
   if (line.startsWith("{")) {
-    processIncomingMessage(line);
+    if (line.indexOf("\"protocolVersion\"") >= 0) {
+      processIncomingProtocolPacket(line);
+    } else {
+      processIncomingMessage(line);
+    }
     return;
   }
 
@@ -461,6 +757,16 @@ void processSerialLine(String line) {
     setOfflineCommand(toUpperCopy(line));
   } else if (command == "ONLINE") {
     setOnlineCommand(toUpperCopy(line));
+  } else if (command == "PARSE_HELLO") {
+    printProtocolParseResult("PARSE_HELLO", sampleHelloPacket());
+  } else if (command == "PARSE_MESSAGE") {
+    printProtocolParseResult("PARSE_MESSAGE", sampleMessagePacket());
+  } else if (command == "PARSE_STATUS") {
+    printProtocolParseResult("PARSE_STATUS", sampleStatusPacket());
+  } else if (command == "PARSE_BAD_PACKET") {
+    printProtocolParseResult("PARSE_BAD_PACKET", sampleBadPacket());
+  } else if (command == "PRINT_PROTOCOL") {
+    printProtocolSpec();
   } else {
     sendPlainTextFallback(line);
   }
@@ -476,7 +782,9 @@ void printStartupBanner() {
   Serial.println("Simulation only: Serial input/output represents MANET packets.");
   Serial.println("Commands: SEND <DEST> <MESSAGE>, STATUS, NEIGHBORS, OFFLINE, ONLINE");
   Serial.println("Optional neighbor state commands: OFFLINE <NODE_ID>, ONLINE <NODE_ID>");
+  Serial.println("Protocol parser commands: PARSE_HELLO, PARSE_MESSAGE, PARSE_STATUS, PARSE_BAD_PACKET, PRINT_PROTOCOL");
   Serial.println("Paste a JSON message to simulate receiving a packet from another node.");
+  Serial.println("Paste a BT-MANET-1.0 protocol JSON packet to test parser validation.");
   Serial.println();
 }
 

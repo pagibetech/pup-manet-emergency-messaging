@@ -4,6 +4,8 @@ This PlatformIO project contains the ESP32 simulation node for the PUP MANET Eme
 
 No LoRa, Bluetooth, WiFi, GSM, Android, or real hardware communication logic is included in this step.
 
+Step 017 adds a firmware-side parser for the future Android-to-ESP32 Bluetooth packet protocol. The parser is tested through Serial Monitor only; it does not enable Bluetooth or LoRa hardware communication yet.
+
 ## Build Environments
 
 `platformio.ini` defines one environment per simulated node:
@@ -50,6 +52,49 @@ Messages use this JSON format:
 
 The timestamp is a simulation timestamp based on seconds since the node booted.
 
+## Bluetooth Packet Protocol Parser
+
+The firmware includes a parser and serializer for the Android-defined `BT-MANET-1.0` protocol.
+
+Supported packet types:
+
+- `HELLO`
+- `ACK`
+- `MESSAGE`
+- `ROUTE_DISCOVERY`
+- `ROUTE_REPLY`
+- `STATUS`
+- `ERROR`
+
+Protocol packet fields:
+
+- `protocolVersion`
+- `packetType`
+- `packetId`
+- `sourceNode`
+- `destinationNode`
+- `payload`
+- `hopPath`
+- `retryCount`
+- `timestamp`
+- `status`
+- `checksum`
+
+The checksum remains a placeholder and must equal:
+
+```text
+checksum pending / simulated
+```
+
+The parser validates:
+
+- Required fields
+- Protocol version
+- Supported packet type
+- Checksum placeholder
+
+Valid packets are printed with parsed fields and a serialized round-trip output. Invalid packets print a validation failure and error reason.
+
 ## Neighbor Table
 
 Each node starts with two simulated neighbors. A neighbor record includes:
@@ -90,6 +135,24 @@ ONLINE <NODE_ID>
 ```
 
 These mark a simulated neighbor offline or online for routing tests.
+
+Protocol parser test commands:
+
+```text
+PARSE_HELLO
+PARSE_MESSAGE
+PARSE_STATUS
+PARSE_BAD_PACKET
+PRINT_PROTOCOL
+```
+
+Expected parser behavior:
+
+- `PARSE_HELLO` validates a future Android HELLO packet.
+- `PARSE_MESSAGE` validates a future Android MESSAGE packet intended for ESP32-to-LoRa forwarding.
+- `PARSE_STATUS` validates a future Android STATUS request.
+- `PARSE_BAD_PACKET` rejects an invalid protocol version, packet type, and checksum placeholder.
+- `PRINT_PROTOCOL` prints the current protocol version, supported packet types, required fields, checksum placeholder, and a sample MESSAGE packet.
 
 Commands are parsed before the plain-text fallback path. For example, typing `STATUS` prints node state and counters; it is not routed as a message payload.
 
@@ -156,3 +219,13 @@ Expected logs include:
 - `[DELIVERED]` and `[DELIVERY]` when the message reaches its destination.
 - `[DROPPED]` when a packet is rejected because of duplicate ID, offline state, missing route, or max hop count.
 - `[FALLBACK]` when non-command plain text is routed to the default destination.
+- `[PROTOCOL_PARSE]`, `[PARSE_HELLO]`, `[PARSE_MESSAGE]`, `[PARSE_STATUS]`, or `[PARSE_BAD_PACKET]` when the protocol parser is tested.
+- `[PROTOCOL]` when `PRINT_PROTOCOL` prints the firmware protocol specification.
+
+## Current Limitations
+
+- Bluetooth is not enabled yet.
+- LoRa packet sending is not enabled yet.
+- Parser tests use Serial Monitor only.
+- Parsed `MESSAGE` packets are not forwarded to LoRa in this step.
+- The checksum is a placeholder only; no CRC is implemented yet.
