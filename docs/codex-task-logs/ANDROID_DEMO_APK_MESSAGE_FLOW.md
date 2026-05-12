@@ -18,6 +18,7 @@ This does not add a new transport or skip ahead in the workbook. It makes the cu
   - `MODE=LORA;TEXT=<message>`
 - Added a readable received status on Phone B:
   - `Incoming: <message>`
+- Updated **Check In** to wait up to 5 seconds for the incoming Bluetooth line instead of checking only once.
 - Kept the raw protocol packet in **Last received** for technical evidence.
 
 ## Scope Preserved
@@ -50,6 +51,12 @@ android-chat-app/demo-apk/PUP-MANET-Messenger-Step023-Demo-debug.apk
 APK size:
 
 - `9.5M`
+
+Current APK SHA-256:
+
+```text
+93631c38921f4804feefa348403bd8027a65d0426cc679b23f911137642c7306
+```
 
 ## Demo Procedure
 

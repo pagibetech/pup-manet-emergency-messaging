@@ -666,6 +666,32 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
         Result.success(bytes.toByteArray().toString(Charsets.UTF_8))
     }
 
+    suspend fun waitForIncomingLine(timeoutMs: Long = 5000L): Result<String?> = withContext(Dispatchers.IO) {
+        val activeSocket = socket
+            ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
+
+        val deadline = System.currentTimeMillis() + timeoutMs
+        val input = activeSocket.inputStream
+        while (System.currentTimeMillis() < deadline) {
+            if (input.available() > 0) {
+                val bytes = mutableListOf<Byte>()
+                while (input.available() > 0) {
+                    val value = input.read()
+                    if (value < 0 || value.toChar() == '\n') {
+                        break
+                    }
+                    if (value.toChar() != '\r') {
+                        bytes.add(value.toByte())
+                    }
+                }
+                return@withContext Result.success(bytes.toByteArray().toString(Charsets.UTF_8))
+            }
+            Thread.sleep(100L)
+        }
+
+        Result.success(null)
+    }
+
     suspend fun sendLineAndWaitForResponse(
         line: String,
         timeoutMs: Long = 3000L
@@ -1706,14 +1732,18 @@ fun MessengerApp() {
                                     }
                                 },
                                 onReadIncomingPacket = {
+                                    realBluetoothSocketState = realBluetoothSocketState.copy(
+                                        liveTestStatus = "Checking for incoming message...",
+                                        lastError = "None"
+                                    )
                                     queueScope.launch {
-                                        val received = androidBluetoothSocketClient.readAvailableLine()
+                                        val received = androidBluetoothSocketClient.waitForIncomingLine(5000L)
                                         realBluetoothSocketState = received.fold(
                                             onSuccess = { line ->
                                                 if (line.isNullOrBlank()) {
                                                     realBluetoothSocketState.copy(
                                                         liveTestStatus = "No incoming packet yet",
-                                                        lastError = "No Bluetooth line available"
+                                                        lastError = "No Bluetooth line within 5 seconds"
                                                     )
                                                 } else {
                                                     val incomingText = readableDemoMessageFromProtocolLine(line)
