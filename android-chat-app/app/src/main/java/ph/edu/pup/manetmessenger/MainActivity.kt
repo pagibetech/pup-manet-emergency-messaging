@@ -1475,7 +1475,7 @@ fun MessengerApp() {
                                                     selectedDevice = realBluetoothSocketState.selectedDevice
                                                         ?: devices.firstOrNull(),
                                                     socketStatus = if (devices.isEmpty()) {
-                                                        "No paired ESP32 devices found"
+                                                        "No paired devices found"
                                                     } else {
                                                         "Paired devices loaded"
                                                     },
@@ -2267,7 +2267,7 @@ private fun BluetoothPanel(
         }
         if (bluetoothDeviceState.discoveredDevices.isEmpty()) {
             Text(
-                text = "No simulated ESP32 nodes scanned yet.",
+                text = "No simulated ESP32 nodes scanned yet. These controls are simulation-only and do not connect to real Bluetooth hardware.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2384,7 +2384,7 @@ private fun RealBluetoothSocketPanel(
         }
         if (socketState.bondedDevices.isEmpty()) {
             Text(
-                text = "Pair the ESP32 in Android Bluetooth settings first, then load paired devices here.",
+                text = "Real Bluetooth requires a physical Android phone. Pair the ESP32 in Android Bluetooth settings first, then load paired devices here. Android Emulator usually cannot use real Bluetooth SPP.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
