@@ -1,10 +1,12 @@
 # ESP32 Multi-Node Simulation
 
-This PlatformIO project contains the ESP32 simulation node for the PUP MANET Emergency Messaging System. It uses the Arduino framework and Serial input/output to simulate MANET packet handling between `NODE_A`, `NODE_B`, and `NODE_C`.
+This PlatformIO project contains the ESP32 simulation node for the PUP MANET Emergency Messaging System. It uses the Arduino framework, Serial input/output, and an ESP32 Classic Bluetooth SPP service to simulate MANET packet handling between `NODE_A`, `NODE_B`, and `NODE_C`.
 
-No LoRa, Bluetooth, WiFi, GSM, Android, or real hardware communication logic is included in this step.
+No LoRa, WiFi, GSM, Android socket code, or real LoRa hardware communication logic is included in this step.
 
 Step 017 adds a firmware-side parser for the future Android-to-ESP32 Bluetooth packet protocol. The parser is tested through Serial Monitor only; it does not enable Bluetooth or LoRa hardware communication yet.
+
+Step 018 enables the ESP32 Bluetooth service for the Android-to-ESP32 transport path. The service accepts newline-delimited `BT-MANET-1.0` JSON packets over Classic Bluetooth SPP, validates them with the Step 017 parser, and returns protocol `ACK`, `STATUS`, or `ERROR` packets. LoRa forwarding remains a simulation placeholder.
 
 ## Build Environments
 
@@ -95,6 +97,33 @@ The parser validates:
 
 Valid packets are printed with parsed fields and a serialized round-trip output. Invalid packets print a validation failure and error reason.
 
+## ESP32 Bluetooth Service
+
+Each node starts a Classic Bluetooth SPP service at boot:
+
+```text
+PUP-MANET-NODE_A
+PUP-MANET-NODE_B
+PUP-MANET-NODE_C
+```
+
+Use the service for the official Android-to-ESP32 path:
+
+```text
+Android Phone <-> Bluetooth <-> ESP32 <-> LoRa placeholder
+```
+
+USB Serial remains a firmware debug/test path only. It is not part of Android scope.
+
+Bluetooth input expects one newline-delimited `BT-MANET-1.0` JSON packet per line. Supported Bluetooth behavior in Step 018:
+
+- `HELLO` returns an `ACK`.
+- `STATUS` returns a `STATUS` response with node state, Bluetooth service state, client state, and supported manual modes.
+- `MESSAGE` validates the packet and returns an `ACK` with `QUEUED_FOR_SIMULATION`; LoRa forwarding is not started in Step 018.
+- Invalid packets return an `ERROR`.
+
+Manual routing mode placeholders are recognized when the `MESSAGE` payload contains `MODE=AUTO`, `MODE=LORA`, `MODE=WIFI`, or `MODE=GSM`. Unsupported modes return an `ERROR`.
+
 ## Neighbor Table
 
 Each node starts with two simulated neighbors. A neighbor record includes:
@@ -144,6 +173,7 @@ PARSE_MESSAGE
 PARSE_STATUS
 PARSE_BAD_PACKET
 PRINT_PROTOCOL
+BT_STATUS
 ```
 
 Expected parser behavior:
@@ -153,6 +183,7 @@ Expected parser behavior:
 - `PARSE_STATUS` validates a future Android STATUS request.
 - `PARSE_BAD_PACKET` rejects an invalid protocol version, packet type, and checksum placeholder.
 - `PRINT_PROTOCOL` prints the current protocol version, supported packet types, required fields, checksum placeholder, and a sample MESSAGE packet.
+- `BT_STATUS` prints the Classic Bluetooth SPP service name, service state, client state, protocol version, Android transport rule, LoRa placeholder, and manual mode placeholders.
 
 Commands are parsed before the plain-text fallback path. For example, typing `STATUS` prints node state and counters; it is not routed as a message payload.
 
@@ -221,11 +252,12 @@ Expected logs include:
 - `[FALLBACK]` when non-command plain text is routed to the default destination.
 - `[PROTOCOL_PARSE]`, `[PARSE_HELLO]`, `[PARSE_MESSAGE]`, `[PARSE_STATUS]`, or `[PARSE_BAD_PACKET]` when the protocol parser is tested.
 - `[PROTOCOL]` when `PRINT_PROTOCOL` prints the firmware protocol specification.
+- `[BT_SERVICE]` when the Bluetooth service starts or `BT_STATUS` is printed.
+- `[BT_RX]` and `[BT_TX]` when packets are received from or returned to a Bluetooth client.
 
 ## Current Limitations
 
-- Bluetooth is not enabled yet.
 - LoRa packet sending is not enabled yet.
-- Parser tests use Serial Monitor only.
-- Parsed `MESSAGE` packets are not forwarded to LoRa in this step.
+- Android Bluetooth permissions and Android socket code are not implemented in this firmware step.
+- Parsed Bluetooth `MESSAGE` packets are acknowledged as queued for simulation only; they are not forwarded to real LoRa in Step 018.
 - The checksum is a placeholder only; no CRC is implemented yet.

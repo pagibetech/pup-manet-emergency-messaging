@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <BluetoothSerial.h>
 #include <ctype.h>
 
 #ifndef SIM_NODE_ID
@@ -11,6 +12,7 @@
 
 const String PROTOCOL_VERSION = "BT-MANET-1.0";
 const String CHECKSUM_PLACEHOLDER = "checksum pending / simulated";
+const String BLUETOOTH_SERVICE_PREFIX = "PUP-MANET-";
 const char *SUPPORTED_PACKET_TYPES[] = {
   "HELLO",
   "ACK",
@@ -21,6 +23,13 @@ const char *SUPPORTED_PACKET_TYPES[] = {
   "ERROR"
 };
 constexpr size_t SUPPORTED_PACKET_TYPE_COUNT = sizeof(SUPPORTED_PACKET_TYPES) / sizeof(SUPPORTED_PACKET_TYPES[0]);
+const char *SUPPORTED_MANUAL_MODES[] = {
+  "AUTO",
+  "LORA",
+  "WIFI",
+  "GSM"
+};
+constexpr size_t SUPPORTED_MANUAL_MODE_COUNT = sizeof(SUPPORTED_MANUAL_MODES) / sizeof(SUPPORTED_MANUAL_MODES[0]);
 
 struct SimMessage {
   String msgId;
@@ -67,7 +76,10 @@ Neighbor neighbors[NEIGHBOR_COUNT];
 size_t seenMessageIndex = 0;
 unsigned long outboundCounter = 0;
 String serialBuffer;
+String bluetoothBuffer;
 bool localNodeOnline = true;
+bool bluetoothServiceStarted = false;
+BluetoothSerial SerialBT;
 
 unsigned long simulationTimestamp() {
   return millis() / 1000UL;
@@ -91,6 +103,10 @@ String jsonEscape(const String &value) {
 String toUpperCopy(String value) {
   value.toUpperCase();
   return value;
+}
+
+String bluetoothServiceName() {
+  return BLUETOOTH_SERVICE_PREFIX + String(SIM_NODE_ID);
 }
 
 String extractJsonString(const String &json, const String &key) {
@@ -196,6 +212,35 @@ bool isSupportedPacketType(const String &packetType) {
     }
   }
   return false;
+}
+
+bool isSupportedManualMode(const String &mode) {
+  for (size_t i = 0; i < SUPPORTED_MANUAL_MODE_COUNT; ++i) {
+    if (mode == SUPPORTED_MANUAL_MODES[i]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+String extractManualMode(const String &payload) {
+  const String marker = "MODE=";
+  const int markerIndex = payload.indexOf(marker);
+  if (markerIndex < 0) {
+    return "AUTO";
+  }
+
+  int valueStart = markerIndex + marker.length();
+  int valueEnd = valueStart;
+  while (valueEnd < payload.length()) {
+    const char c = payload.charAt(valueEnd);
+    if (c == ';' || c == ',' || isspace(static_cast<unsigned char>(c))) {
+      break;
+    }
+    ++valueEnd;
+  }
+
+  return toUpperCopy(payload.substring(valueStart, valueEnd));
 }
 
 ProtocolPacket emptyProtocolPacket() {
@@ -502,6 +547,66 @@ ProtocolPacket createProtocolPacket(
   return packet;
 }
 
+String bluetoothPacketId(const String &prefix) {
+  return prefix + "-" + String(SIM_NODE_ID) + "-" + String(millis());
+}
+
+ProtocolPacket createAckPacket(const ProtocolPacket &request, const String &status, const String &payload) {
+  return createProtocolPacket(
+    "ACK",
+    bluetoothPacketId("BT-ACK"),
+    String(SIM_NODE_ID),
+    request.sourceNode,
+    payload,
+    String(SIM_NODE_ID) + ">" + request.sourceNode,
+    0,
+    status
+  );
+}
+
+ProtocolPacket createErrorPacket(const ProtocolPacket &request, const String &reason) {
+  const String destination = request.sourceNode.length() > 0 ? request.sourceNode : "ANDROID_APP";
+  return createProtocolPacket(
+    "ERROR",
+    bluetoothPacketId("BT-ERROR"),
+    String(SIM_NODE_ID),
+    destination,
+    reason,
+    String(SIM_NODE_ID) + ">" + destination,
+    0,
+    "REJECTED"
+  );
+}
+
+ProtocolPacket createStatusResponsePacket(const ProtocolPacket &request) {
+  String payload = "node=" + String(SIM_NODE_ID);
+  payload += ";state=" + String(localNodeOnline ? "ONLINE" : "OFFLINE");
+  payload += ";bluetoothService=" + String(bluetoothServiceStarted ? "STARTED" : "STOPPED");
+  payload += ";bluetoothClient=" + String(SerialBT.hasClient() ? "CONNECTED" : "DISCONNECTED");
+  payload += ";loRa=SIMULATION_PLACEHOLDER";
+  payload += ";manualModes=AUTO,LORA,WIFI,GSM";
+
+  return createProtocolPacket(
+    "STATUS",
+    bluetoothPacketId("BT-STATUS"),
+    String(SIM_NODE_ID),
+    request.sourceNode,
+    payload,
+    String(SIM_NODE_ID) + ">" + request.sourceNode,
+    0,
+    "ONLINE"
+  );
+}
+
+void sendBluetoothPacket(const ProtocolPacket &packet) {
+  const String serialized = serializeProtocolPacket(packet);
+  if (SerialBT.hasClient()) {
+    SerialBT.println(serialized);
+  }
+  Serial.print("[BT_TX] ");
+  Serial.println(serialized);
+}
+
 void printProtocolPacketFields(const ProtocolPacket &packet) {
   Serial.print("  protocolVersion=");
   Serial.println(packet.protocolVersion);
@@ -549,6 +654,38 @@ void printProtocolParseResult(const String &label, const String &rawPacket) {
 
 void processIncomingProtocolPacket(const String &line) {
   printProtocolParseResult("PROTOCOL_PARSE", line);
+}
+
+void processIncomingBluetoothProtocolPacket(const String &line) {
+  const PacketParseResult result = parseProtocolPacket(line);
+  printProtocolParseResult("BT_PROTOCOL_PARSE", line);
+
+  if (!result.valid) {
+    sendBluetoothPacket(createErrorPacket(result.packet, result.errorReason));
+    return;
+  }
+
+  if (result.packet.packetType == "STATUS") {
+    sendBluetoothPacket(createStatusResponsePacket(result.packet));
+    return;
+  }
+
+  if (result.packet.packetType == "MESSAGE") {
+    const String requestedMode = extractManualMode(result.packet.payload);
+    if (!isSupportedManualMode(requestedMode)) {
+      sendBluetoothPacket(createErrorPacket(result.packet, "unsupported manual mode"));
+      return;
+    }
+
+    String payload = "accepted=" + result.packet.packetId;
+    payload += ";mode=" + requestedMode;
+    payload += ";loRa=SIMULATION_PLACEHOLDER";
+    payload += ";forwarding=NOT_STARTED_STEP_018";
+    sendBluetoothPacket(createAckPacket(result.packet, "QUEUED_FOR_SIMULATION", payload));
+    return;
+  }
+
+  sendBluetoothPacket(createAckPacket(result.packet, "ACCEPTED", "accepted=" + result.packet.packetId));
 }
 
 String sampleHelloPacket() {
@@ -621,8 +758,25 @@ void printProtocolSpec() {
     Serial.println(SUPPORTED_PACKET_TYPES[i]);
   }
   Serial.println("  required_fields=protocolVersion, packetType, packetId, sourceNode, destinationNode, payload, hopPath, retryCount, timestamp, status, checksum");
+  Serial.println("  manual_modes=AUTO, LORA, WIFI, GSM");
   Serial.println("  sample_message=");
   Serial.println(sampleMessagePacket());
+}
+
+void printBluetoothStatus() {
+  Serial.println("[BT_SERVICE]");
+  Serial.print("  service_name=");
+  Serial.println(bluetoothServiceName());
+  Serial.print("  state=");
+  Serial.println(bluetoothServiceStarted ? "STARTED" : "STOPPED");
+  Serial.print("  client=");
+  Serial.println(SerialBT.hasClient() ? "CONNECTED" : "DISCONNECTED");
+  Serial.print("  protocolVersion=");
+  Serial.println(PROTOCOL_VERSION);
+  Serial.println("  transport=Classic Bluetooth SPP");
+  Serial.println("  android_transport=Bluetooth only; USB Serial remains out of Android scope");
+  Serial.println("  loRa=SIMULATION_PLACEHOLDER");
+  Serial.println("  manual_modes=AUTO, LORA, WIFI, GSM");
 }
 
 void sendCommand(const String &line) {
@@ -767,8 +921,49 @@ void processSerialLine(String line) {
     printProtocolParseResult("PARSE_BAD_PACKET", sampleBadPacket());
   } else if (command == "PRINT_PROTOCOL") {
     printProtocolSpec();
+  } else if (command == "BT_STATUS") {
+    printBluetoothStatus();
   } else {
     sendPlainTextFallback(line);
+  }
+}
+
+void processBluetoothLine(String line) {
+  line.trim();
+  if (line.length() == 0) {
+    return;
+  }
+
+  Serial.print("[BT_RX] ");
+  Serial.println(line);
+
+  if (line.startsWith("{") && line.indexOf("\"protocolVersion\"") >= 0) {
+    processIncomingBluetoothProtocolPacket(line);
+    return;
+  }
+
+  ProtocolPacket errorPacket = createProtocolPacket(
+    "ERROR",
+    bluetoothPacketId("BT-ERROR"),
+    String(SIM_NODE_ID),
+    "ANDROID_APP",
+    "Bluetooth service expects BT-MANET-1.0 protocol JSON",
+    String(SIM_NODE_ID) + ">ANDROID_APP",
+    0,
+    "REJECTED"
+  );
+  sendBluetoothPacket(errorPacket);
+}
+
+void readBluetoothInput() {
+  while (SerialBT.available() > 0) {
+    const char c = static_cast<char>(SerialBT.read());
+    if (c == '\n' || c == '\r') {
+      processBluetoothLine(bluetoothBuffer);
+      bluetoothBuffer = "";
+    } else {
+      bluetoothBuffer += c;
+    }
   }
 }
 
@@ -783,15 +978,28 @@ void printStartupBanner() {
   Serial.println("Commands: SEND <DEST> <MESSAGE>, STATUS, NEIGHBORS, OFFLINE, ONLINE");
   Serial.println("Optional neighbor state commands: OFFLINE <NODE_ID>, ONLINE <NODE_ID>");
   Serial.println("Protocol parser commands: PARSE_HELLO, PARSE_MESSAGE, PARSE_STATUS, PARSE_BAD_PACKET, PRINT_PROTOCOL");
+  Serial.println("Bluetooth service command: BT_STATUS");
   Serial.println("Paste a JSON message to simulate receiving a packet from another node.");
   Serial.println("Paste a BT-MANET-1.0 protocol JSON packet to test parser validation.");
   Serial.println();
+}
+
+void beginBluetoothService() {
+  bluetoothServiceStarted = SerialBT.begin(bluetoothServiceName());
+  if (bluetoothServiceStarted) {
+    Serial.print("[BT_SERVICE] started name=");
+    Serial.println(bluetoothServiceName());
+    Serial.println("[BT_SERVICE] Classic Bluetooth SPP accepts BT-MANET-1.0 JSON lines.");
+  } else {
+    Serial.println("[BT_SERVICE] failed to start");
+  }
 }
 
 void setup() {
   Serial.begin(115200);
   delay(500);
   initNeighbors();
+  beginBluetoothService();
   printStartupBanner();
 }
 
@@ -804,5 +1012,9 @@ void loop() {
     } else {
       serialBuffer += c;
     }
+  }
+
+  if (bluetoothServiceStarted) {
+    readBluetoothInput();
   }
 }

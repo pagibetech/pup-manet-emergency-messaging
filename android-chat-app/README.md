@@ -2,7 +2,7 @@
 
 This folder contains the Android Step 001 app shell for the PUP MANET Emergency Messaging System.
 
-The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includes a placeholder Bluetooth pairing flow, but does not implement Bluetooth permissions, BLE, Classic Bluetooth, GSM sending, WiFi backend communication, real LoRa, or Android-to-ESP32 hardware messaging yet.
+The app is Kotlin-based, uses Jetpack Compose, and is simulation-first. It includes a placeholder Bluetooth pairing flow, Android Bluetooth permission declarations/readiness controls, and a Classic Bluetooth SPP socket layer for paired ESP32 devices. It does not implement BLE, GSM sending, WiFi backend communication, real LoRa, or end-to-end Android-to-LoRa messaging yet.
 
 ## Project Details
 
@@ -23,6 +23,8 @@ The app is Kotlin-based, uses Jetpack Compose, and is simulation-only. It includ
 - Bluetooth status panel showing simulated availability, connected ESP32 placeholder node, and pairing status.
 - Simulated Bluetooth pairing controls for scanning, selecting, pairing, and disconnecting fake ESP32 nodes.
 - Bluetooth architecture layer with simulated lifecycle states, packet bridge counters, reconnect timing, and diagnostics.
+- Bluetooth permission readiness panel and runtime permission request action for the future Android-to-ESP32 Bluetooth transport.
+- Real Bluetooth socket panel for loading paired devices, opening an ESP32 SPP socket, sending a `BT-MANET-1.0` `HELLO`, and closing the socket.
 - ESP32 Bluetooth packet protocol preview with supported packet types, serialization placeholder, checksum placeholder, and validation status.
 - Bluetooth readiness and hardware test plan panels for ESP32 firmware, protocol test cases, architecture, and next implementation stages.
 - LoRa/MANET packet abstraction for generated chat messages.
@@ -106,7 +108,7 @@ Android Step 005 adds a local-only Bluetooth placeholder flow for future ESP32 p
 - Select a fake node and press **Pair** to mark it as the connected ESP32 node.
 - Press **Disconnect** to clear the simulated connection.
 - When paired, LoRa is shown as `Bluetooth-linked to ESP32`, and route notes state that LoRa transport is simulated through the paired ESP32.
-- This flow does not request Android Bluetooth permissions and does not use BLE or Classic Bluetooth APIs.
+- This flow can request Android Bluetooth permissions as of Step 019, but it still does not use BLE, Classic Bluetooth sockets, or hardware communication APIs.
 
 ## Bluetooth Architecture Layer
 
@@ -132,7 +134,40 @@ The simulated lifecycle supports `Idle`, `Scanning`, `Pairing`, `Connecting`, `C
 
 Bluetooth diagnostics show the current paired ESP32, signal placeholder, packet counters, last reconnect attempt, connection uptime, retry counter, reconnect countdown, and timeout status. These diagnostics remain local Compose state only.
 
-No Android Bluetooth permissions, BLE APIs, Classic Bluetooth APIs, socket code, ESP32 firmware logic, or Raspberry Pi logic are included.
+Android Bluetooth permissions are declared and can be requested as of Step 019. Classic Bluetooth socket connection support is available as of Step 020. BLE APIs, ESP32 firmware logic, LoRa forwarding, and Raspberry Pi logic are not included in the Android app.
+
+## Android Bluetooth Permissions
+
+Android Step 019 adds permission preparation for the official Android-to-ESP32 Bluetooth path.
+
+Manifest permissions:
+
+- Android 12 and newer:
+  - `BLUETOOTH_SCAN`
+  - `BLUETOOTH_CONNECT`
+- Android 11 and older:
+  - `BLUETOOTH`
+  - `BLUETOOTH_ADMIN`
+  - `ACCESS_FINE_LOCATION`
+
+The Sim tab Bluetooth panel now shows permission readiness and a **Request Permissions** action. This step prepares permission access only. It does not scan for real ESP32 devices, open a Bluetooth socket, send protocol packets over Bluetooth, or connect to hardware.
+
+## Android Bluetooth Socket Layer
+
+Android Step 020 adds a narrow Classic Bluetooth socket layer for ESP32 SPP communication.
+
+Workflow:
+
+1. Pair the ESP32 from Android system Bluetooth settings first.
+2. Open the app and go to the Sim tab.
+3. Confirm Bluetooth permissions are ready.
+4. Press **Load Paired**.
+5. Select the paired ESP32 service, such as `PUP-MANET-NODE_A`.
+6. Press **Connect ESP32**.
+7. Press **Send HELLO** to send one newline-delimited `BT-MANET-1.0` packet.
+8. Press **Close Socket** when done.
+
+This step only opens/closes the socket and sends the protocol `HELLO`. It does not implement message chat delivery over Bluetooth, real scanning/discovery, LoRa forwarding, or Android-to-ESP32 live packet test automation.
 
 ## ESP32 Bluetooth Packet Protocol
 
@@ -170,7 +205,7 @@ The Route tab shows a protocol preview panel with:
 - String-to-packet deserialization placeholder.
 - Validation status for protocol version, required fields, supported packet type, and checksum placeholder.
 
-The checksum remains `checksum pending / simulated`; no CRC is implemented yet. The protocol layer does not send packets over Bluetooth and does not use Android Bluetooth APIs.
+The checksum remains `checksum pending / simulated`; no CRC is implemented yet. Step 020 can send a `HELLO` packet over a Bluetooth socket, while chat `MESSAGE` sending remains simulation-only until a later workbook step.
 
 ## Bluetooth Readiness and Hardware Test Plan
 
@@ -191,7 +226,7 @@ Hardware architecture note:
 Android Phone <-> Bluetooth <-> ESP32 <-> LoRa <-> ESP32 <-> Bluetooth <-> Android Phone
 ```
 
-Readiness checks include Android Bluetooth architecture, packet protocol definition, ESP32 firmware packet parser, ESP32 Bluetooth service, SX1278 LoRa wiring, LoRa send/receive testing, Android Bluetooth permissions, and Android Bluetooth socket/service implementation. Pending items remain documented only until future workbook steps enable real hardware work.
+Readiness checks include Android Bluetooth architecture, packet protocol definition, ESP32 firmware packet parser, ESP32 Bluetooth service, SX1278 LoRa wiring, LoRa send/receive testing, Android Bluetooth permissions, and Android Bluetooth socket/service implementation. Android Bluetooth permissions are ready as of Step 019; the initial socket layer is ready as of Step 020.
 
 ## LoRa/MANET Packet Abstraction
 

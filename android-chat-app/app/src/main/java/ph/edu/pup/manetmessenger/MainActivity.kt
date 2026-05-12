@@ -1,8 +1,20 @@
 package ph.edu.pup.manetmessenger
 
+import android.annotation.SuppressLint
+import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothSocket
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -46,17 +58,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import ph.edu.pup.manetmessenger.ui.theme.PUPMANETMessengerTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import kotlin.random.Random
 
 enum class NetworkMode(val label: String) {
@@ -228,6 +244,30 @@ data class BluetoothConnectionSession(
     val retryCounter: Int = 0,
     val timeoutStatus: String = "No timeout"
 )
+
+data class BluetoothPermissionStatus(
+    val platformLabel: String,
+    val manifestPermissions: List<String>,
+    val runtimePermissions: List<String>,
+    val grantedPermissions: Set<String>,
+    val lastRequestStatus: String
+) {
+    val allRuntimeGranted: Boolean
+        get() = runtimePermissions.all { grantedPermissions.contains(it) }
+}
+
+data class RealBluetoothSocketState(
+    val bondedDevices: List<String> = emptyList(),
+    val selectedDevice: String? = null,
+    val connectedDevice: String? = null,
+    val socketStatus: String = "Not connected",
+    val lastSentLine: String = "None",
+    val lastReceivedLine: String = "None",
+    val lastError: String = "None"
+) {
+    val connected: Boolean
+        get() = connectedDevice != null
+}
 
 data class BluetoothProtocolPacket(
     val protocolVersion: String = BLUETOOTH_PROTOCOL_VERSION,
@@ -414,6 +454,67 @@ private val fakeEsp32Nodes = listOf(
 private const val MAX_RETRY_COUNT = 2
 private const val BLUETOOTH_PROTOCOL_VERSION = "BT-MANET-1.0"
 private const val CHECKSUM_PLACEHOLDER = "checksum pending / simulated"
+private val BLUETOOTH_SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+
+private fun bluetoothManifestPermissionLabels(): List<String> {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        listOf("BLUETOOTH_SCAN", "BLUETOOTH_CONNECT")
+    } else {
+        listOf("BLUETOOTH", "BLUETOOTH_ADMIN", "ACCESS_FINE_LOCATION")
+    }
+}
+
+private fun bluetoothRuntimePermissions(): Array<String> {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        arrayOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT
+        )
+    } else {
+        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+}
+
+private fun bluetoothPermissionLabel(permission: String): String {
+    return permission.substringAfterLast('.')
+}
+
+private fun currentBluetoothPermissionStatus(
+    context: Context,
+    grantResults: Map<String, Boolean> = emptyMap()
+): BluetoothPermissionStatus {
+    val runtimePermissions = bluetoothRuntimePermissions().toList()
+    val grantedPermissions = runtimePermissions.filter { permission ->
+        grantResults[permission] == true ||
+            ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    }.toSet()
+
+    val lastRequestStatus = when {
+        grantResults.isEmpty() -> "Not requested"
+        runtimePermissions.all { grantResults[it] == true } -> "Granted"
+        else -> "Denied or partially granted"
+    }
+
+    return BluetoothPermissionStatus(
+        platformLabel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            "Android 12+"
+        } else {
+            "Android 11 or lower"
+        },
+        manifestPermissions = bluetoothManifestPermissionLabels(),
+        runtimePermissions = runtimePermissions.map(::bluetoothPermissionLabel),
+        grantedPermissions = grantedPermissions.map(::bluetoothPermissionLabel).toSet(),
+        lastRequestStatus = lastRequestStatus
+    )
+}
+
+private fun hasBluetoothConnectPermission(context: Context): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.BLUETOOTH_CONNECT
+        ) == PackageManager.PERMISSION_GRANTED
+}
 
 private val validationLabels = listOf(
     "App opens on Chat tab",
@@ -483,6 +584,89 @@ private class WiFiTransportPlaceholder : BaseTransport(
     implementationName = "WiFiTransportPlaceholder",
     connectedLabel = TransportConnectionState.PlaceholderReady.label
 )
+
+private class AndroidBluetoothSocketClient(private val context: Context) {
+    private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
+    private val adapter: BluetoothAdapter? = bluetoothManager?.adapter
+    private var socket: BluetoothSocket? = null
+
+    @SuppressLint("MissingPermission")
+    suspend fun bondedDeviceNames(): Result<List<String>> = withContext(Dispatchers.IO) {
+        if (!hasBluetoothConnectPermission(context)) {
+            return@withContext Result.failure(IllegalStateException("Bluetooth permission required"))
+        }
+
+        val bluetoothAdapter = adapter
+            ?: return@withContext Result.failure(IllegalStateException("Bluetooth not supported"))
+        if (!bluetoothAdapter.isEnabled) {
+            return@withContext Result.failure(IllegalStateException("Bluetooth disabled"))
+        }
+
+        val names = bluetoothAdapter.bondedDevices
+            .mapNotNull { it.name }
+            .sorted()
+        Result.success(names)
+    }
+
+    @SuppressLint("MissingPermission")
+    suspend fun connect(deviceName: String): Result<String> = withContext(Dispatchers.IO) {
+        if (!hasBluetoothConnectPermission(context)) {
+            return@withContext Result.failure(IllegalStateException("Bluetooth permission required"))
+        }
+
+        val bluetoothAdapter = adapter
+            ?: return@withContext Result.failure(IllegalStateException("Bluetooth not supported"))
+        if (!bluetoothAdapter.isEnabled) {
+            return@withContext Result.failure(IllegalStateException("Bluetooth disabled"))
+        }
+
+        val device: BluetoothDevice = bluetoothAdapter.bondedDevices.firstOrNull { it.name == deviceName }
+            ?: return@withContext Result.failure(IllegalStateException("Pair ESP32 in Android Settings first"))
+
+        runCatching { socket?.close() }
+        bluetoothAdapter.cancelDiscovery()
+        val newSocket = device.createRfcommSocketToServiceRecord(BLUETOOTH_SPP_UUID)
+        newSocket.connect()
+        socket = newSocket
+        Result.success(deviceName)
+    }
+
+    suspend fun sendLine(line: String): Result<String> = withContext(Dispatchers.IO) {
+        val activeSocket = socket
+            ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
+
+        activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
+        activeSocket.outputStream.flush()
+        Result.success(line)
+    }
+
+    suspend fun readAvailableLine(): Result<String?> = withContext(Dispatchers.IO) {
+        val activeSocket = socket
+            ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
+
+        val input = activeSocket.inputStream
+        if (input.available() <= 0) {
+            return@withContext Result.success(null)
+        }
+
+        val bytes = mutableListOf<Byte>()
+        while (input.available() > 0) {
+            val value = input.read()
+            if (value < 0 || value.toChar() == '\n') {
+                break
+            }
+            if (value.toChar() != '\r') {
+                bytes.add(value.toByte())
+            }
+        }
+        Result.success(bytes.toByteArray().toString(Charsets.UTF_8))
+    }
+
+    fun disconnect() {
+        runCatching { socket?.close() }
+        socket = null
+    }
+}
 
 /*
  * Future Bluetooth layer:
@@ -777,6 +961,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MessengerApp() {
+    val context = LocalContext.current
     var selectedNetwork by remember { mutableStateOf(NetworkMode.Auto) }
     var networkState by remember { mutableStateOf(NetworkState()) }
     var selectedTab by remember { mutableStateOf(AppTab.Messaging) }
@@ -794,6 +979,10 @@ fun MessengerApp() {
     var bluetoothDeviceState by remember { mutableStateOf(BluetoothDeviceState()) }
     var bluetoothPacketBridge by remember { mutableStateOf(BluetoothPacketBridge()) }
     var bluetoothSession by remember { mutableStateOf(BluetoothConnectionSession()) }
+    var bluetoothPermissionStatus by remember {
+        mutableStateOf(currentBluetoothPermissionStatus(context))
+    }
+    var realBluetoothSocketState by remember { mutableStateOf(RealBluetoothSocketState()) }
     var validationItems by remember { mutableStateOf(defaultValidationItems()) }
     var activeTransport by remember {
         mutableStateOf<ManetTransportInterface>(transportFor(TransportOption.Simulation))
@@ -806,6 +995,15 @@ fun MessengerApp() {
     val queueManager = remember { MessageQueueManager() }
     val routingEngine = remember { AdaptiveRoutingEngine() }
     val bluetoothTransportManager = remember { BluetoothTransportManager() }
+    val androidBluetoothSocketClient = remember { AndroidBluetoothSocketClient(context.applicationContext) }
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grantResults ->
+        bluetoothPermissionStatus = currentBluetoothPermissionStatus(
+            context = context,
+            grantResults = grantResults
+        )
+    }
     val routedNetworkState = effectiveNetworkState(networkState, bluetoothState)
     val adaptiveRoutingDecision = routingEngine.decide(
         selectedNetwork = selectedNetwork,
@@ -1227,6 +1425,123 @@ fun MessengerApp() {
                                 bluetoothDeviceState = bluetoothDeviceState,
                                 bluetoothSession = bluetoothSession,
                                 bluetoothPacketBridge = bluetoothPacketBridge,
+                                bluetoothPermissionStatus = bluetoothPermissionStatus,
+                                realBluetoothSocketState = realBluetoothSocketState,
+                                onRequestBluetoothPermissions = {
+                                    bluetoothPermissionLauncher.launch(bluetoothRuntimePermissions())
+                                },
+                                onRefreshBondedDevices = {
+                                    queueScope.launch {
+                                        val result = androidBluetoothSocketClient.bondedDeviceNames()
+                                        realBluetoothSocketState = result.fold(
+                                            onSuccess = { devices ->
+                                                realBluetoothSocketState.copy(
+                                                    bondedDevices = devices,
+                                                    selectedDevice = realBluetoothSocketState.selectedDevice
+                                                        ?: devices.firstOrNull(),
+                                                    socketStatus = if (devices.isEmpty()) {
+                                                        "No paired ESP32 devices found"
+                                                    } else {
+                                                        "Paired devices loaded"
+                                                    },
+                                                    lastError = "None"
+                                                )
+                                            },
+                                            onFailure = { error ->
+                                                realBluetoothSocketState.copy(
+                                                    socketStatus = "Refresh failed",
+                                                    lastError = error.message ?: "Unknown Bluetooth error"
+                                                )
+                                            }
+                                        )
+                                    }
+                                },
+                                onRealDeviceSelected = { device ->
+                                    realBluetoothSocketState = realBluetoothSocketState.copy(selectedDevice = device)
+                                },
+                                onRealSocketConnect = {
+                                    val device = realBluetoothSocketState.selectedDevice
+                                    if (device == null) {
+                                        realBluetoothSocketState = realBluetoothSocketState.copy(
+                                            socketStatus = "Select paired ESP32 first",
+                                            lastError = "No paired device selected"
+                                        )
+                                    } else {
+                                        realBluetoothSocketState = realBluetoothSocketState.copy(
+                                            socketStatus = "Connecting to $device",
+                                            lastError = "None"
+                                        )
+                                        queueScope.launch {
+                                            val result = androidBluetoothSocketClient.connect(device)
+                                            realBluetoothSocketState = result.fold(
+                                                onSuccess = { connectedDevice ->
+                                                    realBluetoothSocketState.copy(
+                                                        connectedDevice = connectedDevice,
+                                                        socketStatus = "Connected",
+                                                        lastError = "None"
+                                                    )
+                                                },
+                                                onFailure = { error ->
+                                                    realBluetoothSocketState.copy(
+                                                        connectedDevice = null,
+                                                        socketStatus = "Connection failed",
+                                                        lastError = error.message ?: "Unknown Bluetooth error"
+                                                    )
+                                                }
+                                            )
+                                        }
+                                    }
+                                },
+                                onRealSocketHello = {
+                                    val packet = createBluetoothProtocolPacket(
+                                        packetType = BluetoothProtocolPacketType.Hello,
+                                        payload = "HELLO"
+                                    )
+                                    val serialized = compactSerializedPacketText(packet)
+                                    queueScope.launch {
+                                        val sent = androidBluetoothSocketClient.sendLine(serialized)
+                                        realBluetoothSocketState = sent.fold(
+                                            onSuccess = { line ->
+                                                bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(packet.packetId)
+                                                realBluetoothSocketState.copy(
+                                                    socketStatus = "HELLO sent",
+                                                    lastSentLine = line,
+                                                    lastError = "None"
+                                                )
+                                            },
+                                            onFailure = { error ->
+                                                realBluetoothSocketState.copy(
+                                                    socketStatus = "HELLO failed",
+                                                    lastError = error.message ?: "Unknown Bluetooth error"
+                                                )
+                                            }
+                                        )
+
+                                        val received = androidBluetoothSocketClient.readAvailableLine()
+                                        realBluetoothSocketState = received.fold(
+                                            onSuccess = { line ->
+                                                if (line.isNullOrBlank()) {
+                                                    realBluetoothSocketState
+                                                } else {
+                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("BT_RESPONSE")
+                                                    realBluetoothSocketState.copy(lastReceivedLine = line)
+                                                }
+                                            },
+                                            onFailure = { error ->
+                                                realBluetoothSocketState.copy(
+                                                    lastError = error.message ?: "Unknown Bluetooth read error"
+                                                )
+                                            }
+                                        )
+                                    }
+                                },
+                                onRealSocketDisconnect = {
+                                    androidBluetoothSocketClient.disconnect()
+                                    realBluetoothSocketState = realBluetoothSocketState.copy(
+                                        connectedDevice = null,
+                                        socketStatus = "Disconnected"
+                                    )
+                                },
                                 onScan = {
                                     bluetoothDeviceState = bluetoothTransportManager.scan(bluetoothDeviceState)
                                     bluetoothState = bluetoothState.copy(
@@ -1723,6 +2038,14 @@ private fun BluetoothPanel(
     bluetoothDeviceState: BluetoothDeviceState,
     bluetoothSession: BluetoothConnectionSession,
     bluetoothPacketBridge: BluetoothPacketBridge,
+    bluetoothPermissionStatus: BluetoothPermissionStatus,
+    realBluetoothSocketState: RealBluetoothSocketState,
+    onRequestBluetoothPermissions: () -> Unit,
+    onRefreshBondedDevices: () -> Unit,
+    onRealDeviceSelected: (String) -> Unit,
+    onRealSocketConnect: () -> Unit,
+    onRealSocketHello: () -> Unit,
+    onRealSocketDisconnect: () -> Unit,
     onScan: () -> Unit,
     onDeviceSelected: (String) -> Unit,
     onPair: () -> Unit,
@@ -1755,6 +2078,19 @@ private fun BluetoothPanel(
         StatusRow(label = "Connected ESP32 Node", value = bluetoothState.connectedNode ?: "None")
         StatusRow(label = "Pairing Status", value = bluetoothState.pairingStatus.label)
         StatusRow(label = "Lifecycle", value = bluetoothDeviceState.lifecycleState.label)
+        BluetoothPermissionPanel(
+            bluetoothPermissionStatus = bluetoothPermissionStatus,
+            onRequestBluetoothPermissions = onRequestBluetoothPermissions
+        )
+        RealBluetoothSocketPanel(
+            socketState = realBluetoothSocketState,
+            permissionsReady = bluetoothPermissionStatus.allRuntimeGranted,
+            onRefreshBondedDevices = onRefreshBondedDevices,
+            onDeviceSelected = onRealDeviceSelected,
+            onConnect = onRealSocketConnect,
+            onSendHello = onRealSocketHello,
+            onDisconnect = onRealSocketDisconnect
+        )
         if (bluetoothLinkedToEsp32(bluetoothState)) {
             Text(
                 text = "LoRa transport is simulated through paired ESP32.",
@@ -1846,6 +2182,166 @@ private fun BluetoothPanel(
             bluetoothDeviceState = bluetoothDeviceState,
             bluetoothSession = bluetoothSession,
             bluetoothPacketBridge = bluetoothPacketBridge
+        )
+    }
+}
+
+@Composable
+private fun RealBluetoothSocketPanel(
+    socketState: RealBluetoothSocketState,
+    permissionsReady: Boolean,
+    onRefreshBondedDevices: () -> Unit,
+    onDeviceSelected: (String) -> Unit,
+    onConnect: () -> Unit,
+    onSendHello: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.background,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Real Bluetooth Socket",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        StatusRow(label = "Socket", value = socketState.socketStatus)
+        StatusRow(label = "Selected", value = socketState.selectedDevice ?: "None")
+        StatusRow(label = "Connected", value = socketState.connectedDevice ?: "None")
+        StatusRow(label = "Last sent", value = socketState.lastSentLine)
+        StatusRow(label = "Last received", value = socketState.lastReceivedLine)
+        StatusRow(label = "Last error", value = socketState.lastError)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = permissionsReady,
+                onClick = onRefreshBondedDevices
+            ) {
+                Text("Load Paired")
+            }
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = permissionsReady && socketState.selectedDevice != null && !socketState.connected,
+                onClick = onConnect
+            ) {
+                Text("Connect ESP32")
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = socketState.connected,
+                onClick = onSendHello
+            ) {
+                Text("Send HELLO")
+            }
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = socketState.connected,
+                onClick = onDisconnect
+            ) {
+                Text("Close Socket")
+            }
+        }
+        if (socketState.bondedDevices.isEmpty()) {
+            Text(
+                text = "Pair the ESP32 in Android Bluetooth settings first, then load paired devices here.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Text(
+                text = "Paired Bluetooth Devices",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            socketState.bondedDevices.chunked(2).forEach { rowDevices ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    rowDevices.forEach { deviceName ->
+                        FilterChip(
+                            selected = socketState.selectedDevice == deviceName,
+                            onClick = { onDeviceSelected(deviceName) },
+                            label = { Text(deviceName) }
+                        )
+                    }
+                }
+            }
+        }
+        Text(
+            text = "Step 020 opens a Bluetooth SPP socket and sends BT-MANET-1.0 HELLO only. LoRa forwarding remains a later step.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun BluetoothPermissionPanel(
+    bluetoothPermissionStatus: BluetoothPermissionStatus,
+    onRequestBluetoothPermissions: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.background,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = "Bluetooth Permissions",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        StatusRow(label = "Platform", value = bluetoothPermissionStatus.platformLabel)
+        StatusRow(
+            label = "Manifest",
+            value = bluetoothPermissionStatus.manifestPermissions.joinToString()
+        )
+        StatusRow(
+            label = "Runtime",
+            value = bluetoothPermissionStatus.runtimePermissions.joinToString()
+        )
+        StatusRow(
+            label = "Granted",
+            value = if (bluetoothPermissionStatus.allRuntimeGranted) {
+                "Ready"
+            } else {
+                "Permission required"
+            }
+        )
+        StatusRow(label = "Last request", value = bluetoothPermissionStatus.lastRequestStatus)
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = bluetoothPermissionStatus.runtimePermissions.isNotEmpty() &&
+                !bluetoothPermissionStatus.allRuntimeGranted,
+            onClick = onRequestBluetoothPermissions
+        ) {
+            Text("Request Permissions")
+        }
+        Text(
+            text = "Step 019 only prepares Android Bluetooth permission access. Socket connection remains reserved for Step 020.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -2624,12 +3120,12 @@ private fun BluetoothReadinessAndTestPlanPanel(
             rows = listOf(
                 "Android Bluetooth architecture ready" to "Ready",
                 "Packet protocol defined" to "Ready",
-                "ESP32 firmware packet parser pending" to "Pending",
-                "ESP32 Bluetooth service pending" to "Pending",
+                "ESP32 firmware packet parser" to "Ready",
+                "ESP32 Bluetooth service" to "Ready",
                 "SX1278 LoRa wiring pending" to "Pending",
                 "LoRa send/receive test pending" to "Pending",
-                "Android real Bluetooth permission pending" to "Pending",
-                "Android real Bluetooth socket/service pending" to "Pending"
+                "Android Bluetooth permissions" to "Ready",
+                "Android Bluetooth socket layer" to "Ready"
             )
         )
         ChecklistPanel(
@@ -3003,6 +3499,23 @@ private fun packetPreviewText(packet: LoraManetPacket): String {
     ).joinToString(separator = "\n")
 }
 
+private fun createBluetoothProtocolPacket(
+    packetType: BluetoothProtocolPacketType,
+    payload: String
+): BluetoothProtocolPacket {
+    return BluetoothProtocolPacket(
+        packetType = packetType,
+        packetId = "BT-${packetType.wireName}-${System.currentTimeMillis()}",
+        sourceNode = "ANDROID_APP",
+        destinationNode = "ESP32_BRIDGE",
+        payload = payload,
+        hopPath = listOf("ANDROID_APP", "ESP32_BRIDGE"),
+        retryCount = 0,
+        timestamp = System.currentTimeMillis() / 1000L,
+        status = "REQUEST"
+    )
+}
+
 private fun protocolPacketFromManetPacket(
     packet: LoraManetPacket,
     packetType: BluetoothProtocolPacketType,
@@ -3054,7 +3567,19 @@ private fun serializeBluetoothProtocolPacket(packet: BluetoothProtocolPacket): S
 }
 
 private fun compactSerializedPacketText(packet: BluetoothProtocolPacket): String {
-    return "{ version=${packet.protocolVersion}, type=${packet.packetType.wireName}, id=${packet.packetId}, src=${packet.sourceNode}, dest=${packet.destinationNode}, status=${packet.status} }"
+    return "{" +
+        "\"protocolVersion\":\"${packet.protocolVersion}\"," +
+        "\"packetType\":\"${packet.packetType.wireName}\"," +
+        "\"packetId\":\"${packet.packetId}\"," +
+        "\"sourceNode\":\"${packet.sourceNode}\"," +
+        "\"destinationNode\":\"${packet.destinationNode}\"," +
+        "\"payload\":\"${packet.payload}\"," +
+        "\"hopPath\":\"${packet.hopPath.joinToString(">")}\"," +
+        "\"retryCount\":\"${packet.retryCount}\"," +
+        "\"timestamp\":\"${packet.timestamp}\"," +
+        "\"status\":\"${packet.status}\"," +
+        "\"checksum\":\"${packet.checksumPlaceholder}\"" +
+        "}"
 }
 
 private fun deserializeBluetoothProtocolPacket(rawPacket: String): BluetoothProtocolPacket? {
