@@ -639,20 +639,74 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
         val activeSocket = socket
             ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
 
-        activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
-        activeSocket.outputStream.flush()
-        Result.success(line)
+        runCatching {
+            activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
+            activeSocket.outputStream.flush()
+            line
+        }
     }
 
     suspend fun readAvailableLine(): Result<String?> = withContext(Dispatchers.IO) {
         val activeSocket = socket
             ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
 
-        val input = activeSocket.inputStream
-        if (input.available() <= 0) {
-            return@withContext Result.success(null)
-        }
+        runCatching {
+            val input = activeSocket.inputStream
+            if (input.available() <= 0) {
+                return@runCatching null
+            }
 
+            readLineFromInput(activeSocket)
+        }
+    }
+
+    suspend fun waitForIncomingLine(timeoutMs: Long = 5000L): Result<String?> = withContext(Dispatchers.IO) {
+        val activeSocket = socket
+            ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
+
+        runCatching {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            val input = activeSocket.inputStream
+            while (System.currentTimeMillis() < deadline) {
+                if (input.available() > 0) {
+                    return@runCatching readLineFromInput(activeSocket)
+                }
+                Thread.sleep(100L)
+            }
+            null
+        }
+    }
+
+    suspend fun sendLineAndWaitForResponse(
+        line: String,
+        timeoutMs: Long = 3000L
+    ): Result<Pair<String, String?>> = withContext(Dispatchers.IO) {
+        val activeSocket = socket
+            ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
+
+        runCatching {
+            activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
+            activeSocket.outputStream.flush()
+
+            val deadline = System.currentTimeMillis() + timeoutMs
+            val input = activeSocket.inputStream
+            while (System.currentTimeMillis() < deadline) {
+                if (input.available() > 0) {
+                    return@runCatching line to readLineFromInput(activeSocket)
+                }
+                Thread.sleep(100L)
+            }
+            line to null
+        }
+    }
+
+    fun disconnect() {
+        runCatching { socket?.close() }
+        socket = null
+    }
+
+    private fun readLineFromInput(activeSocket: BluetoothSocket): String {
+        val input = activeSocket.inputStream
         val bytes = mutableListOf<Byte>()
         while (input.available() > 0) {
             val value = input.read()
@@ -663,70 +717,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
                 bytes.add(value.toByte())
             }
         }
-        Result.success(bytes.toByteArray().toString(Charsets.UTF_8))
-    }
-
-    suspend fun waitForIncomingLine(timeoutMs: Long = 5000L): Result<String?> = withContext(Dispatchers.IO) {
-        val activeSocket = socket
-            ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
-
-        val deadline = System.currentTimeMillis() + timeoutMs
-        val input = activeSocket.inputStream
-        while (System.currentTimeMillis() < deadline) {
-            if (input.available() > 0) {
-                val bytes = mutableListOf<Byte>()
-                while (input.available() > 0) {
-                    val value = input.read()
-                    if (value < 0 || value.toChar() == '\n') {
-                        break
-                    }
-                    if (value.toChar() != '\r') {
-                        bytes.add(value.toByte())
-                    }
-                }
-                return@withContext Result.success(bytes.toByteArray().toString(Charsets.UTF_8))
-            }
-            Thread.sleep(100L)
-        }
-
-        Result.success(null)
-    }
-
-    suspend fun sendLineAndWaitForResponse(
-        line: String,
-        timeoutMs: Long = 3000L
-    ): Result<Pair<String, String?>> = withContext(Dispatchers.IO) {
-        val activeSocket = socket
-            ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
-
-        activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
-        activeSocket.outputStream.flush()
-
-        val deadline = System.currentTimeMillis() + timeoutMs
-        val input = activeSocket.inputStream
-        while (System.currentTimeMillis() < deadline) {
-            if (input.available() > 0) {
-                val bytes = mutableListOf<Byte>()
-                while (input.available() > 0) {
-                    val value = input.read()
-                    if (value < 0 || value.toChar() == '\n') {
-                        break
-                    }
-                    if (value.toChar() != '\r') {
-                        bytes.add(value.toByte())
-                    }
-                }
-                return@withContext Result.success(line to bytes.toByteArray().toString(Charsets.UTF_8))
-            }
-            Thread.sleep(100L)
-        }
-
-        Result.success(line to null)
-    }
-
-    fun disconnect() {
-        runCatching { socket?.close() }
-        socket = null
+        return bytes.toByteArray().toString(Charsets.UTF_8)
     }
 }
 
