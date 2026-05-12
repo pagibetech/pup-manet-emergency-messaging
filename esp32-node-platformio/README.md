@@ -1,12 +1,14 @@
 # ESP32 Multi-Node Simulation
 
-This PlatformIO project contains the ESP32 simulation node for the PUP MANET Emergency Messaging System. It uses the Arduino framework, Serial input/output, and an ESP32 Classic Bluetooth SPP service to simulate MANET packet handling between `NODE_A`, `NODE_B`, and `NODE_C`.
+This PlatformIO project contains the ESP32 node firmware for the PUP MANET Emergency Messaging System. It uses the Arduino framework, Serial input/output, an ESP32 Classic Bluetooth SPP service, and optional SX1278 LoRa live-test environments.
 
-No LoRa, WiFi, GSM, Android socket code, or real LoRa hardware communication logic is included in this step.
+WiFi, GSM, Android-side socket code, Raspberry Pi gateway logic, and end-to-end Android-to-LoRa chat delivery are outside this firmware step.
 
 Step 017 adds a firmware-side parser for the future Android-to-ESP32 Bluetooth packet protocol. The parser is tested through Serial Monitor only; it does not enable Bluetooth or LoRa hardware communication yet.
 
 Step 018 enables the ESP32 Bluetooth service for the Android-to-ESP32 transport path. The service accepts newline-delimited `BT-MANET-1.0` JSON packets over Classic Bluetooth SPP, validates them with the Step 017 parser, and returns protocol `ACK`, `STATUS`, or `ERROR` packets. LoRa forwarding remains a simulation placeholder.
+
+Step 022 adds controlled SX1278 LoRa live-test environments for ESP32-to-ESP32 packet exchange. Simulation environments remain available and unchanged.
 
 ## Build Environments
 
@@ -27,6 +29,18 @@ build_flags =
 build_flags =
   -DSIM_NODE_ID=\"NODE_C\"
   -DDEFAULT_DEST_ID=\"NODE_A\"
+
+[env:node_a_lora]
+build_flags =
+  -DSIM_NODE_ID=\"NODE_A\"
+  -DDEFAULT_DEST_ID=\"NODE_B\"
+  -DENABLE_LORA=1
+
+[env:node_b_lora]
+build_flags =
+  -DSIM_NODE_ID=\"NODE_B\"
+  -DDEFAULT_DEST_ID=\"NODE_A\"
+  -DENABLE_LORA=1
 ```
 
 Build a specific node:
@@ -35,6 +49,20 @@ Build a specific node:
 pio run -e node_a
 pio run -e node_b
 pio run -e node_c
+```
+
+Build live LoRa test firmware:
+
+```sh
+pio run -e node_a_lora
+pio run -e node_b_lora
+```
+
+Upload live LoRa test firmware to two ESP32 boards:
+
+```sh
+pio run -e node_a_lora --target upload
+pio run -e node_b_lora --target upload
 ```
 
 ## Message Format
@@ -124,6 +152,53 @@ Bluetooth input expects one newline-delimited `BT-MANET-1.0` JSON packet per lin
 
 Manual routing mode placeholders are recognized when the `MESSAGE` payload contains `MODE=AUTO`, `MODE=LORA`, `MODE=WIFI`, or `MODE=GSM`. Unsupported modes return an `ERROR`.
 
+## SX1278 LoRa Live Test
+
+Step 022 enables a narrow ESP32-to-ESP32 LoRa live test path through `node_a_lora` and `node_b_lora`.
+
+Default SX1278 Ra-02 wiring:
+
+| SX1278 Pin | ESP32 Pin |
+| --- | --- |
+| NSS / CS | GPIO 5 |
+| SCK | GPIO 18 |
+| MISO | GPIO 19 |
+| MOSI | GPIO 23 |
+| RST | GPIO 14 |
+| DIO0 | GPIO 26 |
+| 3.3V | 3.3V |
+| GND | GND |
+
+Default radio settings:
+
+- Frequency: `433E6`
+- Sync word: `0x12`
+- TX power: `17`
+
+Serial Monitor LoRa commands:
+
+```text
+LORA_STATUS
+LORA_PING
+LORA_SEND <DEST> <MESSAGE>
+```
+
+Two-node test:
+
+1. Upload `node_a_lora` to ESP32 A.
+2. Upload `node_b_lora` to ESP32 B.
+3. Open Serial Monitor for both boards at `115200`.
+4. On ESP32 A, run:
+
+```text
+LORA_STATUS
+LORA_SEND NODE_B Hello from NODE_A
+```
+
+5. ESP32 B should print `[LORA_RX]`, then `[RECEIVED]`, `[DELIVERED]`, and `[DELIVERY]`.
+
+This live test confirms ESP32-to-ESP32 LoRa packet exchange only. Android-to-LoRa chat delivery and multi-hop LoRa routing remain later workbook work.
+
 ## Neighbor Table
 
 Each node starts with two simulated neighbors. A neighbor record includes:
@@ -174,6 +249,9 @@ PARSE_STATUS
 PARSE_BAD_PACKET
 PRINT_PROTOCOL
 BT_STATUS
+LORA_STATUS
+LORA_PING
+LORA_SEND NODE_B Hello from NODE_A
 ```
 
 Expected parser behavior:
@@ -184,6 +262,9 @@ Expected parser behavior:
 - `PARSE_BAD_PACKET` rejects an invalid protocol version, packet type, and checksum placeholder.
 - `PRINT_PROTOCOL` prints the current protocol version, supported packet types, required fields, checksum placeholder, and a sample MESSAGE packet.
 - `BT_STATUS` prints the Classic Bluetooth SPP service name, service state, client state, protocol version, Android transport rule, LoRa placeholder, and manual mode placeholders.
+- `LORA_STATUS` prints LoRa build state, radio readiness, frequency, sync word, pins, and counters.
+- `LORA_PING` sends a JSON simulation packet to the default destination over LoRa when using a LoRa-enabled build.
+- `LORA_SEND <DEST> <MESSAGE>` sends a JSON simulation packet to the requested destination over LoRa when using a LoRa-enabled build.
 
 Commands are parsed before the plain-text fallback path. For example, typing `STATUS` prints node state and counters; it is not routed as a message payload.
 
@@ -254,10 +335,14 @@ Expected logs include:
 - `[PROTOCOL]` when `PRINT_PROTOCOL` prints the firmware protocol specification.
 - `[BT_SERVICE]` when the Bluetooth service starts or `BT_STATUS` is printed.
 - `[BT_RX]` and `[BT_TX]` when packets are received from or returned to a Bluetooth client.
+- `[LORA_SERVICE]` when the LoRa service starts or reports disabled/failure.
+- `[LORA_STATUS]` when the LoRa status command is printed.
+- `[LORA_TX]` when a LoRa packet is transmitted.
+- `[LORA_RX]` when a LoRa packet is received, including RSSI and SNR.
 
 ## Current Limitations
 
-- LoRa packet sending is not enabled yet.
-- Android Bluetooth permissions and Android socket code are not implemented in this firmware step.
-- Parsed Bluetooth `MESSAGE` packets are acknowledged as queued for simulation only; they are not forwarded to real LoRa in Step 018.
+- LoRa is enabled only in `node_a_lora` and `node_b_lora` builds.
+- Android-to-LoRa chat delivery is not enabled in this firmware step.
+- Parsed Bluetooth `MESSAGE` packets are acknowledged as queued for simulation only; they are not forwarded to real LoRa in Step 022.
 - The checksum is a placeholder only; no CRC is implemented yet.

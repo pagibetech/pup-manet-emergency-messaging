@@ -1,5 +1,9 @@
 #include <Arduino.h>
 #include <BluetoothSerial.h>
+#if ENABLE_LORA
+#include <SPI.h>
+#include <LoRa.h>
+#endif
 #include <ctype.h>
 
 #ifndef SIM_NODE_ID
@@ -8,6 +12,42 @@
 
 #ifndef DEFAULT_DEST_ID
 #define DEFAULT_DEST_ID "NODE_B"
+#endif
+
+#ifndef LORA_SS_PIN
+#define LORA_SS_PIN 5
+#endif
+
+#ifndef LORA_RST_PIN
+#define LORA_RST_PIN 14
+#endif
+
+#ifndef LORA_DIO0_PIN
+#define LORA_DIO0_PIN 26
+#endif
+
+#ifndef LORA_SCK_PIN
+#define LORA_SCK_PIN 18
+#endif
+
+#ifndef LORA_MISO_PIN
+#define LORA_MISO_PIN 19
+#endif
+
+#ifndef LORA_MOSI_PIN
+#define LORA_MOSI_PIN 23
+#endif
+
+#ifndef LORA_FREQUENCY
+#define LORA_FREQUENCY 433E6
+#endif
+
+#ifndef LORA_SYNC_WORD
+#define LORA_SYNC_WORD 0x12
+#endif
+
+#ifndef LORA_TX_POWER
+#define LORA_TX_POWER 17
 #endif
 
 const String PROTOCOL_VERSION = "BT-MANET-1.0";
@@ -79,6 +119,9 @@ String serialBuffer;
 String bluetoothBuffer;
 bool localNodeOnline = true;
 bool bluetoothServiceStarted = false;
+bool loraReady = false;
+unsigned long loraTxCounter = 0;
+unsigned long loraRxCounter = 0;
 BluetoothSerial SerialBT;
 
 unsigned long simulationTimestamp() {
@@ -504,6 +547,32 @@ void routeMessage(SimMessage message) {
   Serial.println(serializeMessage(message));
 }
 
+bool sendLoRaLine(const String &line) {
+#if ENABLE_LORA
+  if (!loraReady) {
+    Serial.println("[LORA_ERROR] LoRa radio is not ready.");
+    return false;
+  }
+
+  LoRa.beginPacket();
+  LoRa.print(line);
+  const int result = LoRa.endPacket();
+  if (result == 1) {
+    ++loraTxCounter;
+    Serial.print("[LORA_TX] ");
+    Serial.println(line);
+    return true;
+  }
+
+  Serial.println("[LORA_ERROR] LoRa packet transmit failed.");
+  return false;
+#else
+  (void)line;
+  Serial.println("[LORA_DISABLED] Build with node_a_lora or node_b_lora to enable SX1278 live test.");
+  return false;
+#endif
+}
+
 void processIncomingMessage(const String &line) {
   SimMessage message;
   if (!parseMessage(line, message)) {
@@ -520,6 +589,22 @@ void processIncomingMessage(const String &line) {
 
   rememberMessage(message.msgId);
   routeMessage(message);
+}
+
+void processIncomingLoRaLine(const String &line, int rssi, float snr) {
+  ++loraRxCounter;
+  Serial.print("[LORA_RX] rssi=");
+  Serial.print(rssi);
+  Serial.print(" snr=");
+  Serial.print(snr);
+  Serial.print(" payload=");
+  Serial.println(line);
+
+  if (line.startsWith("{")) {
+    processIncomingMessage(line);
+  } else {
+    Serial.println("[LORA_ERROR] Expected simulation JSON packet from LoRa peer.");
+  }
 }
 
 ProtocolPacket createProtocolPacket(
@@ -583,7 +668,7 @@ ProtocolPacket createStatusResponsePacket(const ProtocolPacket &request) {
   payload += ";state=" + String(localNodeOnline ? "ONLINE" : "OFFLINE");
   payload += ";bluetoothService=" + String(bluetoothServiceStarted ? "STARTED" : "STOPPED");
   payload += ";bluetoothClient=" + String(SerialBT.hasClient() ? "CONNECTED" : "DISCONNECTED");
-  payload += ";loRa=SIMULATION_PLACEHOLDER";
+  payload += ";loRa=" + String(loraReady ? "READY" : "SIMULATION_PLACEHOLDER");
   payload += ";manualModes=AUTO,LORA,WIFI,GSM";
 
   return createProtocolPacket(
@@ -775,8 +860,86 @@ void printBluetoothStatus() {
   Serial.println(PROTOCOL_VERSION);
   Serial.println("  transport=Classic Bluetooth SPP");
   Serial.println("  android_transport=Bluetooth only; USB Serial remains out of Android scope");
-  Serial.println("  loRa=SIMULATION_PLACEHOLDER");
+  Serial.print("  loRa=");
+  Serial.println(loraReady ? "READY" : "SIMULATION_PLACEHOLDER");
   Serial.println("  manual_modes=AUTO, LORA, WIFI, GSM");
+}
+
+void printLoRaStatus() {
+  Serial.println("[LORA_STATUS]");
+#if ENABLE_LORA
+  Serial.println("  build=ENABLED");
+#else
+  Serial.println("  build=DISABLED");
+#endif
+  Serial.print("  ready=");
+  Serial.println(loraReady ? "YES" : "NO");
+  Serial.print("  frequency=");
+  Serial.println(static_cast<long>(LORA_FREQUENCY));
+  Serial.print("  sync_word=0x");
+  Serial.println(LORA_SYNC_WORD, HEX);
+  Serial.print("  pins=ss:");
+  Serial.print(LORA_SS_PIN);
+  Serial.print(" rst:");
+  Serial.print(LORA_RST_PIN);
+  Serial.print(" dio0:");
+  Serial.print(LORA_DIO0_PIN);
+  Serial.print(" sck:");
+  Serial.print(LORA_SCK_PIN);
+  Serial.print(" miso:");
+  Serial.print(LORA_MISO_PIN);
+  Serial.print(" mosi:");
+  Serial.println(LORA_MOSI_PIN);
+  Serial.print("  tx_count=");
+  Serial.println(loraTxCounter);
+  Serial.print("  rx_count=");
+  Serial.println(loraRxCounter);
+}
+
+void loraSendCommand(const String &line) {
+  String trimmedLine = line;
+  trimmedLine.trim();
+
+  String args = trimmedLine.substring(String("LORA_SEND").length());
+  args.trim();
+
+  const int payloadStart = args.indexOf(' ');
+  if (payloadStart <= 0) {
+    Serial.println("[ERROR] Usage: LORA_SEND <DEST> <MESSAGE>");
+    return;
+  }
+
+  String dest = args.substring(0, payloadStart);
+  String payload = args.substring(payloadStart + 1);
+  dest.trim();
+  payload.trim();
+
+  if (dest.length() == 0 || payload.length() == 0) {
+    Serial.println("[ERROR] Usage: LORA_SEND <DEST> <MESSAGE>");
+    return;
+  }
+
+  SimMessage message = createOutboundMessage(dest, payload);
+  rememberMessage(message.msgId);
+  const String serialized = serializeMessage(message);
+  if (sendLoRaLine(serialized)) {
+    Serial.print("[LORA_TEST] sent_to=");
+    Serial.print(dest);
+    Serial.print(" msg_id=");
+    Serial.println(message.msgId);
+  }
+}
+
+void loraPingCommand() {
+  SimMessage message = createOutboundMessage(DEFAULT_DEST_ID, "LORA_PING");
+  rememberMessage(message.msgId);
+  const String serialized = serializeMessage(message);
+  if (sendLoRaLine(serialized)) {
+    Serial.print("[LORA_TEST] ping_default_dest=");
+    Serial.print(DEFAULT_DEST_ID);
+    Serial.print(" msg_id=");
+    Serial.println(message.msgId);
+  }
 }
 
 void sendCommand(const String &line) {
@@ -923,6 +1086,12 @@ void processSerialLine(String line) {
     printProtocolSpec();
   } else if (command == "BT_STATUS") {
     printBluetoothStatus();
+  } else if (command == "LORA_STATUS") {
+    printLoRaStatus();
+  } else if (command == "LORA_SEND") {
+    loraSendCommand(line);
+  } else if (command == "LORA_PING") {
+    loraPingCommand();
   } else {
     sendPlainTextFallback(line);
   }
@@ -967,6 +1136,29 @@ void readBluetoothInput() {
   }
 }
 
+void readLoRaInput() {
+#if ENABLE_LORA
+  if (!loraReady) {
+    return;
+  }
+
+  const int packetSize = LoRa.parsePacket();
+  if (packetSize <= 0) {
+    return;
+  }
+
+  String line;
+  while (LoRa.available()) {
+    line += static_cast<char>(LoRa.read());
+  }
+  line.trim();
+
+  if (line.length() > 0) {
+    processIncomingLoRaLine(line, LoRa.packetRssi(), LoRa.packetSnr());
+  }
+#endif
+}
+
 void printStartupBanner() {
   Serial.println();
   Serial.println("PUP MANET ESP32 Multi-Node Simulation");
@@ -979,6 +1171,7 @@ void printStartupBanner() {
   Serial.println("Optional neighbor state commands: OFFLINE <NODE_ID>, ONLINE <NODE_ID>");
   Serial.println("Protocol parser commands: PARSE_HELLO, PARSE_MESSAGE, PARSE_STATUS, PARSE_BAD_PACKET, PRINT_PROTOCOL");
   Serial.println("Bluetooth service command: BT_STATUS");
+  Serial.println("LoRa live-test commands: LORA_STATUS, LORA_PING, LORA_SEND <DEST> <MESSAGE>");
   Serial.println("Paste a JSON message to simulate receiving a packet from another node.");
   Serial.println("Paste a BT-MANET-1.0 protocol JSON packet to test parser validation.");
   Serial.println();
@@ -995,11 +1188,34 @@ void beginBluetoothService() {
   }
 }
 
+void beginLoRaService() {
+#if ENABLE_LORA
+  SPI.begin(LORA_SCK_PIN, LORA_MISO_PIN, LORA_MOSI_PIN, LORA_SS_PIN);
+  LoRa.setPins(LORA_SS_PIN, LORA_RST_PIN, LORA_DIO0_PIN);
+
+  loraReady = LoRa.begin(LORA_FREQUENCY);
+  if (loraReady) {
+    LoRa.setSyncWord(LORA_SYNC_WORD);
+    LoRa.setTxPower(LORA_TX_POWER);
+    Serial.print("[LORA_SERVICE] started frequency=");
+    Serial.print(static_cast<long>(LORA_FREQUENCY));
+    Serial.print(" sync_word=0x");
+    Serial.println(LORA_SYNC_WORD, HEX);
+  } else {
+    Serial.println("[LORA_SERVICE] failed to start. Check SX1278 wiring and power.");
+  }
+#else
+  loraReady = false;
+  Serial.println("[LORA_SERVICE] disabled in this build. Use node_a_lora or node_b_lora for Step 022.");
+#endif
+}
+
 void setup() {
   Serial.begin(115200);
   delay(500);
   initNeighbors();
   beginBluetoothService();
+  beginLoRaService();
   printStartupBanner();
 }
 
@@ -1017,4 +1233,6 @@ void loop() {
   if (bluetoothServiceStarted) {
     readBluetoothInput();
   }
+
+  readLoRaInput();
 }
