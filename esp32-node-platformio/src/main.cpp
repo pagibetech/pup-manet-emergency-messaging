@@ -53,6 +53,7 @@
 const String PROTOCOL_VERSION = "BT-MANET-1.0";
 const String CHECKSUM_PLACEHOLDER = "checksum pending / simulated";
 const String BLUETOOTH_SERVICE_PREFIX = "PUP-MANET-";
+const String LORA_RELAY_PREFIX = "BT1";
 const char *SUPPORTED_PACKET_TYPES[] = {
   "HELLO",
   "ACK",
@@ -597,6 +598,105 @@ bool protocolPacketTargetsLocalNode(const ProtocolPacket &packet) {
          packet.destinationNode == "ANDROID_APP";
 }
 
+String sanitizeLoRaRelayField(String value) {
+  value.replace("|", "/");
+  value.replace("\r", " ");
+  value.replace("\n", " ");
+  return value;
+}
+
+String loRaRelayFieldAt(const String &line, int fieldIndex) {
+  int currentField = 0;
+  int fieldStart = 0;
+
+  for (int i = 0; i <= line.length(); ++i) {
+    if (i == line.length() || line.charAt(i) == '|') {
+      if (currentField == fieldIndex) {
+        return line.substring(fieldStart, i);
+      }
+      currentField += 1;
+      fieldStart = i + 1;
+    }
+  }
+
+  return "";
+}
+
+String serializeLoRaRelayPacket(const ProtocolPacket &packet) {
+  String relay = LORA_RELAY_PREFIX;
+  relay += "|" + sanitizeLoRaRelayField(packet.packetId);
+  relay += "|" + sanitizeLoRaRelayField(packet.sourceNode);
+  relay += "|" + sanitizeLoRaRelayField(packet.destinationNode);
+  relay += "|" + sanitizeLoRaRelayField(packet.payload);
+  relay += "|" + String(packet.timestamp);
+  return relay;
+}
+
+bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet) {
+  if (!line.startsWith(LORA_RELAY_PREFIX + "|")) {
+    return false;
+  }
+
+  packet.protocolVersion = PROTOCOL_VERSION;
+  packet.packetType = "MESSAGE";
+  packet.packetId = loRaRelayFieldAt(line, 1);
+  packet.sourceNode = loRaRelayFieldAt(line, 2);
+  packet.destinationNode = loRaRelayFieldAt(line, 3);
+  packet.payload = loRaRelayFieldAt(line, 4);
+  packet.hopPath = packet.sourceNode + ">" + String(SIM_NODE_ID);
+  packet.retryCount = 0;
+  packet.timestamp = static_cast<unsigned long>(loRaRelayFieldAt(line, 5).toInt());
+  packet.status = "RECEIVED_OVER_LORA";
+  packet.checksum = CHECKSUM_PLACEHOLDER;
+
+  return packet.packetId.length() > 0 &&
+         packet.sourceNode.length() > 0 &&
+         packet.destinationNode.length() > 0 &&
+         packet.payload.length() > 0;
+}
+
+void deliverLoRaProtocolPacketToBluetooth(const ProtocolPacket &packet) {
+  Serial.print("[LORA_PROTOCOL_RX] packet_id=");
+  Serial.print(packet.packetId);
+  Serial.print(" src=");
+  Serial.print(packet.sourceNode);
+  Serial.print(" dest=");
+  Serial.println(packet.destinationNode);
+
+  if (hasSeenMessage(packet.packetId)) {
+    Serial.print("[LORA_PROTOCOL_DUPLICATE] packet_id=");
+    Serial.println(packet.packetId);
+    return;
+  }
+  rememberMessage(packet.packetId);
+
+  if (!protocolPacketTargetsLocalNode(packet)) {
+    Serial.print("[LORA_PROTOCOL_IGNORED] destination=");
+    Serial.println(packet.destinationNode);
+    return;
+  }
+
+  const String serialized = serializeProtocolPacket(packet);
+  if (SerialBT.hasClient()) {
+    SerialBT.println(serialized);
+    Serial.print("[BT_TX_FROM_LORA] ");
+    Serial.println(serialized);
+  } else {
+    Serial.print("[BT_PENDING_FROM_LORA] no Android Bluetooth client for packet_id=");
+    Serial.println(packet.packetId);
+  }
+}
+
+void processIncomingLoRaRelayPacket(const String &line) {
+  ProtocolPacket packet;
+  if (!parseLoRaRelayPacket(line, packet)) {
+    Serial.println("[LORA_PROTOCOL_ERROR] invalid compact relay packet");
+    return;
+  }
+
+  deliverLoRaProtocolPacketToBluetooth(packet);
+}
+
 void processIncomingLoRaProtocolPacket(const String &line) {
   const PacketParseResult result = parseProtocolPacket(line);
   if (!result.valid) {
@@ -605,35 +705,7 @@ void processIncomingLoRaProtocolPacket(const String &line) {
     return;
   }
 
-  Serial.print("[LORA_PROTOCOL_RX] packet_id=");
-  Serial.print(result.packet.packetId);
-  Serial.print(" src=");
-  Serial.print(result.packet.sourceNode);
-  Serial.print(" dest=");
-  Serial.println(result.packet.destinationNode);
-
-  if (hasSeenMessage(result.packet.packetId)) {
-    Serial.print("[LORA_PROTOCOL_DUPLICATE] packet_id=");
-    Serial.println(result.packet.packetId);
-    return;
-  }
-  rememberMessage(result.packet.packetId);
-
-  if (!protocolPacketTargetsLocalNode(result.packet)) {
-    Serial.print("[LORA_PROTOCOL_IGNORED] destination=");
-    Serial.println(result.packet.destinationNode);
-    return;
-  }
-
-  const String serialized = serializeProtocolPacket(result.packet);
-  if (SerialBT.hasClient()) {
-    SerialBT.println(serialized);
-    Serial.print("[BT_TX_FROM_LORA] ");
-    Serial.println(serialized);
-  } else {
-    Serial.print("[BT_PENDING_FROM_LORA] no Android Bluetooth client for packet_id=");
-    Serial.println(result.packet.packetId);
-  }
+  deliverLoRaProtocolPacketToBluetooth(result.packet);
 }
 
 void processIncomingLoRaLine(const String &line, int rssi, float snr) {
@@ -645,7 +717,9 @@ void processIncomingLoRaLine(const String &line, int rssi, float snr) {
   Serial.print(" payload=");
   Serial.println(line);
 
-  if (line.startsWith("{")) {
+  if (line.startsWith(LORA_RELAY_PREFIX + "|")) {
+    processIncomingLoRaRelayPacket(line);
+  } else if (line.startsWith("{")) {
     if (line.indexOf("\"protocolVersion\"") >= 0) {
       processIncomingLoRaProtocolPacket(line);
     } else {
@@ -818,7 +892,7 @@ void processIncomingBluetoothProtocolPacket(const String &line) {
     bool forwardedToLoRa = false;
 
     if (shouldForwardToLoRa) {
-      forwardedToLoRa = sendLoRaLine(serializeProtocolPacket(result.packet));
+      forwardedToLoRa = sendLoRaLine(serializeLoRaRelayPacket(result.packet));
     }
 
     String payload = "accepted=" + result.packet.packetId;

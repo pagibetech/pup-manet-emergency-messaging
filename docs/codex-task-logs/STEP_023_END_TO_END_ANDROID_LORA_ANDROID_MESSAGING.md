@@ -23,10 +23,12 @@ Android Phone A <-> Bluetooth <-> NODE_A <-> LoRa <-> NODE_B <-> Bluetooth <-> A
   - Connected to `PUP-MANET-NODE_B` sends to `NODE_A`.
 - Updated ESP32 Bluetooth `MESSAGE` handling:
   - `MODE=LORA` or `MODE=AUTO` can forward to LoRa when the destination is another node.
+  - Bluetooth protocol JSON is converted to a compact `BT1|...` LoRa relay frame before transmit to avoid SX1278 packet truncation.
   - ACK payload reports `FORWARDED_OVER_LORA` when transmit succeeds.
 - Updated ESP32 LoRa receive handling:
   - Existing Step 022 simulation JSON packets remain supported.
   - `BT-MANET-1.0` protocol JSON packets are validated.
+  - Compact `BT1|...` relay frames are rebuilt as `BT-MANET-1.0` packets.
   - Packets targeting the local node are written to the connected Android Bluetooth SPP client.
 - Updated Android and ESP32 documentation with the physical test procedure.
 
@@ -62,8 +64,8 @@ Android Phone A <-> Bluetooth <-> NODE_A <-> LoRa <-> NODE_B <-> Bluetooth <-> A
 Expected result:
 
 - Phone A receives an ACK containing `FORWARDED_OVER_LORA`.
-- NODE_A logs `[LORA_TX]`.
-- NODE_B logs `[LORA_RX]` and `[BT_TX_FROM_LORA]`.
+- NODE_A logs `[LORA_TX]` with a compact `BT1|...` relay frame.
+- NODE_B logs `[LORA_RX]`, `[LORA_PROTOCOL_RX]`, and `[BT_TX_FROM_LORA]`.
 - Phone B shows the incoming protocol packet in Last received.
 
 ## Validation

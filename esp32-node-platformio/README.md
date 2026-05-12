@@ -10,7 +10,7 @@ Step 018 enables the ESP32 Bluetooth service for the Android-to-ESP32 transport 
 
 Step 022 adds controlled SX1278 LoRa live-test environments for ESP32-to-ESP32 packet exchange. Simulation environments remain available and unchanged.
 
-Step 023 bridges Android `BT-MANET-1.0` `MESSAGE` packets from Classic Bluetooth SPP onto SX1278 LoRa when the message targets another ESP32 node. A receiving LoRa node forwards valid protocol packets to its connected Android Bluetooth client.
+Step 023 bridges Android `BT-MANET-1.0` `MESSAGE` packets from Classic Bluetooth SPP onto SX1278 LoRa when the message targets another ESP32 node. The ESP32 sends a compact LoRa relay frame to stay within the SX1278 packet size limit, then the receiving LoRa node rebuilds a valid protocol packet for its connected Android Bluetooth client.
 
 ## Build Environments
 
@@ -150,7 +150,7 @@ Bluetooth input expects one newline-delimited `BT-MANET-1.0` JSON packet per lin
 - `HELLO` returns an `ACK`.
 - `STATUS` returns a `STATUS` response with node state, Bluetooth service state, client state, and supported manual modes.
 - `MESSAGE` validates the packet and returns an `ACK`.
-- In LoRa-enabled builds, `MESSAGE` packets with `MODE=LORA` or `MODE=AUTO` and a different ESP32 destination are forwarded over LoRa.
+- In LoRa-enabled builds, `MESSAGE` packets with `MODE=LORA` or `MODE=AUTO` and a different ESP32 destination are forwarded over LoRa using a compact relay frame.
 - Invalid packets return an `ERROR`.
 
 Manual routing mode placeholders are recognized when the `MESSAGE` payload contains `MODE=AUTO`, `MODE=LORA`, `MODE=WIFI`, or `MODE=GSM`. Unsupported modes return an `ERROR`.
@@ -218,7 +218,7 @@ Physical workflow:
 4. In the Android app on both phones, open the Sim tab, press **Load Paired**, select the correct `PUP-MANET-NODE_*`, then press **Connect ESP32**.
 5. On Phone A, press **Send LoRa**.
 6. On Phone B, press **Check In**.
-7. NODE_A should log `[LORA_TX]`, NODE_B should log `[LORA_RX]` and `[BT_TX_FROM_LORA]`, and Phone B should show the incoming protocol packet.
+7. NODE_A should log `[LORA_TX]` with a `BT1|...` relay line, NODE_B should log `[LORA_RX]`, `[LORA_PROTOCOL_RX]`, and `[BT_TX_FROM_LORA]`, and Phone B should show the incoming protocol packet.
 
 The receiving Android phone reads the incoming packet on demand with **Check In**. Continuous background receive remains reserved for a later workbook step.
 
