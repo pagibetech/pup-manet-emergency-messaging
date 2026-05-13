@@ -31,6 +31,25 @@ class GatewaySimulatorTest(unittest.TestCase):
         self.assertEqual(result.packet.route_used, "GATEWAY_WIFI_ROUTER")
         self.assertEqual(result.packet.path, ["A1", "GWA", "WIFI_ROUTER_LINK", "GWB", "B2"])
 
+    def test_router_link_ping_succeeds_between_gateways(self) -> None:
+        sim = GatewaySimulator()
+
+        ok = sim.ping_gateway("GWA", "GWB", now=0.0)
+        snapshot = sim.snapshot_dict()
+
+        self.assertTrue(ok)
+        self.assertTrue(snapshot["router_link"]["last_ping_ok"])
+        self.assertTrue(any("PING_OK GWA->GWB" in event for event in snapshot["events"]))
+
+    def test_router_link_ping_fails_when_link_is_offline(self) -> None:
+        sim = GatewaySimulator()
+        sim.set_router_link_available(False, now=1.0)
+
+        ok = sim.ping_gateway("GWA", "GWB", now=1.1)
+
+        self.assertFalse(ok)
+        self.assertFalse(sim.snapshot_dict()["router_link"]["last_ping_ok"])
+
     def test_failover_waits_ten_seconds_before_gateway_route(self) -> None:
         sim = GatewaySimulator()
         sim.set_lora_available("GWA", False, now=2.0)
@@ -67,6 +86,19 @@ class GatewaySimulatorTest(unittest.TestCase):
         self.assertFalse(result.delivered)
         self.assertEqual(result.packet.status, "FAILED")
         self.assertEqual(result.packet.route_used, "NO_GATEWAY_LINK")
+
+    def test_router_link_demo_records_ping_and_delivery_results(self) -> None:
+        sim = GatewaySimulator()
+
+        snapshot = sim.run_router_link_demo()
+        demo = snapshot["router_link_demo"]
+
+        self.assertTrue(demo["initial_ping_ok"])
+        self.assertEqual(demo["remote_delivery_status"], "DELIVERED")
+        self.assertEqual(demo["remote_delivery_route"], "GATEWAY_WIFI_ROUTER")
+        self.assertFalse(demo["link_down_ping_ok"])
+        self.assertEqual(demo["link_down_delivery_status"], "FAILED")
+        self.assertTrue(demo["recovered_ping_ok"])
 
     def test_lora_spi_heartbeat_updates_gateway_snapshot(self) -> None:
         sim = GatewaySimulator()

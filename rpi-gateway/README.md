@@ -13,6 +13,7 @@ Step 024 starts the gateway layer without requiring Raspberry Pi hardware yet. I
 - A WiFi-router simulated satellite path between gateways.
 - Local LoRa delivery inside one network.
 - Gateway forwarding for remote-network destinations.
+- Router-to-router gateway reachability checks.
 - Message buffering and ACK completion.
 - Failover after 10 seconds when a local LoRa route is unavailable.
 - Recovery after 10 stable seconds when LoRa becomes available again.
@@ -57,6 +58,23 @@ Expected result:
 
 This does not require a Raspberry Pi or LoRa module yet. It confirms the gateway can receive node heartbeat frames through the same interface that a hardware driver will use later.
 
+## Run The Router Link Demo
+
+From this folder:
+
+```sh
+python3 run_simulation.py --router-link-demo
+```
+
+Expected result:
+
+- `router_link_demo.initial_ping_ok` is `true`.
+- Remote delivery from `A1` to `B2` uses `GATEWAY_WIFI_ROUTER`.
+- When the simulated router link is turned off, ping fails and remote delivery fails.
+- When the simulated router link is restored, ping succeeds again.
+
+This is Option A for workbook Step 5.1. It proves the gateway-to-gateway router path behavior before real router settings are changed.
+
 ## Run Tests
 
 From this folder:
@@ -70,6 +88,7 @@ The tests verify:
 - Six-node, two-gateway topology.
 - Local LoRa delivery.
 - Cross-network gateway routing.
+- Router-to-router gateway ping simulation.
 - 10-second failover trigger.
 - 10-second recovery rule.
 - Failed delivery when the simulated gateway link is offline.

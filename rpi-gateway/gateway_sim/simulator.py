@@ -4,7 +4,7 @@ from dataclasses import asdict
 from typing import Dict, List, Optional
 
 from .lora_spi import LoRaFrame, LoRaSpiRadio, parse_gateway_heartbeat
-from .models import DeliveryResult, GatewaySnapshot, SimGateway, SimNode, SimPacket
+from .models import DeliveryResult, GatewaySnapshot, RouterLink, SimGateway, SimNode, SimPacket
 
 
 class GatewaySimulator:
@@ -26,7 +26,8 @@ class GatewaySimulator:
             "GWA": SimGateway("GWA", "NET_A", ["A1", "A2", "A3"], "GWB"),
             "GWB": SimGateway("GWB", "NET_B", ["B1", "B2", "B3"], "GWA"),
         }
-        self.satellite_link_available = True
+        self.router_link = RouterLink("ROUTER_LINK_A_B", "GWA", "GWB")
+        self.satellite_link_available = self.router_link.available
         self.heartbeats = {}
         self.queue: List[SimPacket] = []
         self.delivered: List[SimPacket] = []
@@ -76,8 +77,33 @@ class GatewaySimulator:
             self._event(now, f"{gateway_id} LORA_RECOVERY_OBSERVED")
 
     def set_satellite_link_available(self, available: bool, now: float) -> None:
+        self.set_router_link_available(available, now)
+
+    def set_router_link_available(self, available: bool, now: float) -> None:
+        self.router_link.available = available
         self.satellite_link_available = available
-        self._event(now, f"SATELLITE_LINK {'ONLINE' if available else 'OFFLINE'}")
+        self._event(now, f"ROUTER_LINK {'ONLINE' if available else 'OFFLINE'}")
+
+    def ping_gateway(self, source_gateway_id: str, target_gateway_id: str, now: float) -> bool:
+        if source_gateway_id not in self.gateways:
+            raise ValueError(f"unknown source gateway: {source_gateway_id}")
+        if target_gateway_id not in self.gateways:
+            raise ValueError(f"unknown target gateway: {target_gateway_id}")
+
+        expected_pair = {self.router_link.gateway_a_id, self.router_link.gateway_b_id}
+        actual_pair = {source_gateway_id, target_gateway_id}
+        ok = self.router_link.available and actual_pair == expected_pair
+        self.router_link.last_ping_at = now
+        self.router_link.last_ping_ok = ok
+        if ok:
+            self._event(
+                now,
+                f"PING_OK {source_gateway_id}->{target_gateway_id} "
+                f"path={self.router_link.router_a_name}<->{self.router_link.router_b_name}",
+            )
+        else:
+            self._event(now, f"PING_FAIL {source_gateway_id}->{target_gateway_id} reason=ROUTER_LINK_UNAVAILABLE")
+        return ok
 
     def receive_lora_frame(self, frame: LoRaFrame) -> bool:
         heartbeat = parse_gateway_heartbeat(frame)
@@ -124,6 +150,7 @@ class GatewaySimulator:
             gateways=self.gateways,
             nodes=self.nodes,
             heartbeats=self.heartbeats,
+            router_link=self.router_link,
             queue_depth=len(self.queue),
             delivered_count=len(self.delivered),
             failed_count=len(self.failed),
@@ -136,6 +163,7 @@ class GatewaySimulator:
             "gateways": {key: asdict(value) for key, value in snap.gateways.items()},
             "nodes": {key: asdict(value) for key, value in snap.nodes.items()},
             "heartbeats": {key: asdict(value) for key, value in snap.heartbeats.items()},
+            "router_link": asdict(snap.router_link),
             "queue_depth": snap.queue_depth,
             "heartbeat_count": len(snap.heartbeats),
             "delivered_count": snap.delivered_count,
@@ -152,6 +180,25 @@ class GatewaySimulator:
         self.set_lora_available("GWA", True, now=13.0)
         self.tick(23.0)
         return self.snapshot_dict()
+
+    def run_router_link_demo(self) -> dict:
+        ping_ok = self.ping_gateway("GWA", "GWB", now=0.0)
+        remote_result = self.send_message("A1", "B2", "router link demo message", now=1.0)
+        self.set_router_link_available(False, now=2.0)
+        ping_down = self.ping_gateway("GWA", "GWB", now=2.1)
+        failed_result = self.send_message("A2", "B1", "router link down message", now=3.0)
+        self.set_router_link_available(True, now=4.0)
+        ping_recovered = self.ping_gateway("GWB", "GWA", now=4.1)
+        snapshot = self.snapshot_dict()
+        snapshot["router_link_demo"] = {
+            "initial_ping_ok": ping_ok,
+            "remote_delivery_route": remote_result.packet.route_used,
+            "remote_delivery_status": remote_result.packet.status,
+            "link_down_ping_ok": ping_down,
+            "link_down_delivery_status": failed_result.packet.status,
+            "recovered_ping_ok": ping_recovered,
+        }
+        return snapshot
 
     def _attempt_delivery(self, packet: SimPacket, now: float) -> None:
         src_node = self.nodes[packet.src]
@@ -180,12 +227,12 @@ class GatewaySimulator:
         src_gateway = self.gateways[src_node.gateway_id]
         dest_gateway = self.gateways[dest_node.gateway_id]
 
-        if not self.satellite_link_available:
+        if not self.router_link.available:
             packet.status = "FAILED"
             packet.route_used = "NO_GATEWAY_LINK"
             self.queue.remove(packet)
             self.failed.append(packet)
-            self._event(now, f"FAILED {packet.msg_id} reason=SATELLITE_LINK_OFFLINE")
+            self._event(now, f"FAILED {packet.msg_id} reason=ROUTER_LINK_OFFLINE")
             return
 
         packet.path = [packet.src, src_gateway.gateway_id, "WIFI_ROUTER_LINK", dest_gateway.gateway_id, packet.dest]

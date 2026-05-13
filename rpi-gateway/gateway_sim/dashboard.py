@@ -94,6 +94,9 @@ def _html_dashboard(simulator: GatewaySimulator) -> str:
         f"<td>{hb['rssi']:.1f}</td><td>{hb['snr']:.1f}</td><td>{hb['status']}</td></tr>"
         for node_id, hb in snap["heartbeats"].items()
     ) or "<tr><td colspan=\"6\">No LoRa SPI heartbeats received yet.</td></tr>"
+    router_link = snap["router_link"]
+    router_status = "ONLINE" if router_link["available"] else "OFFLINE"
+    last_ping = "OK" if router_link["last_ping_ok"] else "Not passed yet"
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -110,7 +113,7 @@ def _html_dashboard(simulator: GatewaySimulator) -> str:
 <body>
   <h1>PUP MANET Gateway Simulator</h1>
   <p>Simulation-first gateway dashboard. Step 4.2 adds LoRa SPI heartbeat intake through a hardware abstraction.</p>
-  <p>Queue: {snap['queue_depth']} | Delivered: {snap['delivered_count']} | Failed: {snap['failed_count']} | Heartbeats: {snap['heartbeat_count']}</p>
+  <p>Queue: {snap['queue_depth']} | Delivered: {snap['delivered_count']} | Failed: {snap['failed_count']} | Heartbeats: {snap['heartbeat_count']} | Router Link: {router_status}</p>
   <table>
     <thead><tr><th>Gateway</th><th>Network</th><th>Route State</th><th>LoRa Ready</th><th>Peer</th></tr></thead>
     <tbody>{gateway_rows}</tbody>
@@ -119,6 +122,16 @@ def _html_dashboard(simulator: GatewaySimulator) -> str:
   <table>
     <thead><tr><th>Node</th><th>Gateway</th><th>Received At</th><th>RSSI</th><th>SNR</th><th>Status</th></tr></thead>
     <tbody>{heartbeat_rows}</tbody>
+  </table>
+  <h2>Router-to-Router Link</h2>
+  <table>
+    <tbody>
+      <tr><th>Link</th><td>{router_link['link_id']}</td></tr>
+      <tr><th>Path</th><td>{router_link['router_a_name']} &lt;-&gt; {router_link['router_b_name']}</td></tr>
+      <tr><th>Gateways</th><td>{router_link['gateway_a_id']} &lt;-&gt; {router_link['gateway_b_id']}</td></tr>
+      <tr><th>Status</th><td>{router_status}</td></tr>
+      <tr><th>Last Ping</th><td>{last_ping} at {router_link['last_ping_at']:.1f}s</td></tr>
+    </tbody>
   </table>
   <h2>Recent Events</h2>
   <pre>{events}</pre>

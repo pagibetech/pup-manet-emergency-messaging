@@ -22,6 +22,19 @@ class SimGateway:
 
 
 @dataclass
+class RouterLink:
+    link_id: str
+    gateway_a_id: str
+    gateway_b_id: str
+    router_a_name: str = "ROUTER_A"
+    router_b_name: str = "ROUTER_B"
+    available: bool = True
+    latency_ms: int = 0
+    last_ping_at: float = 0.0
+    last_ping_ok: bool = False
+
+
+@dataclass
 class SimPacket:
     msg_id: str
     src: str
@@ -59,6 +72,7 @@ class GatewaySnapshot:
     gateways: Dict[str, SimGateway]
     nodes: Dict[str, SimNode]
     heartbeats: Dict[str, GatewayHeartbeat]
+    router_link: RouterLink
     queue_depth: int
     delivered_count: int
     failed_count: int
