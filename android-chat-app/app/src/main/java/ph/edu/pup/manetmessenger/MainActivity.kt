@@ -643,7 +643,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
             activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
             activeSocket.outputStream.flush()
             line
-        }
+        }.onFailure { disconnect() }
     }
 
     suspend fun readAvailableLine(): Result<String?> = withContext(Dispatchers.IO) {
@@ -657,7 +657,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
             }
 
             readLineFromInput(activeSocket)
-        }
+        }.onFailure { disconnect() }
     }
 
     suspend fun waitForIncomingLine(timeoutMs: Long = 5000L): Result<String?> = withContext(Dispatchers.IO) {
@@ -674,7 +674,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
                 Thread.sleep(100L)
             }
             null
-        }
+        }.onFailure { disconnect() }
     }
 
     suspend fun sendLineAndWaitForResponse(
@@ -697,7 +697,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
                 Thread.sleep(100L)
             }
             line to null
-        }
+        }.onFailure { disconnect() }
     }
 
     fun disconnect() {
@@ -1567,6 +1567,7 @@ fun MessengerApp() {
                                             onFailure = { error ->
                                                 realBluetoothSocketState.copy(
                                                     socketStatus = "HELLO failed",
+                                                    connectedDevice = null,
                                                     lastError = error.message ?: "Unknown Bluetooth error"
                                                 )
                                             }
@@ -1584,6 +1585,8 @@ fun MessengerApp() {
                                             },
                                             onFailure = { error ->
                                                 realBluetoothSocketState.copy(
+                                                    connectedDevice = null,
+                                                    socketStatus = "Disconnected - reconnect ESP32",
                                                     lastError = error.message ?: "Unknown Bluetooth read error"
                                                 )
                                             }
@@ -1649,6 +1652,8 @@ fun MessengerApp() {
                                                 onFailure = { error ->
                                                     failed += 1
                                                     realBluetoothSocketState = realBluetoothSocketState.copy(
+                                                        connectedDevice = null,
+                                                        socketStatus = "Disconnected - reconnect ESP32",
                                                         liveTestStatus = "Test ${index + 1}/${tests.size} failed",
                                                         liveTestPassed = passed,
                                                         liveTestFailed = failed,
@@ -1714,6 +1719,8 @@ fun MessengerApp() {
                                             },
                                             onFailure = { error ->
                                                 realBluetoothSocketState.copy(
+                                                    connectedDevice = null,
+                                                    socketStatus = "Disconnected - reconnect ESP32",
                                                     liveTestStatus = "LoRa message failed",
                                                     lastSentLine = line,
                                                     lastError = error.message ?: "Unknown LoRa message error"
@@ -1749,6 +1756,8 @@ fun MessengerApp() {
                                             },
                                             onFailure = { error ->
                                                 realBluetoothSocketState.copy(
+                                                    connectedDevice = null,
+                                                    socketStatus = "Disconnected - reconnect ESP32",
                                                     liveTestStatus = "Incoming read failed",
                                                     lastError = error.message ?: "Unknown Bluetooth read error"
                                                 )

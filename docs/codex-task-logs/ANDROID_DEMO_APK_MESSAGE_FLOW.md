@@ -20,6 +20,7 @@ This does not add a new transport or skip ahead in the workbook. It makes the cu
   - `Incoming: <message>`
 - Updated **Check In** to wait up to 5 seconds for the incoming Bluetooth line instead of checking only once.
 - Wrapped Bluetooth socket reads/writes so socket errors show in the app instead of closing the app.
+- Cleared stale socket state on Bluetooth failures so the app shows `Disconnected - reconnect ESP32` and re-enables connection.
 - Kept the raw protocol packet in **Last received** for technical evidence.
 
 ## Scope Preserved
@@ -56,7 +57,7 @@ APK size:
 Current APK SHA-256:
 
 ```text
-5c48cce6c09de7686f2b08854ae2e7acada9553fc1e86d049da93cbda7d91a4c
+1854c1bb5ac7901c93395b7467a7152cfd2f91ca8e6626d73f07b7d84c19201a
 ```
 
 ## Demo Procedure
