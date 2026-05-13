@@ -1,6 +1,7 @@
 import unittest
 
 from gateway_sim import GatewaySimulator
+from gateway_sim.lora_spi import LoRaFrame, SimulatedLoRaSpiRadio
 
 
 class GatewaySimulatorTest(unittest.TestCase):
@@ -66,6 +67,28 @@ class GatewaySimulatorTest(unittest.TestCase):
         self.assertFalse(result.delivered)
         self.assertEqual(result.packet.status, "FAILED")
         self.assertEqual(result.packet.route_used, "NO_GATEWAY_LINK")
+
+    def test_lora_spi_heartbeat_updates_gateway_snapshot(self) -> None:
+        sim = GatewaySimulator()
+        radio = SimulatedLoRaSpiRadio()
+        radio.seed_heartbeat("A1", "GWA", now=3.0, rssi=-55.0, snr=9.7, uptime_s=42)
+
+        received = sim.poll_lora_radio(radio, now=3.1)
+        snapshot = sim.snapshot_dict()
+
+        self.assertEqual(received, 1)
+        self.assertEqual(snapshot["heartbeat_count"], 1)
+        self.assertEqual(snapshot["heartbeats"]["A1"]["gateway_id"], "GWA")
+        self.assertEqual(snapshot["heartbeats"]["A1"]["status"], "ONLINE")
+        self.assertTrue(any("HEARTBEAT_RX node=A1 gateway=GWA" in event for event in snapshot["events"]))
+
+    def test_lora_spi_heartbeat_rejects_wrong_gateway(self) -> None:
+        sim = GatewaySimulator()
+
+        accepted = sim.receive_lora_frame(LoRaFrame("HB1|A1|GWB|10", rssi=-60.0, snr=7.5, received_at=4.0))
+
+        self.assertFalse(accepted)
+        self.assertNotIn("A1", sim.snapshot_dict()["heartbeats"])
 
 
 if __name__ == "__main__":

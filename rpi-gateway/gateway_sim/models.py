@@ -36,6 +36,17 @@ class SimPacket:
     path: List[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class GatewayHeartbeat:
+    node_id: str
+    gateway_id: str
+    received_at: float
+    rssi: float
+    snr: float
+    raw_payload: str
+    status: str = "ONLINE"
+
+
 @dataclass
 class DeliveryResult:
     delivered: bool
@@ -47,6 +58,7 @@ class DeliveryResult:
 class GatewaySnapshot:
     gateways: Dict[str, SimGateway]
     nodes: Dict[str, SimNode]
+    heartbeats: Dict[str, GatewayHeartbeat]
     queue_depth: int
     delivered_count: int
     failed_count: int

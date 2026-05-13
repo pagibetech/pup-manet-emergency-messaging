@@ -17,7 +17,14 @@ Step 024 starts the gateway layer without requiring Raspberry Pi hardware yet. I
 - Failover after 10 seconds when a local LoRa route is unavailable.
 - Recovery after 10 stable seconds when LoRa becomes available again.
 
-Real Raspberry Pi SPI wiring, SX1278 gateway hardware access, router configuration, and production services are reserved for later workbook steps.
+Step 4.2 adds the first LoRa SPI integration layer in simulation-safe form:
+
+- A Raspberry Pi LoRa SPI configuration model.
+- A radio abstraction that can later wrap real SPI hardware.
+- A simulated LoRa SPI radio for Mac/Raspberry Pi dry runs.
+- Gateway heartbeat intake from local LoRa nodes.
+
+Real SX1278 SPI driver calls, router configuration, and production services are reserved for later workbook steps.
 
 ## Run The Simulation
 
@@ -32,6 +39,23 @@ Expected result:
 - JSON status is printed.
 - `delivered_count` is greater than `0`.
 - Recent events include local LoRa delivery, gateway forwarding, failover, ACK, and recovery.
+
+## Run The LoRa SPI Heartbeat Demo
+
+From this folder:
+
+```sh
+python3 run_simulation.py --lora-spi-demo
+```
+
+Expected result:
+
+- JSON status is printed.
+- `heartbeat_count` is `2`.
+- `heartbeats` includes `A1` and `A2` assigned to `GWA`.
+- Recent events include `HEARTBEAT_RX`.
+
+This does not require a Raspberry Pi or LoRa module yet. It confirms the gateway can receive node heartbeat frames through the same interface that a hardware driver will use later.
 
 ## Run Tests
 
@@ -49,6 +73,8 @@ The tests verify:
 - 10-second failover trigger.
 - 10-second recovery rule.
 - Failed delivery when the simulated gateway link is offline.
+- LoRa SPI heartbeat intake.
+- Wrong-gateway heartbeat rejection.
 
 ## Dashboard
 

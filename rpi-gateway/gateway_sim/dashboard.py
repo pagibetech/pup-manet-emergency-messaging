@@ -89,6 +89,11 @@ def _html_dashboard(simulator: GatewaySimulator) -> str:
         f"<td>{'YES' if gw['lora_available'] else 'NO'}</td><td>{gw['peer_gateway_id']}</td></tr>"
         for gid, gw in snap["gateways"].items()
     )
+    heartbeat_rows = "".join(
+        f"<tr><td>{node_id}</td><td>{hb['gateway_id']}</td><td>{hb['received_at']:.1f}</td>"
+        f"<td>{hb['rssi']:.1f}</td><td>{hb['snr']:.1f}</td><td>{hb['status']}</td></tr>"
+        for node_id, hb in snap["heartbeats"].items()
+    ) or "<tr><td colspan=\"6\">No LoRa SPI heartbeats received yet.</td></tr>"
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -104,11 +109,16 @@ def _html_dashboard(simulator: GatewaySimulator) -> str:
 </head>
 <body>
   <h1>PUP MANET Gateway Simulator</h1>
-  <p>Simulation-first Step 024 dashboard. Raspberry Pi SPI/LoRa hardware remains a later step.</p>
-  <p>Queue: {snap['queue_depth']} | Delivered: {snap['delivered_count']} | Failed: {snap['failed_count']}</p>
+  <p>Simulation-first gateway dashboard. Step 4.2 adds LoRa SPI heartbeat intake through a hardware abstraction.</p>
+  <p>Queue: {snap['queue_depth']} | Delivered: {snap['delivered_count']} | Failed: {snap['failed_count']} | Heartbeats: {snap['heartbeat_count']}</p>
   <table>
     <thead><tr><th>Gateway</th><th>Network</th><th>Route State</th><th>LoRa Ready</th><th>Peer</th></tr></thead>
     <tbody>{gateway_rows}</tbody>
+  </table>
+  <h2>LoRa SPI Heartbeats</h2>
+  <table>
+    <thead><tr><th>Node</th><th>Gateway</th><th>Received At</th><th>RSSI</th><th>SNR</th><th>Status</th></tr></thead>
+    <tbody>{heartbeat_rows}</tbody>
   </table>
   <h2>Recent Events</h2>
   <pre>{events}</pre>

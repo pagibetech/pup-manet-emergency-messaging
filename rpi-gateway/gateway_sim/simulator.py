@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Dict, List, Optional
 
+from .lora_spi import LoRaFrame, LoRaSpiRadio, parse_gateway_heartbeat
 from .models import DeliveryResult, GatewaySnapshot, SimGateway, SimNode, SimPacket
 
 
@@ -26,6 +27,7 @@ class GatewaySimulator:
             "GWB": SimGateway("GWB", "NET_B", ["B1", "B2", "B3"], "GWA"),
         }
         self.satellite_link_available = True
+        self.heartbeats = {}
         self.queue: List[SimPacket] = []
         self.delivered: List[SimPacket] = []
         self.failed: List[SimPacket] = []
@@ -77,10 +79,51 @@ class GatewaySimulator:
         self.satellite_link_available = available
         self._event(now, f"SATELLITE_LINK {'ONLINE' if available else 'OFFLINE'}")
 
+    def receive_lora_frame(self, frame: LoRaFrame) -> bool:
+        heartbeat = parse_gateway_heartbeat(frame)
+        if heartbeat is None:
+            self._event(frame.received_at, "LORA_FRAME_IGNORED reason=NOT_HEARTBEAT")
+            return False
+
+        node = self.nodes.get(heartbeat.node_id)
+        if node is None:
+            self._event(frame.received_at, f"HEARTBEAT_IGNORED unknown_node={heartbeat.node_id}")
+            return False
+
+        if heartbeat.gateway_id != node.gateway_id:
+            self._event(
+                frame.received_at,
+                f"HEARTBEAT_IGNORED node={heartbeat.node_id} expected_gateway={node.gateway_id} "
+                f"actual_gateway={heartbeat.gateway_id}",
+            )
+            return False
+
+        self.heartbeats[heartbeat.node_id] = heartbeat
+        gateway = self.gateways[heartbeat.gateway_id]
+        gateway.lora_available = True
+        gateway.lora_stable_since = heartbeat.received_at
+        self._event(
+            heartbeat.received_at,
+            f"HEARTBEAT_RX node={heartbeat.node_id} gateway={heartbeat.gateway_id} "
+            f"rssi={heartbeat.rssi:.1f} snr={heartbeat.snr:.1f}",
+        )
+        return True
+
+    def poll_lora_radio(self, radio: LoRaSpiRadio, now: float, max_frames: int = 25) -> int:
+        received = 0
+        for _ in range(max_frames):
+            frame = radio.receive_frame(now)
+            if frame is None:
+                break
+            if self.receive_lora_frame(frame):
+                received += 1
+        return received
+
     def snapshot(self) -> GatewaySnapshot:
         return GatewaySnapshot(
             gateways=self.gateways,
             nodes=self.nodes,
+            heartbeats=self.heartbeats,
             queue_depth=len(self.queue),
             delivered_count=len(self.delivered),
             failed_count=len(self.failed),
@@ -92,7 +135,9 @@ class GatewaySimulator:
         return {
             "gateways": {key: asdict(value) for key, value in snap.gateways.items()},
             "nodes": {key: asdict(value) for key, value in snap.nodes.items()},
+            "heartbeats": {key: asdict(value) for key, value in snap.heartbeats.items()},
             "queue_depth": snap.queue_depth,
+            "heartbeat_count": len(snap.heartbeats),
             "delivered_count": snap.delivered_count,
             "failed_count": snap.failed_count,
             "events": snap.events,
