@@ -105,6 +105,8 @@ class GatewaySimulator:
 
         gateway.degraded_since = None
         gateway.failover_reason = "NONE"
+        gateway.lora_available = True
+        gateway.lora_changed_at = now
         gateway.lora_stable_since = now
         if gateway.route_state in {"DEGRADED", "FAILOVER_ACTIVE"}:
             gateway.route_state = "RECOVERING"
@@ -313,16 +315,50 @@ class GatewaySimulator:
         }
         return snapshot
 
+    def run_recovery_demo(self) -> dict:
+        self.observe_lora_rssi("GWA", -82.0, now=0.0)
+        self.tick(10.0)
+        failover_state = self.gateways["GWA"].route_state
+        failover_route = self.send_message("A1", "A2", "during failover", now=10.1).packet.route_used
+
+        recovery_observed_at = 11.0
+        self.observe_lora_rssi("GWA", -60.0, now=recovery_observed_at)
+        self.tick(20.9)
+        before_restore = self.gateways["GWA"].route_state
+        restored_at = 21.0
+        self.tick(restored_at)
+        after_restore = self.gateways["GWA"].route_state
+        local_route = self.send_message("A1", "A2", "after recovery", now=21.1).packet.route_used
+        switch_seconds = restored_at - (recovery_observed_at + self.RECOVERY_SECONDS)
+
+        snapshot = self.snapshot_dict()
+        snapshot["recovery_demo"] = {
+            "failover_state": failover_state,
+            "route_during_failover": failover_route,
+            "recovery_observed_at": recovery_observed_at,
+            "state_before_stable_10s": before_restore,
+            "restored_at": restored_at,
+            "state_after_stable_10s": after_restore,
+            "switch_seconds_after_stable": switch_seconds,
+            "completed_within_5s": switch_seconds <= 5.0,
+            "route_after_recovery": local_route,
+        }
+        return snapshot
+
     def _attempt_delivery(self, packet: SimPacket, now: float) -> None:
         src_node = self.nodes[packet.src]
         dest_node = self.nodes[packet.dest]
         src_gateway = self.gateways[src_node.gateway_id]
 
-        if src_gateway.route_state == "FAILOVER_ACTIVE" and self.router_link.available:
+        if src_gateway.route_state in {"FAILOVER_ACTIVE", "RECOVERING"} and self.router_link.available:
             self._deliver_via_gateway(packet, now, reason=f"{src_gateway.failover_reason}_ACTIVE")
             return
 
-        if src_node.network_id == dest_node.network_id and src_gateway.lora_available:
+        if (
+            src_node.network_id == dest_node.network_id
+            and src_gateway.lora_available
+            and src_gateway.route_state == "PRIMARY_LORA"
+        ):
             packet.path = [packet.src, src_gateway.gateway_id, packet.dest]
             packet.route_used = "LOCAL_LORA"
             packet.status = "WAITING_ACK"

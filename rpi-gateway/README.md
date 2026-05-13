@@ -137,6 +137,24 @@ Expected result:
 
 This is the simulation-safe version of Step 6.2. It proves messages are buffered when the router path is offline and delivered in the same order when the path returns.
 
+## Run The Recovery Demo
+
+From this folder:
+
+```sh
+python3 run_simulation.py --recovery-demo
+```
+
+Expected result:
+
+- `failover_state` is `FAILOVER_ACTIVE`.
+- `state_before_stable_10s` is `RECOVERING`.
+- `state_after_stable_10s` is `PRIMARY_LORA`.
+- `completed_within_5s` is `true`.
+- `route_after_recovery` is `LOCAL_LORA`.
+
+This is the simulation-safe version of Step 6.3. It proves the gateway waits for 10 stable seconds before returning to local MANET routing, then completes the switch immediately within the 5-second acceptance window.
+
 ## Run Tests
 
 From this folder:
@@ -157,6 +175,7 @@ The tests verify:
 - ACK-timeout failover trigger.
 - Store-and-forward buffering with ordered flush.
 - 10-second recovery rule.
+- Return to `PRIMARY_LORA` within the 5-second recovery acceptance window.
 - Failed delivery when the simulated gateway link is offline.
 - LoRa SPI heartbeat intake.
 - Wrong-gateway heartbeat rejection.

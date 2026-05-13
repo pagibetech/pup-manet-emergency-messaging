@@ -103,6 +103,21 @@ class GatewaySimulatorTest(unittest.TestCase):
         self.assertEqual(sim.gateways["GWA"].route_state, "RECOVERING")
         self.assertNotEqual(sim.gateways["GWA"].route_state, "FAILOVER_ACTIVE")
 
+    def test_recovery_holds_gateway_route_until_stable_window_completes(self) -> None:
+        sim = GatewaySimulator()
+        sim.observe_lora_rssi("GWA", -82.0, now=0.0)
+        sim.tick(10.0)
+        self.assertEqual(sim.gateways["GWA"].route_state, "FAILOVER_ACTIVE")
+
+        sim.observe_lora_rssi("GWA", -60.0, now=11.0)
+        result_before = sim.send_message("A1", "A2", "still recovering", now=12.0)
+        self.assertEqual(result_before.packet.route_used, "GATEWAY_WIFI_ROUTER")
+
+        sim.tick(21.0)
+        self.assertEqual(sim.gateways["GWA"].route_state, "PRIMARY_LORA")
+        result_after = sim.send_message("A1", "A2", "recovered", now=21.1)
+        self.assertEqual(result_after.packet.route_used, "LOCAL_LORA")
+
     def test_ack_timeout_triggers_failover_route(self) -> None:
         sim = GatewaySimulator()
         packet_result = sim.send_message("A1", "A2", "manual ack timeout seed", now=0.0)
@@ -206,6 +221,19 @@ class GatewaySimulatorTest(unittest.TestCase):
         self.assertEqual(demo["statuses_before_recovery"], ["BUFFERED_FOR_FORWARD", "BUFFERED_FOR_FORWARD"])
         self.assertTrue(demo["order_preserved"])
         self.assertEqual(demo["depth_after_recovery"], 0)
+
+    def test_recovery_demo_reports_return_to_primary_lora(self) -> None:
+        sim = GatewaySimulator()
+
+        snapshot = sim.run_recovery_demo()
+        demo = snapshot["recovery_demo"]
+
+        self.assertEqual(demo["failover_state"], "FAILOVER_ACTIVE")
+        self.assertEqual(demo["route_during_failover"], "GATEWAY_WIFI_ROUTER")
+        self.assertEqual(demo["state_before_stable_10s"], "RECOVERING")
+        self.assertEqual(demo["state_after_stable_10s"], "PRIMARY_LORA")
+        self.assertTrue(demo["completed_within_5s"])
+        self.assertEqual(demo["route_after_recovery"], "LOCAL_LORA")
 
     def test_lora_spi_heartbeat_updates_gateway_snapshot(self) -> None:
         sim = GatewaySimulator()
