@@ -677,6 +677,26 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
         }.onFailure { disconnect() }
     }
 
+    suspend fun waitForIncomingMessageLine(timeoutMs: Long = 7000L): Result<String?> = withContext(Dispatchers.IO) {
+        val activeSocket = socket
+            ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
+
+        runCatching {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            val input = activeSocket.inputStream
+            while (System.currentTimeMillis() < deadline) {
+                if (input.available() > 0) {
+                    val line = readLineFromInput(activeSocket)
+                    if (line.contains("\"packetType\":\"MESSAGE\"") && line.contains("RECEIVED_OVER_LORA")) {
+                        return@runCatching line
+                    }
+                }
+                Thread.sleep(100L)
+            }
+            null
+        }.onFailure { disconnect() }
+    }
+
     suspend fun sendLineAndWaitForResponse(
         line: String,
         timeoutMs: Long = 3000L
@@ -685,6 +705,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
             ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
 
         runCatching {
+            drainAvailableLines(activeSocket)
             activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
             activeSocket.outputStream.flush()
 
@@ -718,6 +739,13 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
             }
         }
         return bytes.toByteArray().toString(Charsets.UTF_8)
+    }
+
+    private fun drainAvailableLines(activeSocket: BluetoothSocket) {
+        val input = activeSocket.inputStream
+        while (input.available() > 0) {
+            readLineFromInput(activeSocket)
+        }
     }
 }
 
@@ -1735,13 +1763,13 @@ fun MessengerApp() {
                                         lastError = "None"
                                     )
                                     queueScope.launch {
-                                        val received = androidBluetoothSocketClient.waitForIncomingLine(5000L)
+                                        val received = androidBluetoothSocketClient.waitForIncomingMessageLine(7000L)
                                         realBluetoothSocketState = received.fold(
                                             onSuccess = { line ->
                                                 if (line.isNullOrBlank()) {
                                                     realBluetoothSocketState.copy(
                                                         liveTestStatus = "No incoming packet yet",
-                                                        lastError = "No Bluetooth line within 5 seconds"
+                                                        lastError = "No LoRa MESSAGE within 7 seconds"
                                                     )
                                                 } else {
                                                     val incomingText = readableDemoMessageFromProtocolLine(line)
