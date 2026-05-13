@@ -78,6 +78,48 @@ class GatewaySimulatorTest(unittest.TestCase):
         self.assertEqual(result.packet.status, "DELIVERED")
         self.assertEqual(result.packet.route_used, "GATEWAY_WIFI_ROUTER")
 
+    def test_low_rssi_triggers_failover_after_ten_seconds(self) -> None:
+        sim = GatewaySimulator()
+        sim.observe_lora_rssi("GWA", -82.0, now=0.0)
+
+        sim.tick(9.9)
+        self.assertEqual(sim.gateways["GWA"].route_state, "DEGRADED")
+
+        sim.tick(10.0)
+        self.assertEqual(sim.gateways["GWA"].route_state, "FAILOVER_ACTIVE")
+        self.assertEqual(sim.gateways["GWA"].failover_reason, "LOW_RSSI")
+
+        result = sim.send_message("A1", "A2", "low rssi failover", now=10.1)
+        self.assertTrue(result.delivered)
+        self.assertEqual(result.packet.route_used, "GATEWAY_WIFI_ROUTER")
+
+    def test_rssi_recovery_before_ten_seconds_prevents_failover(self) -> None:
+        sim = GatewaySimulator()
+        sim.observe_lora_rssi("GWA", -82.0, now=0.0)
+        sim.observe_lora_rssi("GWA", -60.0, now=5.0)
+
+        sim.tick(10.0)
+
+        self.assertEqual(sim.gateways["GWA"].route_state, "RECOVERING")
+        self.assertNotEqual(sim.gateways["GWA"].route_state, "FAILOVER_ACTIVE")
+
+    def test_ack_timeout_triggers_failover_route(self) -> None:
+        sim = GatewaySimulator()
+        packet_result = sim.send_message("A1", "A2", "manual ack timeout seed", now=0.0)
+        packet = packet_result.packet
+        sim.delivered.remove(packet)
+        sim.queue.append(packet)
+        packet.status = "WAITING_ACK"
+        packet.created_at = 0.0
+        packet.route_used = "LOCAL_LORA"
+
+        sim.tick(10.0)
+
+        self.assertEqual(packet.status, "DELIVERED")
+        self.assertEqual(packet.route_used, "GATEWAY_WIFI_ROUTER")
+        self.assertEqual(sim.gateways["GWA"].route_state, "FAILOVER_ACTIVE")
+        self.assertEqual(sim.gateways["GWA"].failover_reason, "ACK_TIMEOUT")
+
     def test_recovery_requires_ten_stable_seconds(self) -> None:
         sim = GatewaySimulator()
         sim.set_lora_available("GWA", False, now=0.0)
@@ -124,6 +166,18 @@ class GatewaySimulatorTest(unittest.TestCase):
         self.assertEqual(demo["measured_ping_latency_ms"], 650)
         self.assertTrue(demo["within_500_700_ms_target"])
         self.assertEqual(demo["remote_delivery_status"], "DELIVERED")
+
+    def test_failover_demo_records_state_transition_and_route(self) -> None:
+        sim = GatewaySimulator()
+
+        snapshot = sim.run_failover_demo()
+        demo = snapshot["failover_demo"]
+
+        self.assertEqual(demo["state_before_10s"], "DEGRADED")
+        self.assertEqual(demo["state_after_10s"], "FAILOVER_ACTIVE")
+        self.assertEqual(demo["failover_reason"], "LOW_RSSI")
+        self.assertEqual(demo["message_route"], "GATEWAY_WIFI_ROUTER")
+        self.assertEqual(demo["message_status"], "DELIVERED")
 
     def test_lora_spi_heartbeat_updates_gateway_snapshot(self) -> None:
         sim = GatewaySimulator()

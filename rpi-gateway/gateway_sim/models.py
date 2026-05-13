@@ -19,6 +19,10 @@ class SimGateway:
     lora_changed_at: float = 0.0
     lora_stable_since: float = 0.0
     route_state: str = "PRIMARY_LORA"
+    last_rssi: float = -55.0
+    degraded_since: Optional[float] = None
+    failover_active_since: Optional[float] = None
+    failover_reason: str = "NONE"
 
 
 @dataclass

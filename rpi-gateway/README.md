@@ -15,6 +15,7 @@ Step 024 starts the gateway layer without requiring Raspberry Pi hardware yet. I
 - Gateway forwarding for remote-network destinations.
 - Router-to-router gateway reachability checks.
 - Configurable simulated router-link latency.
+- RSSI and ACK-timeout failover state machine.
 - Message buffering and ACK completion.
 - Failover after 10 seconds when a local LoRa route is unavailable.
 - Recovery after 10 stable seconds when LoRa becomes available again.
@@ -99,6 +100,24 @@ python3 run_simulation.py --latency-demo --latency-ms 650
 
 This is the simulation-safe version of Step 5.2. Real Raspberry Pi `tc/netem` latency injection can be tested later when both RPIs are ready for Linux network changes.
 
+## Run The Failover Demo
+
+From this folder:
+
+```sh
+python3 run_simulation.py --failover-demo
+```
+
+Expected result:
+
+- `state_before_10s` is `DEGRADED`.
+- `state_after_10s` is `FAILOVER_ACTIVE`.
+- `failover_reason` is `LOW_RSSI`.
+- `message_route` is `GATEWAY_WIFI_ROUTER`.
+- Recent events include `RSSI_DEGRADED` and `FAILOVER_ACTIVE`.
+
+This is the simulation-safe version of Step 6.1. It proves that RSSI below `-78 dBm` for 10 seconds activates failover. Tests also cover ACK-timeout failover.
+
 ## Run Tests
 
 From this folder:
@@ -115,6 +134,8 @@ The tests verify:
 - Router-to-router gateway ping simulation.
 - 500-700 ms router-link latency logging.
 - 10-second failover trigger.
+- RSSI threshold failover at less than `-78 dBm`.
+- ACK-timeout failover trigger.
 - 10-second recovery rule.
 - Failed delivery when the simulated gateway link is offline.
 - LoRa SPI heartbeat intake.

@@ -12,6 +12,8 @@ class GatewaySimulator:
 
     FAILOVER_SECONDS = 10.0
     RECOVERY_SECONDS = 10.0
+    RSSI_FAILOVER_THRESHOLD_DBM = -78.0
+    ACK_TIMEOUT_SECONDS = 10.0
 
     def __init__(self) -> None:
         self.nodes: Dict[str, SimNode] = {
@@ -54,6 +56,7 @@ class GatewaySimulator:
         return DeliveryResult(packet.status == "DELIVERED", packet, list(self.events))
 
     def tick(self, now: float) -> None:
+        self._update_failover(now)
         self._update_recovery(now)
         for packet in list(self.queue):
             if packet.status == "QUEUED":
@@ -61,7 +64,11 @@ class GatewaySimulator:
             elif packet.status == "WAITING_FAILOVER" and now - packet.created_at >= self.FAILOVER_SECONDS:
                 self._deliver_via_gateway(packet, now, reason="FAILOVER_AFTER_10S")
             elif packet.status == "WAITING_ACK":
-                self._ack_packet(packet, now)
+                if now - packet.created_at >= self.ACK_TIMEOUT_SECONDS:
+                    self._trigger_failover(self.gateways[self.nodes[packet.src].gateway_id], now, "ACK_TIMEOUT")
+                    self._deliver_via_gateway(packet, now, reason="ACK_TIMEOUT_FAILOVER")
+                else:
+                    self._ack_packet(packet, now)
 
     def set_lora_available(self, gateway_id: str, available: bool, now: float) -> None:
         gateway = self.gateways[gateway_id]
@@ -70,11 +77,37 @@ class GatewaySimulator:
         gateway.lora_stable_since = now if available else 0.0
         if not available:
             gateway.route_state = "DEGRADED"
+            gateway.degraded_since = now
+            gateway.failover_reason = "LORA_UNAVAILABLE"
             self._event(now, f"{gateway_id} LORA_DEGRADED")
         else:
-            if gateway.route_state == "DEGRADED":
+            if gateway.route_state in {"DEGRADED", "FAILOVER_ACTIVE"}:
                 gateway.route_state = "RECOVERING"
+            gateway.degraded_since = None
+            gateway.failover_reason = "NONE"
             self._event(now, f"{gateway_id} LORA_RECOVERY_OBSERVED")
+
+    def observe_lora_rssi(self, gateway_id: str, rssi: float, now: float) -> None:
+        gateway = self.gateways[gateway_id]
+        gateway.last_rssi = rssi
+        if rssi < self.RSSI_FAILOVER_THRESHOLD_DBM:
+            if gateway.degraded_since is None:
+                gateway.degraded_since = now
+                gateway.route_state = "DEGRADED"
+                gateway.failover_reason = "LOW_RSSI"
+                self._event(now, f"{gateway_id} RSSI_DEGRADED rssi={rssi:.1f} threshold={self.RSSI_FAILOVER_THRESHOLD_DBM:.1f}")
+            else:
+                self._event(now, f"{gateway_id} RSSI_STILL_DEGRADED rssi={rssi:.1f}")
+            return
+
+        gateway.degraded_since = None
+        gateway.failover_reason = "NONE"
+        gateway.lora_stable_since = now
+        if gateway.route_state in {"DEGRADED", "FAILOVER_ACTIVE"}:
+            gateway.route_state = "RECOVERING"
+            self._event(now, f"{gateway_id} RSSI_RECOVERY_OBSERVED rssi={rssi:.1f}")
+        else:
+            self._event(now, f"{gateway_id} RSSI_OK rssi={rssi:.1f}")
 
     def set_satellite_link_available(self, available: bool, now: float) -> None:
         self.set_router_link_available(available, now)
@@ -135,6 +168,7 @@ class GatewaySimulator:
         self.heartbeats[heartbeat.node_id] = heartbeat
         gateway = self.gateways[heartbeat.gateway_id]
         gateway.lora_available = True
+        gateway.last_rssi = heartbeat.rssi
         gateway.lora_stable_since = heartbeat.received_at
         self._event(
             heartbeat.received_at,
@@ -223,10 +257,34 @@ class GatewaySimulator:
         }
         return snapshot
 
+    def run_failover_demo(self) -> dict:
+        self.observe_lora_rssi("GWA", -82.0, now=0.0)
+        self.tick(9.9)
+        before = self.gateways["GWA"].route_state
+        self.tick(10.0)
+        after = self.gateways["GWA"].route_state
+        result = self.send_message("A1", "A2", "failover demo message", now=10.1)
+        snapshot = self.snapshot_dict()
+        snapshot["failover_demo"] = {
+            "threshold_dbm": self.RSSI_FAILOVER_THRESHOLD_DBM,
+            "observed_rssi": self.gateways["GWA"].last_rssi,
+            "state_before_10s": before,
+            "state_after_10s": after,
+            "failover_reason": self.gateways["GWA"].failover_reason,
+            "failover_active_since": self.gateways["GWA"].failover_active_since,
+            "message_route": result.packet.route_used,
+            "message_status": result.packet.status,
+        }
+        return snapshot
+
     def _attempt_delivery(self, packet: SimPacket, now: float) -> None:
         src_node = self.nodes[packet.src]
         dest_node = self.nodes[packet.dest]
         src_gateway = self.gateways[src_node.gateway_id]
+
+        if src_gateway.route_state == "FAILOVER_ACTIVE" and self.router_link.available:
+            self._deliver_via_gateway(packet, now, reason=f"{src_gateway.failover_reason}_ACTIVE")
+            return
 
         if src_node.network_id == dest_node.network_id and src_gateway.lora_available:
             packet.path = [packet.src, src_gateway.gateway_id, packet.dest]
@@ -282,7 +340,25 @@ class GatewaySimulator:
                 continue
             if gateway.route_state == "RECOVERING" and now - gateway.lora_stable_since >= self.RECOVERY_SECONDS:
                 gateway.route_state = "PRIMARY_LORA"
+                gateway.failover_active_since = None
+                gateway.failover_reason = "NONE"
                 self._event(now, f"{gateway.gateway_id} PRIMARY_LORA_RESTORED")
+
+    def _update_failover(self, now: float) -> None:
+        for gateway in self.gateways.values():
+            if gateway.degraded_since is None:
+                continue
+            if gateway.route_state == "FAILOVER_ACTIVE":
+                continue
+            if now - gateway.degraded_since >= self.FAILOVER_SECONDS:
+                self._trigger_failover(gateway, now, gateway.failover_reason or "DEGRADED")
+
+    def _trigger_failover(self, gateway: SimGateway, now: float, reason: str) -> None:
+        gateway.route_state = "FAILOVER_ACTIVE"
+        gateway.lora_available = False
+        gateway.failover_active_since = now
+        gateway.failover_reason = reason
+        self._event(now, f"{gateway.gateway_id} FAILOVER_ACTIVE reason={reason}")
 
     def _next_msg_id(self, src: str) -> str:
         self._counter += 1
