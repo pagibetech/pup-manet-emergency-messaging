@@ -32,6 +32,7 @@ class RouterLink:
     latency_ms: int = 0
     last_ping_at: float = 0.0
     last_ping_ok: bool = False
+    last_ping_latency_ms: int = 0
 
 
 @dataclass

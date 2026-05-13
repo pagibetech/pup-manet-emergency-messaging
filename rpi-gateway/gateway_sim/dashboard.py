@@ -96,7 +96,10 @@ def _html_dashboard(simulator: GatewaySimulator) -> str:
     ) or "<tr><td colspan=\"6\">No LoRa SPI heartbeats received yet.</td></tr>"
     router_link = snap["router_link"]
     router_status = "ONLINE" if router_link["available"] else "OFFLINE"
-    last_ping = "OK" if router_link["last_ping_ok"] else "Not passed yet"
+    if router_link["last_ping_ok"]:
+        last_ping = f"OK, {router_link['last_ping_latency_ms']} ms"
+    else:
+        last_ping = "Not passed yet"
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -130,6 +133,7 @@ def _html_dashboard(simulator: GatewaySimulator) -> str:
       <tr><th>Path</th><td>{router_link['router_a_name']} &lt;-&gt; {router_link['router_b_name']}</td></tr>
       <tr><th>Gateways</th><td>{router_link['gateway_a_id']} &lt;-&gt; {router_link['gateway_b_id']}</td></tr>
       <tr><th>Status</th><td>{router_status}</td></tr>
+      <tr><th>Configured Latency</th><td>{router_link['latency_ms']} ms</td></tr>
       <tr><th>Last Ping</th><td>{last_ping} at {router_link['last_ping_at']:.1f}s</td></tr>
     </tbody>
   </table>

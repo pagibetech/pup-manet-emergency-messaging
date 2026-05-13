@@ -39,7 +39,20 @@ class GatewaySimulatorTest(unittest.TestCase):
 
         self.assertTrue(ok)
         self.assertTrue(snapshot["router_link"]["last_ping_ok"])
+        self.assertEqual(snapshot["router_link"]["last_ping_latency_ms"], 0)
         self.assertTrue(any("PING_OK GWA->GWB" in event for event in snapshot["events"]))
+
+    def test_router_link_ping_reports_configured_latency(self) -> None:
+        sim = GatewaySimulator()
+        sim.set_router_link_latency(600, now=0.0)
+
+        ok = sim.ping_gateway("GWA", "GWB", now=0.1)
+        snapshot = sim.snapshot_dict()
+
+        self.assertTrue(ok)
+        self.assertEqual(snapshot["router_link"]["latency_ms"], 600)
+        self.assertEqual(snapshot["router_link"]["last_ping_latency_ms"], 600)
+        self.assertTrue(any("latency_ms=600" in event for event in snapshot["events"]))
 
     def test_router_link_ping_fails_when_link_is_offline(self) -> None:
         sim = GatewaySimulator()
@@ -99,6 +112,18 @@ class GatewaySimulatorTest(unittest.TestCase):
         self.assertFalse(demo["link_down_ping_ok"])
         self.assertEqual(demo["link_down_delivery_status"], "FAILED")
         self.assertTrue(demo["recovered_ping_ok"])
+
+    def test_latency_demo_records_500_to_700_ms_target(self) -> None:
+        sim = GatewaySimulator()
+
+        snapshot = sim.run_latency_demo(latency_ms=650)
+        demo = snapshot["latency_demo"]
+
+        self.assertTrue(demo["ping_ok"])
+        self.assertEqual(demo["configured_latency_ms"], 650)
+        self.assertEqual(demo["measured_ping_latency_ms"], 650)
+        self.assertTrue(demo["within_500_700_ms_target"])
+        self.assertEqual(demo["remote_delivery_status"], "DELIVERED")
 
     def test_lora_spi_heartbeat_updates_gateway_snapshot(self) -> None:
         sim = GatewaySimulator()

@@ -84,6 +84,12 @@ class GatewaySimulator:
         self.satellite_link_available = available
         self._event(now, f"ROUTER_LINK {'ONLINE' if available else 'OFFLINE'}")
 
+    def set_router_link_latency(self, latency_ms: int, now: float) -> None:
+        if latency_ms < 0:
+            raise ValueError("latency_ms must be non-negative")
+        self.router_link.latency_ms = latency_ms
+        self._event(now, f"ROUTER_LINK_LATENCY_SET latency_ms={latency_ms}")
+
     def ping_gateway(self, source_gateway_id: str, target_gateway_id: str, now: float) -> bool:
         if source_gateway_id not in self.gateways:
             raise ValueError(f"unknown source gateway: {source_gateway_id}")
@@ -95,11 +101,13 @@ class GatewaySimulator:
         ok = self.router_link.available and actual_pair == expected_pair
         self.router_link.last_ping_at = now
         self.router_link.last_ping_ok = ok
+        self.router_link.last_ping_latency_ms = self.router_link.latency_ms if ok else 0
         if ok:
             self._event(
                 now,
                 f"PING_OK {source_gateway_id}->{target_gateway_id} "
-                f"path={self.router_link.router_a_name}<->{self.router_link.router_b_name}",
+                f"path={self.router_link.router_a_name}<->{self.router_link.router_b_name} "
+                f"latency_ms={self.router_link.last_ping_latency_ms}",
             )
         else:
             self._event(now, f"PING_FAIL {source_gateway_id}->{target_gateway_id} reason=ROUTER_LINK_UNAVAILABLE")
@@ -200,6 +208,21 @@ class GatewaySimulator:
         }
         return snapshot
 
+    def run_latency_demo(self, latency_ms: int = 600) -> dict:
+        self.set_router_link_latency(latency_ms, now=0.0)
+        ping_ok = self.ping_gateway("GWA", "GWB", now=0.1)
+        remote_result = self.send_message("A1", "B2", "latency demo message", now=1.0)
+        snapshot = self.snapshot_dict()
+        snapshot["latency_demo"] = {
+            "configured_latency_ms": self.router_link.latency_ms,
+            "measured_ping_latency_ms": self.router_link.last_ping_latency_ms,
+            "within_500_700_ms_target": 500 <= self.router_link.last_ping_latency_ms <= 700,
+            "ping_ok": ping_ok,
+            "remote_delivery_route": remote_result.packet.route_used,
+            "remote_delivery_status": remote_result.packet.status,
+        }
+        return snapshot
+
     def _attempt_delivery(self, packet: SimPacket, now: float) -> None:
         src_node = self.nodes[packet.src]
         dest_node = self.nodes[packet.dest]
@@ -238,7 +261,11 @@ class GatewaySimulator:
         packet.path = [packet.src, src_gateway.gateway_id, "WIFI_ROUTER_LINK", dest_gateway.gateway_id, packet.dest]
         packet.route_used = "GATEWAY_WIFI_ROUTER"
         packet.status = "WAITING_ACK"
-        self._event(now, f"GATEWAY_FORWARD {packet.msg_id} reason={reason} path={'->'.join(packet.path)}")
+        self._event(
+            now,
+            f"GATEWAY_FORWARD {packet.msg_id} reason={reason} path={'->'.join(packet.path)} "
+            f"latency_ms={self.router_link.latency_ms}",
+        )
         self._ack_packet(packet, now)
 
     def _ack_packet(self, packet: SimPacket, now: float) -> None:

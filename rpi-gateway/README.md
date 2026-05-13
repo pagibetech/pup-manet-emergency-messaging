@@ -14,6 +14,7 @@ Step 024 starts the gateway layer without requiring Raspberry Pi hardware yet. I
 - Local LoRa delivery inside one network.
 - Gateway forwarding for remote-network destinations.
 - Router-to-router gateway reachability checks.
+- Configurable simulated router-link latency.
 - Message buffering and ACK completion.
 - Failover after 10 seconds when a local LoRa route is unavailable.
 - Recovery after 10 stable seconds when LoRa becomes available again.
@@ -75,6 +76,29 @@ Expected result:
 
 This is Option A for workbook Step 5.1. It proves the gateway-to-gateway router path behavior before real router settings are changed.
 
+## Run The Latency Demo
+
+From this folder:
+
+```sh
+python3 run_simulation.py --latency-demo
+```
+
+Expected result:
+
+- `latency_demo.configured_latency_ms` is `600`.
+- `latency_demo.measured_ping_latency_ms` is `600`.
+- `latency_demo.within_500_700_ms_target` is `true`.
+- Recent events include `ROUTER_LINK_LATENCY_SET`, `PING_OK`, and `GATEWAY_FORWARD` with `latency_ms=600`.
+
+To try another value inside the workbook target range:
+
+```sh
+python3 run_simulation.py --latency-demo --latency-ms 650
+```
+
+This is the simulation-safe version of Step 5.2. Real Raspberry Pi `tc/netem` latency injection can be tested later when both RPIs are ready for Linux network changes.
+
 ## Run Tests
 
 From this folder:
@@ -89,6 +113,7 @@ The tests verify:
 - Local LoRa delivery.
 - Cross-network gateway routing.
 - Router-to-router gateway ping simulation.
+- 500-700 ms router-link latency logging.
 - 10-second failover trigger.
 - 10-second recovery rule.
 - Failed delivery when the simulated gateway link is offline.
