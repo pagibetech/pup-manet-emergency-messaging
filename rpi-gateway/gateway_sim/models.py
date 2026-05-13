@@ -79,6 +79,7 @@ class GatewaySnapshot:
     heartbeats: Dict[str, GatewayHeartbeat]
     router_link: RouterLink
     queue_depth: int
+    store_forward_depth: int
     delivered_count: int
     failed_count: int
     events: List[str]

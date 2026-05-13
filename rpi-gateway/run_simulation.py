@@ -13,6 +13,7 @@ def main() -> None:
     parser.add_argument("--router-link-demo", action="store_true", help="run the simulated router-to-router gateway ping demo")
     parser.add_argument("--latency-demo", action="store_true", help="run the simulated 500-700 ms router latency demo")
     parser.add_argument("--failover-demo", action="store_true", help="run the RSSI-based 10-second failover state machine demo")
+    parser.add_argument("--store-forward-demo", action="store_true", help="run the store-and-forward buffering demo")
     parser.add_argument("--latency-ms", type=int, default=600, help="latency to use with --latency-demo")
     parser.add_argument("--host", default="127.0.0.1", help="dashboard host")
     parser.add_argument("--port", type=int, default=8080, help="dashboard port")
@@ -35,6 +36,11 @@ def main() -> None:
 
     if args.failover_demo:
         result = simulator.run_failover_demo()
+        print(json.dumps(result, indent=2))
+        return
+
+    if args.store_forward_demo:
+        result = simulator.run_store_forward_demo()
         print(json.dumps(result, indent=2))
         return
 

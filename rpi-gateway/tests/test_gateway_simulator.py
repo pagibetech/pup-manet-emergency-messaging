@@ -139,8 +139,25 @@ class GatewaySimulatorTest(unittest.TestCase):
         result = sim.send_message("A1", "B1", "remote with link down", now=1.0)
 
         self.assertFalse(result.delivered)
-        self.assertEqual(result.packet.status, "FAILED")
+        self.assertEqual(result.packet.status, "BUFFERED_FOR_FORWARD")
         self.assertEqual(result.packet.route_used, "NO_GATEWAY_LINK")
+        self.assertEqual(sim.snapshot_dict()["store_forward_depth"], 1)
+
+    def test_store_forward_flushes_buffered_packets_in_order(self) -> None:
+        sim = GatewaySimulator()
+        sim.set_router_link_available(False, now=0.0)
+
+        first = sim.send_message("A1", "B1", "first", now=1.0)
+        second = sim.send_message("A2", "B2", "second", now=2.0)
+        self.assertEqual(first.packet.status, "BUFFERED_FOR_FORWARD")
+        self.assertEqual(second.packet.status, "BUFFERED_FOR_FORWARD")
+        self.assertEqual(sim.snapshot_dict()["store_forward_depth"], 2)
+
+        sim.set_router_link_available(True, now=3.0)
+
+        self.assertEqual(sim.snapshot_dict()["store_forward_depth"], 0)
+        self.assertEqual([packet.msg_id for packet in sim.delivered[-2:]], [first.packet.msg_id, second.packet.msg_id])
+        self.assertTrue(all(packet.status == "DELIVERED" for packet in sim.delivered[-2:]))
 
     def test_router_link_demo_records_ping_and_delivery_results(self) -> None:
         sim = GatewaySimulator()
@@ -152,7 +169,7 @@ class GatewaySimulatorTest(unittest.TestCase):
         self.assertEqual(demo["remote_delivery_status"], "DELIVERED")
         self.assertEqual(demo["remote_delivery_route"], "GATEWAY_WIFI_ROUTER")
         self.assertFalse(demo["link_down_ping_ok"])
-        self.assertEqual(demo["link_down_delivery_status"], "FAILED")
+        self.assertEqual(demo["link_down_delivery_status"], "DELIVERED")
         self.assertTrue(demo["recovered_ping_ok"])
 
     def test_latency_demo_records_500_to_700_ms_target(self) -> None:
@@ -178,6 +195,17 @@ class GatewaySimulatorTest(unittest.TestCase):
         self.assertEqual(demo["failover_reason"], "LOW_RSSI")
         self.assertEqual(demo["message_route"], "GATEWAY_WIFI_ROUTER")
         self.assertEqual(demo["message_status"], "DELIVERED")
+
+    def test_store_forward_demo_reports_order_preserved(self) -> None:
+        sim = GatewaySimulator()
+
+        snapshot = sim.run_store_forward_demo()
+        demo = snapshot["store_forward_demo"]
+
+        self.assertEqual(demo["depth_before_recovery"], 2)
+        self.assertEqual(demo["statuses_before_recovery"], ["BUFFERED_FOR_FORWARD", "BUFFERED_FOR_FORWARD"])
+        self.assertTrue(demo["order_preserved"])
+        self.assertEqual(demo["depth_after_recovery"], 0)
 
     def test_lora_spi_heartbeat_updates_gateway_snapshot(self) -> None:
         sim = GatewaySimulator()

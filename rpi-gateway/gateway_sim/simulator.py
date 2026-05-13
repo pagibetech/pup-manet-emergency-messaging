@@ -32,6 +32,7 @@ class GatewaySimulator:
         self.satellite_link_available = self.router_link.available
         self.heartbeats = {}
         self.queue: List[SimPacket] = []
+        self.store_forward_queue: List[SimPacket] = []
         self.delivered: List[SimPacket] = []
         self.failed: List[SimPacket] = []
         self.events: List[str] = []
@@ -58,6 +59,8 @@ class GatewaySimulator:
     def tick(self, now: float) -> None:
         self._update_failover(now)
         self._update_recovery(now)
+        if self.router_link.available:
+            self.flush_store_forward(now)
         for packet in list(self.queue):
             if packet.status == "QUEUED":
                 self._attempt_delivery(packet, now)
@@ -116,6 +119,8 @@ class GatewaySimulator:
         self.router_link.available = available
         self.satellite_link_available = available
         self._event(now, f"ROUTER_LINK {'ONLINE' if available else 'OFFLINE'}")
+        if available:
+            self.flush_store_forward(now)
 
     def set_router_link_latency(self, latency_ms: int, now: float) -> None:
         if latency_ms < 0:
@@ -187,6 +192,16 @@ class GatewaySimulator:
                 received += 1
         return received
 
+    def flush_store_forward(self, now: float) -> int:
+        flushed = 0
+        for packet in list(self.store_forward_queue):
+            self.store_forward_queue.remove(packet)
+            packet.status = "QUEUED"
+            self._event(now, f"STORE_FORWARD_FLUSH {packet.msg_id} order={flushed + 1}")
+            self._deliver_via_gateway(packet, now, reason="STORE_FORWARD_FLUSH")
+            flushed += 1
+        return flushed
+
     def snapshot(self) -> GatewaySnapshot:
         return GatewaySnapshot(
             gateways=self.gateways,
@@ -194,6 +209,7 @@ class GatewaySimulator:
             heartbeats=self.heartbeats,
             router_link=self.router_link,
             queue_depth=len(self.queue),
+            store_forward_depth=len(self.store_forward_queue),
             delivered_count=len(self.delivered),
             failed_count=len(self.failed),
             events=list(self.events[-25:]),
@@ -207,6 +223,7 @@ class GatewaySimulator:
             "heartbeats": {key: asdict(value) for key, value in snap.heartbeats.items()},
             "router_link": asdict(snap.router_link),
             "queue_depth": snap.queue_depth,
+            "store_forward_depth": snap.store_forward_depth,
             "heartbeat_count": len(snap.heartbeats),
             "delivered_count": snap.delivered_count,
             "failed_count": snap.failed_count,
@@ -277,6 +294,25 @@ class GatewaySimulator:
         }
         return snapshot
 
+    def run_store_forward_demo(self) -> dict:
+        self.set_router_link_available(False, now=0.0)
+        first = self.send_message("A1", "B1", "first buffered message", now=1.0)
+        second = self.send_message("A2", "B2", "second buffered message", now=2.0)
+        depth_before = len(self.store_forward_queue)
+        statuses_before = [first.packet.status, second.packet.status]
+        self.set_router_link_available(True, now=3.0)
+        delivered_ids = [packet.msg_id for packet in self.delivered]
+        snapshot = self.snapshot_dict()
+        snapshot["store_forward_demo"] = {
+            "depth_before_recovery": depth_before,
+            "statuses_before_recovery": statuses_before,
+            "delivered_order": delivered_ids,
+            "expected_order": [first.packet.msg_id, second.packet.msg_id],
+            "order_preserved": delivered_ids[-2:] == [first.packet.msg_id, second.packet.msg_id],
+            "depth_after_recovery": len(self.store_forward_queue),
+        }
+        return snapshot
+
     def _attempt_delivery(self, packet: SimPacket, now: float) -> None:
         src_node = self.nodes[packet.src]
         dest_node = self.nodes[packet.dest]
@@ -309,11 +345,13 @@ class GatewaySimulator:
         dest_gateway = self.gateways[dest_node.gateway_id]
 
         if not self.router_link.available:
-            packet.status = "FAILED"
+            packet.status = "BUFFERED_FOR_FORWARD"
             packet.route_used = "NO_GATEWAY_LINK"
-            self.queue.remove(packet)
-            self.failed.append(packet)
-            self._event(now, f"FAILED {packet.msg_id} reason=ROUTER_LINK_OFFLINE")
+            if packet in self.queue:
+                self.queue.remove(packet)
+            if packet not in self.store_forward_queue:
+                self.store_forward_queue.append(packet)
+            self._event(now, f"STORE_FORWARD_BUFFERED {packet.msg_id} reason=ROUTER_LINK_OFFLINE")
             return
 
         packet.path = [packet.src, src_gateway.gateway_id, "WIFI_ROUTER_LINK", dest_gateway.gateway_id, packet.dest]

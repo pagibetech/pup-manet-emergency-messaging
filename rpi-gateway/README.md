@@ -17,6 +17,7 @@ Step 024 starts the gateway layer without requiring Raspberry Pi hardware yet. I
 - Configurable simulated router-link latency.
 - RSSI and ACK-timeout failover state machine.
 - Message buffering and ACK completion.
+- Store-and-forward buffering when the router link is offline.
 - Failover after 10 seconds when a local LoRa route is unavailable.
 - Recovery after 10 stable seconds when LoRa becomes available again.
 
@@ -72,7 +73,7 @@ Expected result:
 
 - `router_link_demo.initial_ping_ok` is `true`.
 - Remote delivery from `A1` to `B2` uses `GATEWAY_WIFI_ROUTER`.
-- When the simulated router link is turned off, ping fails and remote delivery fails.
+- When the simulated router link is turned off, ping fails and remote delivery is buffered until recovery.
 - When the simulated router link is restored, ping succeeds again.
 
 This is Option A for workbook Step 5.1. It proves the gateway-to-gateway router path behavior before real router settings are changed.
@@ -118,6 +119,24 @@ Expected result:
 
 This is the simulation-safe version of Step 6.1. It proves that RSSI below `-78 dBm` for 10 seconds activates failover. Tests also cover ACK-timeout failover.
 
+## Run The Store-And-Forward Demo
+
+From this folder:
+
+```sh
+python3 run_simulation.py --store-forward-demo
+```
+
+Expected result:
+
+- `depth_before_recovery` is `2`.
+- `statuses_before_recovery` contains `BUFFERED_FOR_FORWARD`.
+- `order_preserved` is `true`.
+- `depth_after_recovery` is `0`.
+- Recent events include `STORE_FORWARD_BUFFERED` and `STORE_FORWARD_FLUSH`.
+
+This is the simulation-safe version of Step 6.2. It proves messages are buffered when the router path is offline and delivered in the same order when the path returns.
+
 ## Run Tests
 
 From this folder:
@@ -136,6 +155,7 @@ The tests verify:
 - 10-second failover trigger.
 - RSSI threshold failover at less than `-78 dBm`.
 - ACK-timeout failover trigger.
+- Store-and-forward buffering with ordered flush.
 - 10-second recovery rule.
 - Failed delivery when the simulated gateway link is offline.
 - LoRa SPI heartbeat intake.

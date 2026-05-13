@@ -116,7 +116,7 @@ def _html_dashboard(simulator: GatewaySimulator) -> str:
 <body>
   <h1>PUP MANET Gateway Simulator</h1>
   <p>Simulation-first gateway dashboard. Step 4.2 adds LoRa SPI heartbeat intake through a hardware abstraction.</p>
-  <p>Queue: {snap['queue_depth']} | Delivered: {snap['delivered_count']} | Failed: {snap['failed_count']} | Heartbeats: {snap['heartbeat_count']} | Router Link: {router_status}</p>
+  <p>Queue: {snap['queue_depth']} | Store/Forward: {snap['store_forward_depth']} | Delivered: {snap['delivered_count']} | Failed: {snap['failed_count']} | Heartbeats: {snap['heartbeat_count']} | Router Link: {router_status}</p>
   <table>
     <thead><tr><th>Gateway</th><th>Network</th><th>Route State</th><th>LoRa Ready</th><th>Peer</th></tr></thead>
     <tbody>{gateway_rows}</tbody>
