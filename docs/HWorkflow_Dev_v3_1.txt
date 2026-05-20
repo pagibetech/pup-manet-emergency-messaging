@@ -1,0 +1,46 @@
+Local workflow anchor for this repository.
+
+Source repository:
+https://github.com/pagibetech/hybrid-ai-workflows
+
+Source inspected:
+HWorkflow_Dev_v3_1.txt at main commit 6aca08c6b8b296101554a7223258bca84fe8b0aa.
+
+Note:
+The requested file HWorkflow_Dev_v3_Codex_Limit_Routing.txt was not present on
+the inspected main branch. HWorkflow_Dev_v3_1.txt contains the Codex limit
+routing policy and operational memory contract used for this repository.
+
+Core rules:
+- Use workbook + GitHub + markdown operational memory as persistent project memory.
+- Before implementation inspect ACTIVE_CONTEXT, AI_SESSION_HANDOFF,
+  PROJECT_STATUS, CODEX_RULES, AI_ROUTING_RULES, CODEX_LIMIT_STATUS, and the
+  workbook current milestone.
+- Continue only from the next incomplete milestone.
+- Start with the cheapest capable model: Gemini/Gemma -> DeepSeek -> Kimi -> Codex.
+- Codex is a premium validation and execution engine, not the default
+  implementation model.
+- Reserve Codex for difficult debugging, repo-wide validation, build/test
+  execution, dependency-aware debugging, difficult multi-file fixes, final
+  milestone integration, and terminal-aware validation.
+- Do not use Codex for simple docs, workbook-only updates, markdown-only updates,
+  simple snippets, repetitive edits, simple UI tweaks, boilerplate, or basic
+  refactoring unless explicitly requested.
+- If Codex limits are moderate, use conservation mode: Kimi is primary
+  implementation model, DeepSeek handles cheap/repetitive coding, Codex handles
+  difficult validation only.
+- If Codex limits are low, use emergency mode: stop normal Codex usage and
+  reserve Codex for blockers only.
+- If Codex is exhausted, continue in Roo Code with Kimi primary, DeepSeek backup,
+  local machine builds/tests, GitHub, workbook, and markdown memory.
+
+Required operational memory files:
+- docs/ACTIVE_CONTEXT.md
+- docs/AI_SESSION_HANDOFF.md
+- docs/ARCHITECTURE.md
+- docs/CODEX_RULES.md
+- docs/PROJECT_STATUS.md
+- docs/AI_ROUTING_RULES.md
+- docs/CODEX_LIMIT_STATUS.md
+- docs/ROO_HANDOFF_PROMPT.md
+
