@@ -1160,212 +1160,291 @@ fun MessengerApp() {
                                 targetNode = targetNode,
                                 decision = decision
                             )
-                            val transportForMessage = activeTransport
-                            val sentPacket = transportForMessage.sendPacket(packet)
-                            if (bluetoothDeviceState.lifecycleState == BluetoothLifecycleState.Connected) {
-                                bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(sentPacket.packetId)
-                            }
-                            transportStatus = transportForMessage.getTransportStatus()
-                            messages.add(
-                                packetToChatMessage(
-                                    messageId = messageId,
-                                    packet = sentPacket,
-                                    decision = decision,
-                                    sourceNodeName = localNode.name,
-                                    targetNodeName = targetNode.name,
-                                    note = decision.note,
-                                    sentAt = currentTimeLabel(),
-                                    delayMs = delayMs
+
+                            val isLiveBridgeMode = realBluetoothSocketState.connected && decision.route == RouteLabel.Lora
+                            if (isLiveBridgeMode) {
+                                val destinationNode = peerNodeForConnectedEsp32(realBluetoothSocketState.connectedDevice)
+                                val btPacket = createBluetoothProtocolPacket(
+                                    packetType = BluetoothProtocolPacketType.Message,
+                                    payload = "MODE=LORA;TEXT=${sanitizeDemoMessageText(trimmedMessage)}",
+                                    destinationNode = destinationNode,
+                                    status = "QUEUED_FOR_LORA"
                                 )
-                            )
-                            packetLog.add(0, sentPacket)
-                            if (packetLog.size > 8) {
-                                packetLog.removeAt(packetLog.lastIndex)
-                            }
-                            draftMessage = ""
-                            if (decision.route != RouteLabel.None) {
+                                val line = compactSerializedPacketText(btPacket)
+                                messages.add(
+                                    packetToChatMessage(
+                                        messageId = messageId,
+                                        packet = packet.copy(
+                                            deliveryStatus = MessageStatus.Relaying.label,
+                                            selectedTransport = RouteLabel.Lora.label
+                                        ),
+                                        decision = decision,
+                                        sourceNodeName = localNode.name,
+                                        targetNodeName = targetNode.name,
+                                        note = "Live bridge to ${realBluetoothSocketState.connectedDevice} -> LoRa -> $destinationNode",
+                                        sentAt = currentTimeLabel(),
+                                        delayMs = delayMs
+                                    )
+                                )
+                                draftMessage = ""
+                                packetLog.add(0, packet)
+                                if (packetLog.size > 8) {
+                                    packetLog.removeAt(packetLog.lastIndex)
+                                }
                                 queueScope.launch {
-                                    var attempt = 0
-                                    var currentDecision = decision
-                                    var delivered = false
+                                    val result = androidBluetoothSocketClient.sendLineAndWaitForResponse(line, 7000L)
+                                    val exchangeIndex = messages.indexOfFirst { it.id == messageId }
+                                    if (exchangeIndex >= 0) {
+                                        result.fold(
+                                            onSuccess = { exchange ->
+                                                val response = exchange.second
+                                                val forwarded = response?.contains("FORWARDED_OVER_LORA") == true
+                                                val finalPacket = messages[exchangeIndex].packet.copy(
+                                                    deliveryStatus = if (forwarded) MessageStatus.Delivered.label else MessageStatus.Failed.label,
+                                                    selectedTransport = RouteLabel.Lora.label
+                                                )
+                                                messages[exchangeIndex] = messages[exchangeIndex].copy(
+                                                    status = if (forwarded) MessageStatus.Delivered else MessageStatus.Failed,
+                                                    packet = finalPacket,
+                                                    deliveryProgress = if (forwarded) "Forwarded over LoRa" else "Bridge ACK: ${response ?: "No response"}",
+                                                    note = if (forwarded) "Live bridge forwarded to LoRa" else "Live bridge did not confirm LoRa forwarding"
+                                                )
+                                                bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(btPacket.packetId)
+                                                if (forwarded) {
+                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_ACK")
+                                                }
+                                                updatePacketLog(packetLog, finalPacket)
+                                                eventLog.add(0, "Live bridge ${if (forwarded) "forwarded" else "failed"} ${packet.packetId}")
+                                                while (eventLog.size > 10) {
+                                                    eventLog.removeAt(eventLog.lastIndex)
+                                                }
+                                            },
+                                            onFailure = { error ->
+                                                val failedPacket = messages[exchangeIndex].packet.copy(
+                                                    deliveryStatus = MessageStatus.Failed.label
+                                                )
+                                                messages[exchangeIndex] = messages[exchangeIndex].copy(
+                                                    status = MessageStatus.Failed,
+                                                    packet = failedPacket,
+                                                    deliveryProgress = "Bridge send failed: ${error.message ?: "Unknown error"}"
+                                                )
+                                                updatePacketLog(packetLog, failedPacket)
+                                                eventLog.add(0, "Live bridge send failed for ${packet.packetId}")
+                                                while (eventLog.size > 10) {
+                                                    eventLog.removeAt(eventLog.lastIndex)
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            } else {
+                                val transportForMessage = activeTransport
+                                val sentPacket = transportForMessage.sendPacket(packet)
+                                if (bluetoothDeviceState.lifecycleState == BluetoothLifecycleState.Connected) {
+                                    bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(sentPacket.packetId)
+                                }
+                                transportStatus = transportForMessage.getTransportStatus()
+                                messages.add(
+                                    packetToChatMessage(
+                                        messageId = messageId,
+                                        packet = sentPacket,
+                                        decision = decision,
+                                        sourceNodeName = localNode.name,
+                                        targetNodeName = targetNode.name,
+                                        note = decision.note,
+                                        sentAt = currentTimeLabel(),
+                                        delayMs = delayMs
+                                    )
+                                )
+                                packetLog.add(0, sentPacket)
+                                if (packetLog.size > 8) {
+                                    packetLog.removeAt(packetLog.lastIndex)
+                                }
+                                draftMessage = ""
+                                if (decision.route != RouteLabel.None) {
+                                    queueScope.launch {
+                                        var attempt = 0
+                                        var currentDecision = decision
+                                        var delivered = false
 
-                                    while (attempt <= queueManager.maxRetryCount && !delivered) {
-                                        val task = DeliveryTask(
-                                            packetId = sentPacket.packetId,
-                                            route = currentDecision.route,
-                                            maxRetries = queueManager.maxRetryCount
-                                        )
-                                        val routingIndex = messages.indexOfFirst { it.id == messageId }
-                                        if (routingIndex < 0) {
-                                            break
-                                        }
-                                        val routingPacket = messages[routingIndex].packet.copy(
-                                            deliveryStatus = MessageStatus.Routing.label
-                                        )
-                                        messages[routingIndex] = messages[routingIndex].copy(
-                                            status = MessageStatus.Routing,
-                                            packet = routingPacket,
-                                            retryCount = attempt,
-                                            deliveryProgress = "Routing via ${task.route.label}..."
-                                        )
-                                        updatePacketLog(packetLog, routingPacket)
-
-                                        delay(queueManager.routingDelayMs(simulationCondition))
-
-                                        val liveNetworkState = effectiveNetworkState(networkState, bluetoothState)
-                                        val liveRouting = routingEngine.decide(
-                                            selectedNetwork = selectedNetwork,
-                                            networkState = liveNetworkState,
-                                            localNode = localNode,
-                                            targetNode = targetNode,
-                                            nodes = simulatedNodes
-                                        )
-                                        val selectedRouting = if (queueManager.shouldDropPacket(simulationCondition, currentDecision.route)) {
-                                            queueManager.retryRoutingDecision(liveRouting, currentDecision.route)
-                                        } else {
-                                            liveRouting
-                                        }
-                                        val liveDecision = decideRoute(
-                                            selectedNetwork = selectedNetwork,
-                                            networkState = liveNetworkState,
-                                            bluetoothState = bluetoothState,
-                                            localNode = localNode,
-                                            targetNode = targetNode,
-                                            adaptiveRoutingDecision = selectedRouting,
-                                            nodes = simulatedNodes
-                                        )
-
-                                        if (liveDecision.route == RouteLabel.None) {
-                                            attempt += 1
-                                            val retryIndex = messages.indexOfFirst { it.id == messageId }
-                                            if (retryIndex < 0) {
+                                        while (attempt <= queueManager.maxRetryCount && !delivered) {
+                                            val task = DeliveryTask(
+                                                packetId = sentPacket.packetId,
+                                                route = currentDecision.route,
+                                                maxRetries = queueManager.maxRetryCount
+                                            )
+                                            val routingIndex = messages.indexOfFirst { it.id == messageId }
+                                            if (routingIndex < 0) {
                                                 break
                                             }
-                                            val retryStatus = if (attempt > queueManager.maxRetryCount) {
-                                                MessageStatus.Failed
-                                            } else {
-                                                MessageStatus.Retrying
-                                            }
-                                            val retryPacket = messages[retryIndex].packet.copy(
-                                                selectedTransport = liveDecision.route.label,
-                                                deliveryStatus = retryStatus.label
+                                            val routingPacket = messages[routingIndex].packet.copy(
+                                                deliveryStatus = MessageStatus.Routing.label
                                             )
-                                            messages[retryIndex] = messages[retryIndex].copy(
+                                            messages[routingIndex] = messages[routingIndex].copy(
+                                                status = MessageStatus.Routing,
+                                                packet = routingPacket,
+                                                retryCount = attempt,
+                                                deliveryProgress = "Routing via ${task.route.label}..."
+                                            )
+                                            updatePacketLog(packetLog, routingPacket)
+
+                                            delay(queueManager.routingDelayMs(simulationCondition))
+
+                                            val liveNetworkState = effectiveNetworkState(networkState, bluetoothState)
+                                            val liveRouting = routingEngine.decide(
+                                                selectedNetwork = selectedNetwork,
+                                                networkState = liveNetworkState,
+                                                localNode = localNode,
+                                                targetNode = targetNode,
+                                                nodes = simulatedNodes
+                                            )
+                                            val selectedRouting = if (queueManager.shouldDropPacket(simulationCondition, currentDecision.route)) {
+                                                queueManager.retryRoutingDecision(liveRouting, currentDecision.route)
+                                            } else {
+                                                liveRouting
+                                            }
+                                            val liveDecision = decideRoute(
+                                                selectedNetwork = selectedNetwork,
+                                                networkState = liveNetworkState,
+                                                bluetoothState = bluetoothState,
+                                                localNode = localNode,
+                                                targetNode = targetNode,
+                                                adaptiveRoutingDecision = selectedRouting,
+                                                nodes = simulatedNodes
+                                            )
+
+                                            if (liveDecision.route == RouteLabel.None) {
+                                                attempt += 1
+                                                val retryIndex = messages.indexOfFirst { it.id == messageId }
+                                                if (retryIndex < 0) {
+                                                    break
+                                                }
+                                                val retryStatus = if (attempt > queueManager.maxRetryCount) {
+                                                    MessageStatus.Failed
+                                                } else {
+                                                    MessageStatus.Retrying
+                                                }
+                                                val retryPacket = messages[retryIndex].packet.copy(
+                                                    selectedTransport = liveDecision.route.label,
+                                                    deliveryStatus = retryStatus.label
+                                                )
+                                                messages[retryIndex] = messages[retryIndex].copy(
+                                                    route = liveDecision.route,
+                                                    status = retryStatus,
+                                                    metrics = liveDecision.metrics,
+                                                    path = liveDecision.path,
+                                                    note = liveDecision.note,
+                                                    packet = retryPacket,
+                                                    retryCount = attempt,
+                                                    deliveryProgress = if (retryStatus == MessageStatus.Failed) {
+                                                        "Failed after $attempt retries."
+                                                    } else {
+                                                        "Retrying route discovery..."
+                                                    }
+                                                )
+                                                updatePacketLog(packetLog, retryPacket)
+                                                eventLog.add(0, "Retry $attempt for ${sentPacket.packetId}: ${liveDecision.note}")
+                                                if (retryStatus == MessageStatus.Failed) {
+                                                    break
+                                                }
+                                                delay(queueManager.retryDelayMs(attempt))
+                                                currentDecision = liveDecision
+                                                continue
+                                            }
+
+                                            val relayIndex = messages.indexOfFirst { it.id == messageId }
+                                            if (relayIndex < 0) {
+                                                break
+                                            }
+                                            val relayingPacket = messages[relayIndex].packet.copy(
+                                                selectedTransport = liveDecision.route.label,
+                                                deliveryStatus = MessageStatus.Relaying.label,
+                                                relayAt = System.currentTimeMillis() / 1000L
+                                            )
+                                            val relayNode = liveDecision.path.drop(1).dropLast(1).firstOrNull() ?: liveDecision.path.lastOrNull().orEmpty()
+                                            messages[relayIndex] = messages[relayIndex].copy(
                                                 route = liveDecision.route,
-                                                status = retryStatus,
+                                                status = MessageStatus.Relaying,
                                                 metrics = liveDecision.metrics,
                                                 path = liveDecision.path,
                                                 note = liveDecision.note,
-                                                packet = retryPacket,
+                                                progressStep = if (liveDecision.path.size > 1) 1 else 0,
+                                                packet = relayingPacket,
                                                 retryCount = attempt,
-                                                deliveryProgress = if (retryStatus == MessageStatus.Failed) {
-                                                    "Failed after $attempt retries."
+                                                deliveryProgress = if (relayNode.isBlank()) {
+                                                    "Relaying..."
                                                 } else {
-                                                    "Retrying route discovery..."
+                                                    "Relaying through $relayNode..."
                                                 }
                                             )
-                                            updatePacketLog(packetLog, retryPacket)
-                                            eventLog.add(0, "Retry $attempt for ${sentPacket.packetId}: ${liveDecision.note}")
-                                            if (retryStatus == MessageStatus.Failed) {
+                                            updatePacketLog(packetLog, relayingPacket)
+
+                                            delay(queueManager.relayDelayMs(liveDecision.route, liveDecision.metrics.hopCount, simulationCondition))
+
+                                            val deliveredIndex = messages.indexOfFirst { it.id == messageId }
+                                            if (deliveredIndex < 0) {
                                                 break
                                             }
-                                            delay(queueManager.retryDelayMs(attempt))
-                                            currentDecision = liveDecision
-                                            continue
-                                        }
-
-                                        val relayIndex = messages.indexOfFirst { it.id == messageId }
-                                        if (relayIndex < 0) {
-                                            break
-                                        }
-                                        val relayingPacket = messages[relayIndex].packet.copy(
-                                            selectedTransport = liveDecision.route.label,
-                                            deliveryStatus = MessageStatus.Relaying.label,
-                                            relayAt = System.currentTimeMillis() / 1000L
-                                        )
-                                        val relayNode = liveDecision.path.drop(1).dropLast(1).firstOrNull() ?: liveDecision.path.lastOrNull().orEmpty()
-                                        messages[relayIndex] = messages[relayIndex].copy(
-                                            route = liveDecision.route,
-                                            status = MessageStatus.Relaying,
-                                            metrics = liveDecision.metrics,
-                                            path = liveDecision.path,
-                                            note = liveDecision.note,
-                                            progressStep = if (liveDecision.path.size > 1) 1 else 0,
-                                            packet = relayingPacket,
-                                            retryCount = attempt,
-                                            deliveryProgress = if (relayNode.isBlank()) {
-                                                "Relaying..."
-                                            } else {
-                                                "Relaying through $relayNode..."
-                                            }
-                                        )
-                                        updatePacketLog(packetLog, relayingPacket)
-
-                                        delay(queueManager.relayDelayMs(liveDecision.route, liveDecision.metrics.hopCount, simulationCondition))
-
-                                        val deliveredIndex = messages.indexOfFirst { it.id == messageId }
-                                        if (deliveredIndex < 0) {
-                                            break
-                                        }
-                                        if (queueManager.shouldDropPacket(simulationCondition, liveDecision.route)) {
-                                            attempt += 1
-                                            val retryPacket = messages[deliveredIndex].packet.copy(
-                                                deliveryStatus = if (attempt > queueManager.maxRetryCount) {
-                                                    MessageStatus.Failed.label
+                                            if (queueManager.shouldDropPacket(simulationCondition, liveDecision.route)) {
+                                                attempt += 1
+                                                val retryPacket = messages[deliveredIndex].packet.copy(
+                                                    deliveryStatus = if (attempt > queueManager.maxRetryCount) {
+                                                        MessageStatus.Failed.label
+                                                    } else {
+                                                        MessageStatus.Retrying.label
+                                                    }
+                                                )
+                                                val retryStatus = if (attempt > queueManager.maxRetryCount) {
+                                                    MessageStatus.Failed
                                                 } else {
-                                                    MessageStatus.Retrying.label
+                                                    MessageStatus.Retrying
                                                 }
-                                            )
-                                            val retryStatus = if (attempt > queueManager.maxRetryCount) {
-                                                MessageStatus.Failed
-                                            } else {
-                                                MessageStatus.Retrying
+                                                messages[deliveredIndex] = messages[deliveredIndex].copy(
+                                                    status = retryStatus,
+                                                    packet = retryPacket,
+                                                    retryCount = attempt,
+                                                    deliveryProgress = if (retryStatus == MessageStatus.Failed) {
+                                                        "Packet dropped after retry limit."
+                                                    } else {
+                                                        "Retrying after packet drop..."
+                                                    }
+                                                )
+                                                updatePacketLog(packetLog, retryPacket)
+                                                eventLog.add(0, "Packet drop on ${liveDecision.route.label}; retry $attempt for ${sentPacket.packetId}")
+                                                if (retryStatus == MessageStatus.Failed) {
+                                                    break
+                                                }
+                                                currentDecision = liveDecision
+                                                delay(queueManager.retryDelayMs(attempt))
+                                                continue
                                             }
+
+                                            transportForMessage.receivePacket()
+                                            if (bluetoothDeviceState.lifecycleState == BluetoothLifecycleState.Connected) {
+                                                bluetoothPacketBridge = bluetoothPacketBridge.recordInbound(sentPacket.packetId)
+                                            }
+                                            val deliveredPacket = messages[deliveredIndex].packet.copy(
+                                                selectedTransport = liveDecision.route.label,
+                                                deliveryStatus = MessageStatus.Delivered.label,
+                                                deliveredAt = System.currentTimeMillis() / 1000L
+                                            )
                                             messages[deliveredIndex] = messages[deliveredIndex].copy(
-                                                status = retryStatus,
-                                                packet = retryPacket,
+                                                route = liveDecision.route,
+                                                status = MessageStatus.Delivered,
+                                                metrics = liveDecision.metrics,
+                                                path = liveDecision.path,
+                                                note = liveDecision.note,
+                                                progressStep = (liveDecision.path.size - 1).coerceAtLeast(0),
+                                                packet = deliveredPacket,
                                                 retryCount = attempt,
-                                                deliveryProgress = if (retryStatus == MessageStatus.Failed) {
-                                                    "Packet dropped after retry limit."
-                                                } else {
-                                                    "Retrying after packet drop..."
-                                                }
+                                                deliveryProgress = "Delivered"
                                             )
-                                            updatePacketLog(packetLog, retryPacket)
-                                            eventLog.add(0, "Packet drop on ${liveDecision.route.label}; retry $attempt for ${sentPacket.packetId}")
-                                            if (retryStatus == MessageStatus.Failed) {
-                                                break
+                                            updatePacketLog(packetLog, deliveredPacket)
+                                            if (activeTransport === transportForMessage) {
+                                                transportStatus = transportForMessage.getTransportStatus()
                                             }
-                                            currentDecision = liveDecision
-                                            delay(queueManager.retryDelayMs(attempt))
-                                            continue
+                                            delivered = true
                                         }
-
-                                        transportForMessage.receivePacket()
-                                        if (bluetoothDeviceState.lifecycleState == BluetoothLifecycleState.Connected) {
-                                            bluetoothPacketBridge = bluetoothPacketBridge.recordInbound(sentPacket.packetId)
-                                        }
-                                        val deliveredPacket = messages[deliveredIndex].packet.copy(
-                                            selectedTransport = liveDecision.route.label,
-                                            deliveryStatus = MessageStatus.Delivered.label,
-                                            deliveredAt = System.currentTimeMillis() / 1000L
-                                        )
-                                        messages[deliveredIndex] = messages[deliveredIndex].copy(
-                                            route = liveDecision.route,
-                                            status = MessageStatus.Delivered,
-                                            metrics = liveDecision.metrics,
-                                            path = liveDecision.path,
-                                            note = liveDecision.note,
-                                            progressStep = (liveDecision.path.size - 1).coerceAtLeast(0),
-                                            packet = deliveredPacket,
-                                            retryCount = attempt,
-                                            deliveryProgress = "Delivered"
-                                        )
-                                        updatePacketLog(packetLog, deliveredPacket)
-                                        if (activeTransport === transportForMessage) {
-                                            transportStatus = transportForMessage.getTransportStatus()
-                                        }
-                                        delivered = true
                                     }
                                 }
                             }
@@ -1773,6 +1852,44 @@ fun MessengerApp() {
                                                     )
                                                 } else {
                                                     val incomingText = readableDemoMessageFromProtocolLine(line)
+                                                    val incomingPacket = deserializeBluetoothProtocolPacket(line)
+                                                    if (incomingPacket != null && incomingText.isNotBlank()) {
+                                                        val incomingMessageId = nextMessageId++
+                                                        val incomingChatMessage = ChatMessage(
+                                                            id = incomingMessageId,
+                                                            text = incomingText,
+                                                            sourceNode = incomingPacket.sourceNode,
+                                                            targetNode = "ANDROID_APP",
+                                                            route = RouteLabel.Lora,
+                                                            status = MessageStatus.Delivered,
+                                                            metrics = SimMetrics(0, 0f, 0, "live", "n/a"),
+                                                            path = incomingPacket.hopPath,
+                                                            note = "Received over LoRa bridge",
+                                                            sentAt = currentTimeLabel(),
+                                                            progressStep = 0,
+                                                            routeQuality = "Live",
+                                                            delayMs = 0L,
+                                                            packet = LoraManetPacket(
+                                                                packetId = incomingPacket.packetId,
+                                                                sourceNodeId = incomingPacket.sourceNode,
+                                                                destinationNodeId = incomingPacket.destinationNode,
+                                                                selectedTransport = RouteLabel.Lora.label,
+                                                                payloadText = incomingText,
+                                                                timestamp = incomingPacket.timestamp,
+                                                                hopPath = incomingPacket.hopPath,
+                                                                hopCount = incomingPacket.hopPath.size - 1,
+                                                                rssi = 0,
+                                                                snr = 0f,
+                                                                gatewayStatus = "live",
+                                                                satelliteStatus = "n/a",
+                                                                deliveryStatus = MessageStatus.Delivered.label,
+                                                                queuedAt = incomingPacket.timestamp
+                                                            ),
+                                                            retryCount = 0,
+                                                            deliveryProgress = "Received over LoRa"
+                                                        )
+                                                        messages.add(incomingChatMessage)
+                                                    }
                                                     bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_INCOMING")
                                                     realBluetoothSocketState.copy(
                                                         liveTestStatus = "Incoming: $incomingText",
@@ -3831,10 +3948,19 @@ private fun createBluetoothProtocolPacket(
     )
 }
 
-private fun peerNodeForConnectedEsp32(connectedDevice: String?): String {
+private fun localEsp32NodeId(connectedDevice: String?): String {
     return when {
-        connectedDevice?.contains("NODE_B", ignoreCase = true) == true -> "NODE_A"
-        else -> "NODE_B"
+        connectedDevice.isNullOrBlank() -> "NODE_A"
+        connectedDevice.contains("NODE_A", ignoreCase = true) -> "NODE_A"
+        connectedDevice.contains("NODE_B", ignoreCase = true) -> "NODE_B"
+        else -> "NODE_A"
+    }
+}
+
+private fun peerNodeForConnectedEsp32(connectedDevice: String?): String {
+    return when (localEsp32NodeId(connectedDevice)) {
+        "NODE_A" -> "NODE_B"
+        else -> "NODE_A"
     }
 }
 

@@ -901,7 +901,8 @@ void processIncomingBluetoothProtocolPacket(const String &line) {
     payload += ";loRa=" + String(loraReady ? "READY" : "SIMULATION_PLACEHOLDER");
     payload += ";forwarding=";
     payload += forwardedToLoRa ? "FORWARDED_OVER_LORA" : (shouldForwardToLoRa ? "LORA_NOT_READY" : "LOCAL_OR_SIMULATION_ONLY");
-    sendBluetoothPacket(createAckPacket(result.packet, forwardedToLoRa ? "FORWARDED_OVER_LORA" : "QUEUED_FOR_SIMULATION", payload));
+    const String ackStatus = forwardedToLoRa ? "FORWARDED_OVER_LORA" : (shouldForwardToLoRa ? "LORA_NOT_READY" : "QUEUED_FOR_SIMULATION");
+    sendBluetoothPacket(createAckPacket(result.packet, ackStatus, payload));
     return;
   }
 
