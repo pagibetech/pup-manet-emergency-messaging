@@ -655,6 +655,8 @@ bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet) {
          packet.payload.length() > 0;
 }
 
+void sendBluetoothPacket(const ProtocolPacket &packet);
+
 void deliverLoRaProtocolPacketToBluetooth(const ProtocolPacket &packet) {
   Serial.print("[LORA_PROTOCOL_RX] packet_id=");
   Serial.print(packet.packetId);
@@ -676,15 +678,13 @@ void deliverLoRaProtocolPacketToBluetooth(const ProtocolPacket &packet) {
     return;
   }
 
-  const String serialized = serializeProtocolPacket(packet);
-  if (SerialBT.hasClient()) {
-    SerialBT.println(serialized);
-    Serial.print("[BT_TX_FROM_LORA] ");
-    Serial.println(serialized);
-  } else {
+  if (!SerialBT.hasClient()) {
     Serial.print("[BT_PENDING_FROM_LORA] no Android Bluetooth client for packet_id=");
     Serial.println(packet.packetId);
+    return;
   }
+
+  sendBluetoothPacket(packet);
 }
 
 void processIncomingLoRaRelayPacket(const String &line) {

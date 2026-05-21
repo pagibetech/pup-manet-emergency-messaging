@@ -12,6 +12,8 @@ Step 022 adds controlled SX1278 LoRa live-test environments for ESP32-to-ESP32 p
 
 Step 023 bridges Android `BT-MANET-1.0` `MESSAGE` packets from Classic Bluetooth SPP onto SX1278 LoRa when the message targets another ESP32 node. The ESP32 sends a compact LoRa relay frame to stay within the SX1278 packet size limit, then the receiving LoRa node rebuilds a valid protocol packet for its connected Android Bluetooth client.
 
+Step 034 completes live phone-to-phone routing: an Android phone sends a `BT-MANET-1.0` `MESSAGE` packet to its paired ESP32, the ESP32 forwards it over LoRa, the remote ESP32 receives it and forwards it over Bluetooth to the paired Android phone, and the Android app displays the incoming message.
+
 ## Build Environments
 
 `platformio.ini` defines one environment per simulated node:
@@ -218,7 +220,7 @@ Physical workflow:
 4. In the Android app on both phones, open the Sim tab, press **Load Paired**, select the correct `PUP-MANET-NODE_*`, then press **Connect ESP32**.
 5. On Phone A, press **Send LoRa**.
 6. On Phone B, press **Check In**.
-7. NODE_A should log `[LORA_TX]` with a `BT1|...` relay line, NODE_B should log `[LORA_RX]`, `[LORA_PROTOCOL_RX]`, and `[BT_TX_FROM_LORA]`, and Phone B should show the incoming protocol packet.
+7. NODE_A should log `[LORA_TX]` with a `BT1|...` relay line, NODE_B should log `[LORA_RX]`, `[LORA_PROTOCOL_RX]`, and `[BT_TX]`, and Phone B should show the incoming protocol packet.
 
 The receiving Android phone reads the incoming packet on demand with **Check In**. Continuous background receive remains reserved for a later workbook step.
 
@@ -366,6 +368,4 @@ Expected logs include:
 ## Current Limitations
 
 - LoRa is enabled only in `node_a_lora` and `node_b_lora` builds.
-- Android-to-LoRa chat delivery is not enabled in this firmware step.
-- Parsed Bluetooth `MESSAGE` packets are acknowledged as queued for simulation only; they are not forwarded to real LoRa in Step 022.
 - The checksum is a placeholder only; no CRC is implemented yet.
