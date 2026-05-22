@@ -6,6 +6,8 @@ Date: 2026-05-22
 
 Completed / PASS.
 
+Multi-hop routing foundation added and validated without breaking real 2-node LoRa Chat delivery.
+
 ## Scope
 
 Add the foundation for multi-hop routing (`hopCount`, `ttl`, `previousHop`) without breaking the current 2-node phone-to-phone working path.
@@ -55,9 +57,12 @@ Add the foundation for multi-hop routing (`hopCount`, `ttl`, `previousHop`) with
 
 ## Acceptance Test
 
-### A. Existing 2-node path still passes
-- Phone A Chat → Bluetooth SPP → NODE_A → LoRa → NODE_B → Bluetooth SPP → Phone B Chat.
-- Verified via `node_a_lora` / `node_b_lora` builds.
+### A. Existing 2-node paths still pass
+- Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat.
+- Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat.
+- Logs show `[BT_RX]`, `[LORA_TX]`, `[LORA_RX]`, `[ROUTE_DECISION] deliver_local`, and `[BT_TX]`.
+- New multi-hop fields are active: `hopCount`, `ttl`, `previousHop`.
+- No regression from STEP 035 / STEP 036.
 
 ### B. Simulated multi-hop logic test passes
 - Paste a `BT1|` relay packet targeting `NODE_C` into `node_b` serial:
@@ -88,4 +93,4 @@ Add the foundation for multi-hop routing (`hopCount`, `ttl`, `previousHop`) with
 
 ## Next Step
 
-STEP 038 — Third Node Hardware Integration or Advanced Routing Table.
+STEP 038 — Real Multi-Hop Relay Validation.

@@ -2,15 +2,15 @@
 
 Last updated: 2026-05-22
 
-Overall state: STEP 036 is complete. Incoming real LoRa messages are now automatically inserted into the Chat tab UI. The next incomplete milestone is open.
+Overall state: STEP 037 is complete. Multi-hop routing foundation is active and validated without breaking real 2-node LoRa Chat delivery. The next incomplete milestone is STEP 038 - Real Multi-Hop Relay Validation.
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed: STEP 036 changes staged.
+Local HEAD observed: `f7e2501 STEP 037 — Multi-Hop Routing Foundation`
 
-Workbook current milestone: STEP 036 - Real Chat UI Integration.
+Workbook current milestone: STEP 038 - Real Multi-Hop Relay Validation.
 
-Latest completed workbook step: STEP 036 - Real Chat UI Integration.
+Latest completed workbook step: STEP 037 - Multi-Hop Routing Foundation.
 
 Completed highlights:
 - ESP32 simulation and multi-node simulation baseline.
@@ -22,6 +22,8 @@ Completed highlights:
 - Android build validation and network selection validation.
 - Workbook AI workflow memory sheets.
 - STEP 035 real RF flow passed: Phone A -> Bluetooth SPP -> NODE_A ESP32 -> LoRa RF -> NODE_B ESP32 -> Bluetooth SPP -> Phone B.
+- STEP 036 real Chat UI integration passed.
+- STEP 037 multi-hop routing foundation passed with `hopCount`, `ttl`, and `previousHop` active.
 
 STEP 035 physical validation evidence:
 - Phone A connected to `PUP-MANET-NODE_A` with MAC shown.
@@ -32,7 +34,7 @@ STEP 035 physical validation evidence:
 - Status includes `RECEIVED_OVER_LORA`.
 - ACK path returns `FORWARDED_OVER_LORA`.
 
-Tested branch/HEAD: `step-002-003-esp32-simulation` @ `147431c4da544c6f0b0cc972f83bcc124ac2a069`. Existing uncommitted Android/ESP32 validation fixes were present and are intentionally not staged in this docs-only commit.
+Tested branch/HEAD for STEP 037: `step-002-003-esp32-simulation` @ `f7e2501`.
 
 STEP 036 changes:
 - Added auto-receive `LaunchedEffect` in `MainActivity.kt` that polls Bluetooth SPP while connected.
@@ -40,8 +42,15 @@ STEP 036 changes:
 - Adds `[CHAT_RX_LORA]` and `[ANDROID_RX]` logs to the event log.
 - Preserves Sim tab diagnostics, manual Check In button, and simulation fallback.
 
+STEP 037 validation evidence:
+- Existing 2-node path still works: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`.
+- Reverse path also works: `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
+- Logs show `[BT_RX]`, `[LORA_TX]`, `[LORA_RX]`, `[ROUTE_DECISION] deliver_local`, and `[BT_TX]`.
+- New multi-hop fields confirmed active: `hopCount`, `ttl`, `previousHop`.
+- No regression from STEP 035 / STEP 036.
+
 Current blocker:
-- No blocker. Physical build validation must be performed on the Android build machine.
+- No blocker for continuity update. STEP 038 real multi-hop relay validation remains pending.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket

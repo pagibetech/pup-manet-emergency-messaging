@@ -10,32 +10,32 @@ Local path: `/Users/macbookm1max321tb/A_Design/A_Coding/ADM_Manet`
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed: `147431c fix(firmware): clarify ACK status for LoRa-not-ready case`
+Local HEAD observed: `f7e2501 STEP 037 — Multi-Hop Routing Foundation`
 
 Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
-Workbook latest referenced commit: `147431c`
+Workbook latest referenced commit: `f7e2501`
 
-Latest completed workbook step: STEP 035 - Real End-to-End LoRa Message Delivery
+Latest completed workbook step: STEP 037 - Multi-Hop Routing Foundation
 
-Current milestone: STEP 036 - Real Chat UI Integration
+Current milestone: STEP 038 - Real Multi-Hop Relay Validation
 
-Current feature: Integrate the confirmed real LoRa RF path into the chat UI workflow
+Current feature: Validate real multi-hop relay behavior beyond the confirmed 2-node Chat LoRa path
 
-Active implementation files: none for this continuity commit. Existing Android/ESP32 working tree changes remain unstaged.
+Active implementation files: none for this continuity commit. Source code is not being modified.
 
-Unresolved issue: STEP 036 is pending; preserve simulation fallback while integrating the real chat UI path.
+Unresolved issue: STEP 038 pending: real multi-hop relay validation.
 
-Current testing state: STEP 035 physical RF end-to-end validation passed.
+Current testing state: STEP 037 PASS. Multi-hop routing foundation validated without breaking real 2-node LoRa Chat delivery.
 
-Confirmed working flow: `Phone A -> Bluetooth SPP -> NODE_A ESP32 -> LoRa RF -> NODE_B ESP32 -> Bluetooth SPP -> Phone B`.
+Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`, plus reverse `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
 
-Evidence summary: Phone A connected to `PUP-MANET-NODE_A` with MAC shown; Phone B connected to `PUP-MANET-NODE_B` with MAC shown; NODE_A log shows `BT_RX` and LoRa forwarding; NODE_B log shows `LORA_RX` and `BT_TX`; Phone B displays `Incoming: Emergency message from Phone A`; status includes `RECEIVED_OVER_LORA`; ACK path returns `FORWARDED_OVER_LORA`.
+Evidence summary: logs show `[BT_RX]`, `[LORA_TX]`, `[LORA_RX]`, `[ROUTE_DECISION] deliver_local`, and `[BT_TX]`; new multi-hop fields `hopCount`, `ttl`, and `previousHop` are active; no regression from STEP 035 / STEP 036.
 
-Tested branch/HEAD: `step-002-003-esp32-simulation` @ `147431c4da544c6f0b0cc972f83bcc124ac2a069`. Existing uncommitted Android/ESP32 validation fixes were present and are intentionally not staged in this docs-only commit.
+Tested branch/HEAD: `step-002-003-esp32-simulation` @ `f7e2501`.
 
-Recommended next task: start STEP 036 - Real Chat UI Integration.
+Recommended next task: start STEP 038 - Real Multi-Hop Relay Validation.
 
-Recommended model/tool: Kimi/Android Studio for implementation; Codex only for focused validation or difficult blockers.
+Recommended model/tool: local hardware bench + Android/PlatformIO tools; Codex only for focused validation or difficult blockers.
 
-Escalation guidance: keep STEP 036 scoped to chat UI integration unless the workbook explicitly authorizes ESP32/RPi changes.
+Escalation guidance: keep STEP 038 scoped to real multi-hop relay validation unless the workbook explicitly authorizes broader routing work.

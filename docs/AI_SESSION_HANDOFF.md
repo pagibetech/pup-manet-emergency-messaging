@@ -2,30 +2,27 @@
 
 Last updated: 2026-05-22
 
-Current milestone: STEP 036 - Real Chat UI Integration.
+Current milestone: STEP 038 - Real Multi-Hop Relay Validation.
 
-Latest completed milestone: STEP 035 - Real End-to-End LoRa Message Delivery.
+Latest completed milestone: STEP 037 - Multi-Hop Routing Foundation.
 
-Unfinished task: integrate the confirmed real RF LoRa path into the chat UI workflow.
+Unfinished task: validate a real multi-hop relay path using the new routing foundation.
 
 Pending validations:
-- Chat UI sends through the real Bluetooth SPP -> LoRa RF bridge.
-- Chat UI displays incoming real LoRa-delivered messages.
-- Route/status evidence remains visible: `RECEIVED_OVER_LORA` and `FORWARDED_OVER_LORA`.
-- Simulation mode still works when no real Bluetooth socket is connected.
+- Real multi-hop relay behavior beyond the confirmed 2-node Chat LoRa path.
+- Route logs show relay decisions, ttl handling, hopCount updates, and previousHop tracking.
+- Existing 2-node Chat LoRa path remains non-regressed.
 
 Blockers:
 - No blocker for continuity update.
-- Source working tree already has Android/ESP32 validation changes that are intentionally not staged in this docs-only commit.
+- STEP 038 physical relay validation remains pending.
 
-Confirmed STEP 035 physical evidence:
-- Phone A connected to `PUP-MANET-NODE_A` with MAC shown.
-- Phone B connected to `PUP-MANET-NODE_B` with MAC shown.
-- NODE_A log shows `BT_RX` and LoRa forwarding.
-- NODE_B log shows `LORA_RX` and `BT_TX`.
-- Phone B displays `Incoming: Emergency message from Phone A`.
-- Status includes `RECEIVED_OVER_LORA`.
-- ACK path returns `FORWARDED_OVER_LORA`.
+Confirmed STEP 037 evidence:
+- Existing 2-node path still works after multi-hop foundation: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`.
+- Reverse path also works: `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
+- Logs show `[BT_RX]`, `[LORA_TX]`, `[LORA_RX]`, `[ROUTE_DECISION] deliver_local`, and `[BT_TX]`.
+- New multi-hop fields confirmed active: `hopCount`, `ttl`, `previousHop`.
+- No regression from STEP 035 / STEP 036.
 
 Latest implementation instructions:
 - Follow `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`.
@@ -35,21 +32,19 @@ Latest implementation instructions:
 - Follow hybrid AI workflow Codex conservation rules.
 
 Expected outputs:
-- STEP 036 chat UI integration evidence.
-- Android build/test result if implementation occurs.
-- Phone screenshots/logs showing real chat UI send/receive over LoRa.
+- STEP 038 real multi-hop relay validation evidence.
+- Route logs showing relay behavior and hop metadata.
+- Confirmation that the 2-node Chat LoRa path still works.
 
 Latest build/test result:
-- STEP 035 physical RF end-to-end message delivery passed.
-- Tested branch/HEAD recorded as `step-002-003-esp32-simulation` @ `147431c4da544c6f0b0cc972f83bcc124ac2a069`.
+- STEP 037 Multi-Hop Routing Foundation passed.
+- Tested branch/HEAD recorded as `step-002-003-esp32-simulation` @ `f7e2501`.
 - RPi gateway simulation tests last known passing through failover/recovery baseline.
 - No build, test, or simulation run was performed during this continuity documentation update.
 
-Troubleshooting notes carried into STEP 036:
-- stale Bluetooth socket
-- `localBridgeNode` vs `destinationNode` separation
-- LoRa-to-Bluetooth forwarding
-- Android blocking read for full JSON line
-- Kotlin `SimMetrics` type mismatch
+Routing notes carried into STEP 038:
+- Preserve STEP 035 / STEP 036 real Chat LoRa behavior.
+- Watch `[ROUTE_DECISION] deliver_local` versus relay logs.
+- Confirm `hopCount`, `ttl`, and `previousHop` are updated as expected.
 
-Recommended next model/tool: Kimi/Android Studio for STEP 036 implementation; use Codex only for focused validation or difficult blocker analysis.
+Recommended next model/tool: local hardware bench + Android/PlatformIO tools for STEP 038; use Codex only for focused validation or difficult blocker analysis.
