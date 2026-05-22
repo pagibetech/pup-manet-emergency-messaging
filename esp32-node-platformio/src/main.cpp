@@ -743,14 +743,13 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
   Serial.println(sourceLabel);
 
   const String relayLine = serializeLoRaRelayPacket(relayPacket);
-  if (sendLoRaLine(relayLine)) {
-    Serial.print("[LORA_RELAY] packet_id=");
-    Serial.print(packet.packetId);
-    Serial.print(" relayed_by=");
-    Serial.print(SIM_NODE_ID);
-    Serial.print(" new_path=");
-    Serial.println(relayPacket.hopPath);
-  }
+  sendLoRaLine(relayLine);
+  Serial.print("[LORA_RELAY] packet_id=");
+  Serial.print(packet.packetId);
+  Serial.print(" relayed_by=");
+  Serial.print(SIM_NODE_ID);
+  Serial.print(" new_path=");
+  Serial.println(relayPacket.hopPath);
 }
 
 void processIncomingLoRaRelayPacket(const String &line) {
@@ -1158,6 +1157,112 @@ void loraPingCommand() {
   }
 }
 
+void relayTestDestCommand(const String &line) {
+  String args = line.substring(String("RELAY_DEST").length());
+  args.trim();
+
+  const int payloadStart = args.indexOf(' ');
+  if (payloadStart <= 0) {
+    Serial.println("[ERROR] Usage: RELAY_DEST <DEST> <PAYLOAD>");
+    return;
+  }
+
+  String dest = args.substring(0, payloadStart);
+  String payload = args.substring(payloadStart + 1);
+  dest.trim();
+  payload.trim();
+
+  if (dest.length() == 0 || payload.length() == 0) {
+    Serial.println("[ERROR] Usage: RELAY_DEST <DEST> <PAYLOAD>");
+    return;
+  }
+
+  ProtocolPacket packet = emptyProtocolPacket();
+  packet.protocolVersion = PROTOCOL_VERSION;
+  packet.packetType = "MESSAGE";
+  packet.packetId = "RELAY_TEST-" + String(SIM_NODE_ID) + "-" + String(millis());
+  packet.sourceNode = "NODE_A";
+  packet.destinationNode = dest;
+  packet.payload = payload;
+  packet.hopPath = "NODE_A";
+  packet.hopCount = 0;
+  packet.ttl = DEFAULT_TTL;
+  packet.previousHop = "NODE_A";
+  packet.retryCount = 0;
+  packet.timestamp = simulationTimestamp();
+  packet.status = "RECEIVED_OVER_LORA";
+  packet.checksum = CHECKSUM_PLACEHOLDER;
+
+  Serial.print("[RELAY_TEST] injecting packet dest=");
+  Serial.println(dest);
+  routeLoRaProtocolPacket(packet, "serial_test");
+}
+
+void relayTestDuplicateCommand() {
+  const String packetId = "RELAY_TEST_DUPLICATE";
+  ProtocolPacket packet = emptyProtocolPacket();
+  packet.protocolVersion = PROTOCOL_VERSION;
+  packet.packetType = "MESSAGE";
+  packet.packetId = packetId;
+  packet.sourceNode = "NODE_A";
+  packet.destinationNode = "NODE_C";
+  packet.payload = "Duplicate test payload";
+  packet.hopPath = "NODE_A";
+  packet.hopCount = 0;
+  packet.ttl = DEFAULT_TTL;
+  packet.previousHop = "NODE_A";
+  packet.retryCount = 0;
+  packet.timestamp = simulationTimestamp();
+  packet.status = "RECEIVED_OVER_LORA";
+  packet.checksum = CHECKSUM_PLACEHOLDER;
+
+  Serial.println("[RELAY_TEST] injecting packet first time");
+  routeLoRaProtocolPacket(packet, "serial_test");
+
+  Serial.println("[RELAY_TEST] injecting same packet again (duplicate)");
+  routeLoRaProtocolPacket(packet, "serial_test");
+}
+
+void relayTestTtl0Command(const String &line) {
+  String args = line.substring(String("RELAY_TTL0").length());
+  args.trim();
+
+  const int payloadStart = args.indexOf(' ');
+  if (payloadStart <= 0) {
+    Serial.println("[ERROR] Usage: RELAY_TTL0 <DEST> <PAYLOAD>");
+    return;
+  }
+
+  String dest = args.substring(0, payloadStart);
+  String payload = args.substring(payloadStart + 1);
+  dest.trim();
+  payload.trim();
+
+  if (dest.length() == 0 || payload.length() == 0) {
+    Serial.println("[ERROR] Usage: RELAY_TTL0 <DEST> <PAYLOAD>");
+    return;
+  }
+
+  ProtocolPacket packet = emptyProtocolPacket();
+  packet.protocolVersion = PROTOCOL_VERSION;
+  packet.packetType = "MESSAGE";
+  packet.packetId = "RELAY_TEST_TTL0-" + String(millis());
+  packet.sourceNode = "NODE_A";
+  packet.destinationNode = dest;
+  packet.payload = payload;
+  packet.hopPath = "NODE_A";
+  packet.hopCount = 0;
+  packet.ttl = 0;
+  packet.previousHop = "NODE_A";
+  packet.retryCount = 0;
+  packet.timestamp = simulationTimestamp();
+  packet.status = "RECEIVED_OVER_LORA";
+  packet.checksum = CHECKSUM_PLACEHOLDER;
+
+  Serial.println("[RELAY_TEST] injecting packet with ttl=0");
+  routeLoRaProtocolPacket(packet, "serial_test");
+}
+
 void sendCommand(const String &line) {
   String trimmedLine = line;
   trimmedLine.trim();
@@ -1313,6 +1418,12 @@ void processSerialLine(String line) {
     loraSendCommand(line);
   } else if (command == "LORA_PING") {
     loraPingCommand();
+  } else if (command == "RELAY_DEST") {
+    relayTestDestCommand(line);
+  } else if (command == "RELAY_DUPLICATE") {
+    relayTestDuplicateCommand();
+  } else if (command == "RELAY_TTL0") {
+    relayTestTtl0Command(line);
   } else {
     sendPlainTextFallback(line);
   }
@@ -1393,6 +1504,7 @@ void printStartupBanner() {
   Serial.println("Protocol parser commands: PARSE_HELLO, PARSE_MESSAGE, PARSE_STATUS, PARSE_BAD_PACKET, PRINT_PROTOCOL");
   Serial.println("Bluetooth service command: BT_STATUS");
   Serial.println("LoRa live-test commands: LORA_STATUS, LORA_PING, LORA_SEND <DEST> <MESSAGE>");
+  Serial.println("Relay validation commands: RELAY_DEST <DEST> <PAYLOAD>, RELAY_DUPLICATE, RELAY_TTL0 <DEST> <PAYLOAD>");
   Serial.println("Paste a JSON message to simulate receiving a packet from another node.");
   Serial.println("Paste a BT-MANET-1.0 protocol JSON packet to test parser validation.");
   Serial.println();

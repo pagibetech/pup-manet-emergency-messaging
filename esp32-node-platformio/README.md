@@ -279,6 +279,14 @@ LORA_PING
 LORA_SEND NODE_B Hello from NODE_A
 ```
 
+Relay validation test commands (Step 038):
+
+```text
+RELAY_DEST <DEST> <PAYLOAD>
+RELAY_DUPLICATE
+RELAY_TTL0 <DEST> <PAYLOAD>
+```
+
 Expected parser behavior:
 
 - `PARSE_HELLO` validates a future Android HELLO packet.
@@ -290,8 +298,78 @@ Expected parser behavior:
 - `LORA_STATUS` prints LoRa build state, radio readiness, frequency, sync word, pins, and counters.
 - `LORA_PING` sends a JSON simulation packet to the default destination over LoRa when using a LoRa-enabled build.
 - `LORA_SEND <DEST> <MESSAGE>` sends a JSON simulation packet to the requested destination over LoRa when using a LoRa-enabled build.
+- `RELAY_DEST <DEST> <PAYLOAD>` simulates receiving a LoRa protocol packet for a remote destination (e.g. `NODE_C`). The node will log `[ROUTE_DECISION] relay`, decrement `ttl`, increment `hopCount`, append its own ID to the hop path, and rebroadcast over LoRa with `[LORA_RELAY]`.
+- `RELAY_DUPLICATE` injects a packet, then injects the same packet again. The second packet logs `[DUPLICATE_DROP]`.
+- `RELAY_TTL0 <DEST> <PAYLOAD>` injects a packet with `ttl=0`. The node logs `[TTL_DROP]` because the TTL is exhausted before relay.
 
 Commands are parsed before the plain-text fallback path. For example, typing `STATUS` prints node state and counters; it is not routed as a message payload.
+
+## Multi-Hop Relay Validation
+
+Step 038 adds practical validation for real relay behavior even with only two physical nodes (`NODE_A` and `NODE_B`).
+
+### Why relay tests matter
+
+A real multi-hop path is `NODE_A -> NODE_B -> NODE_C`. With only two boards we can still validate the relay logic on `NODE_B` by injecting packets that target `NODE_C`.
+
+### Running the relay tests
+
+1. Build and upload `node_b_lora` to your second ESP32.
+2. Open Serial Monitor:
+
+```sh
+pio device monitor -b 115200 -e node_b_lora
+```
+
+3. Run each test command and watch the logs.
+
+#### Test B — Relay to NODE_C
+
+```text
+RELAY_DEST NODE_C Hello to NODE_C via relay
+```
+
+Expected output on `NODE_B`:
+
+- `[RELAY_TEST] injecting packet dest=NODE_C`
+- `[ROUTE_DECISION] relay packet_id=... dest=NODE_C next_ttl=4 next_hopCount=1 source=serial_test`
+- `[LORA_RELAY] packet_id=... relayed_by=NODE_B new_path=NODE_A>NODE_B`
+
+Because `NODE_B` is not the destination, it decrements `ttl` (from default `5` to `4`), increments `hopCount` (from `0` to `1`), sets `previousHop=NODE_B`, appends `NODE_B` to the hop path, and rebroadcasts the compact `BT1|...` relay frame over LoRa.
+
+#### Test C — Duplicate drop
+
+```text
+RELAY_DUPLICATE
+```
+
+Expected output on `NODE_B`:
+
+- First injection logs `[ROUTE_DECISION] relay` (or deliver if destination is local).
+- Second injection logs `[DUPLICATE_DROP] packet_id=RELAY_TEST_DUPLICATE`.
+
+#### Test D — TTL exhaustion
+
+```text
+RELAY_TTL0 NODE_C This should be dropped
+```
+
+Expected output on `NODE_B`:
+
+- `[RELAY_TEST] injecting packet with ttl=0`
+- `[TTL_DROP] packet_id=... ttl_exhausted_at=NODE_B`
+
+The packet is dropped immediately because `ttl` starts at `0` and would become `-1` after decrement.
+
+### Preserving 2-node real Chat
+
+The normal Android Chat path remains unchanged:
+
+```text
+Phone A -> Bluetooth -> NODE_A -> LoRa -> NODE_B -> Bluetooth -> Phone B
+```
+
+Use `LORA_PING` or the Android app to confirm this path still passes after the relay code changes.
 
 `STATUS` prints:
 
@@ -364,6 +442,10 @@ Expected logs include:
 - `[LORA_STATUS]` when the LoRa status command is printed.
 - `[LORA_TX]` when a LoRa packet is transmitted.
 - `[LORA_RX]` when a LoRa packet is received, including RSSI and SNR.
+- `[ROUTE_DECISION] relay` when a packet must be forwarded because it targets a remote node.
+- `[LORA_RELAY]` when a packet is rebroadcast over LoRa after relay processing.
+- `[DUPLICATE_DROP]` when a packet with a previously seen `packetId` is dropped.
+- `[TTL_DROP]` when a packet cannot be relayed because `ttl` has reached `0`.
 
 ## Current Limitations
 
