@@ -1,6 +1,6 @@
 # Active Context
 
-Last updated: 2026-05-20
+Last updated: 2026-05-22
 
 Project: PUP MANET Emergency Messaging Prototype
 
@@ -10,31 +10,32 @@ Local path: `/Users/macbookm1max321tb/A_Design/A_Coding/ADM_Manet`
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed: `8b4611d Add hybrid AI workflow workbook sheets`
+Local HEAD observed: `147431c fix(firmware): clarify ACK status for LoRa-not-ready case`
 
 Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
-Workbook latest referenced commit: `9c68b0c`
+Workbook latest referenced commit: `147431c`
 
-Latest completed workbook step: Step 7.3 / STEP 033 - Android Network Selection Validation
+Latest completed workbook step: STEP 035 - Real End-to-End LoRa Message Delivery
 
-Current milestone: Step 8.1 / STEP 034 - Baseline Test
+Current milestone: STEP 036 - Real Chat UI Integration
 
-Current feature: Physical baseline operation validation
+Current feature: Integrate the confirmed real LoRa RF path into the chat UI workflow
 
-Active implementation files: none. Physical validation is pending.
+Active implementation files: none for this continuity commit. Existing Android/ESP32 working tree changes remain unstaged.
 
-Unresolved issue: user-provided physical baseline evidence is needed before Step 8.1 can be marked complete.
+Unresolved issue: STEP 036 is pending; preserve simulation fallback while integrating the real chat UI path.
 
-Current testing state: awaiting phone screenshots, ESP32 terminal logs, RPi/router terminal logs if used, and GitHub repo/branch/commit evidence.
+Current testing state: STEP 035 physical RF end-to-end validation passed.
 
-Recommended next task: run the baseline message test `Phone A -> Node A -> LoRa -> Node B -> Phone B`, then reverse direction.
+Confirmed working flow: `Phone A -> Bluetooth SPP -> NODE_A ESP32 -> LoRa RF -> NODE_B ESP32 -> Bluetooth SPP -> Phone B`.
 
-Expected Step 8.1 output: test report, phone screenshots, ESP32/RPi terminal logs, GitHub repository URL, branch, and commit SHA.
+Evidence summary: Phone A connected to `PUP-MANET-NODE_A` with MAC shown; Phone B connected to `PUP-MANET-NODE_B` with MAC shown; NODE_A log shows `BT_RX` and LoRa forwarding; NODE_B log shows `LORA_RX` and `BT_TX`; Phone B displays `Incoming: Emergency message from Phone A`; status includes `RECEIVED_OVER_LORA`; ACK path returns `FORWARDED_OVER_LORA`.
 
-Acceptance criteria: PDR >= 95%, MANET forms in less than 30 seconds, satellite inactive.
+Tested branch/HEAD: `step-002-003-esp32-simulation` @ `147431c4da544c6f0b0cc972f83bcc124ac2a069`. Existing uncommitted Android/ESP32 validation fixes were present and are intentionally not staged in this docs-only commit.
 
-Recommended model/tool: local machine + physical hardware test bench. Codex only for evidence review or difficult validation.
+Recommended next task: start STEP 036 - Real Chat UI Integration.
 
-Escalation guidance: do not implement new ESP32, Raspberry Pi, or Android logic unless a later workbook step explicitly allows it.
+Recommended model/tool: Kimi/Android Studio for implementation; Codex only for focused validation or difficult blockers.
 
+Escalation guidance: keep STEP 036 scoped to chat UI integration unless the workbook explicitly authorizes ESP32/RPi changes.

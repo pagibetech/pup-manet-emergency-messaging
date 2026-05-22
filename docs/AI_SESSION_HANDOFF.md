@@ -1,22 +1,31 @@
 # AI Session Handoff
 
-Last updated: 2026-05-20
+Last updated: 2026-05-22
 
-Current milestone: Step 8.1 / STEP 034 - Baseline Test.
+Current milestone: STEP 036 - Real Chat UI Integration.
 
-Unfinished task: perform the physical baseline test and collect evidence.
+Latest completed milestone: STEP 035 - Real End-to-End LoRa Message Delivery.
+
+Unfinished task: integrate the confirmed real RF LoRa path into the chat UI workflow.
 
 Pending validations:
-- Confirm Android Phone A can send through NODE_A over Bluetooth.
-- Confirm NODE_A relays over LoRa to NODE_B.
-- Confirm Android Phone B receives the message.
-- Repeat in the reverse direction.
-- Record packet delivery result, MANET formation timing, and satellite inactive state.
-- Record GitHub repo URL, branch, and commit SHA used for the test build.
+- Chat UI sends through the real Bluetooth SPP -> LoRa RF bridge.
+- Chat UI displays incoming real LoRa-delivered messages.
+- Route/status evidence remains visible: `RECEIVED_OVER_LORA` and `FORWARDED_OVER_LORA`.
+- Simulation mode still works when no real Bluetooth socket is connected.
 
 Blockers:
-- Physical hardware evidence has not been provided yet.
-- Step 8.1 remains Not Started in the workbook until evidence is captured.
+- No blocker for continuity update.
+- Source working tree already has Android/ESP32 validation changes that are intentionally not staged in this docs-only commit.
+
+Confirmed STEP 035 physical evidence:
+- Phone A connected to `PUP-MANET-NODE_A` with MAC shown.
+- Phone B connected to `PUP-MANET-NODE_B` with MAC shown.
+- NODE_A log shows `BT_RX` and LoRa forwarding.
+- NODE_B log shows `LORA_RX` and `BT_TX`.
+- Phone B displays `Incoming: Emergency message from Phone A`.
+- Status includes `RECEIVED_OVER_LORA`.
+- ACK path returns `FORWARDED_OVER_LORA`.
 
 Latest implementation instructions:
 - Follow `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`.
@@ -26,17 +35,21 @@ Latest implementation instructions:
 - Follow hybrid AI workflow Codex conservation rules.
 
 Expected outputs:
-- Test report or notes.
-- Phone screenshots.
-- ESP32 terminal logs for both nodes.
-- RPi/router logs if part of the baseline run.
-- GitHub repo URL, branch, and commit SHA.
+- STEP 036 chat UI integration evidence.
+- Android build/test result if implementation occurs.
+- Phone screenshots/logs showing real chat UI send/receive over LoRa.
 
 Latest build/test result:
-- Android app last known build successful for STEP 033.
-- ESP32 LoRa/Bluetooth demo last known physically demonstrated during STEP 023.
+- STEP 035 physical RF end-to-end message delivery passed.
+- Tested branch/HEAD recorded as `step-002-003-esp32-simulation` @ `147431c4da544c6f0b0cc972f83bcc124ac2a069`.
 - RPi gateway simulation tests last known passing through failover/recovery baseline.
-- No build, test, or simulation run was performed during this operational memory bootstrap.
+- No build, test, or simulation run was performed during this continuity documentation update.
 
-Recommended next model/tool: local machine + hardware test bench. Use Codex only for evidence review, validation, or difficult blocker analysis.
+Troubleshooting notes carried into STEP 036:
+- stale Bluetooth socket
+- `localBridgeNode` vs `destinationNode` separation
+- LoRa-to-Bluetooth forwarding
+- Android blocking read for full JSON line
+- Kotlin `SimMetrics` type mismatch
 
+Recommended next model/tool: Kimi/Android Studio for STEP 036 implementation; use Codex only for focused validation or difficult blocker analysis.

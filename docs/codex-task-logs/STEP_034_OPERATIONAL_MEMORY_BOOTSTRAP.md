@@ -77,3 +77,59 @@ Android app routed MESSAGE packets directly over Bluetooth to the selected desti
 - [ ] ACK from Node A contains `forwarding=FORWARDED_OVER_LORA`.
 - [ ] Simulation mode still works when real Bluetooth socket is disconnected.
 
+## STEP 034 Physical Validation Fix (2026-05-22)
+
+### Problem
+Physical test showed `hopPath: ANDROID_APP>NODE_B` on the packet received by Node B, but Node B received it over Bluetooth (`[BT_RX]`) instead of LoRa (`[LORA_RX]`). This proved the Android app was opening the Bluetooth socket directly to the destination node's ESP32 (Node B) rather than the intended local bridge node (Node A). Node A stayed idle because the packet never reached it.
+
+### Root Cause
+`createBluetoothProtocolPacket()` set `hopPath = listOf("ANDROID_APP", destinationNode)`. When the app connected to Node B's Bluetooth service directly, the `destinationNode` was `NODE_B` and `hopPath` became `ANDROID_APP>NODE_B`, so the ESP32 firmware treated it as a local-only packet (`shouldForwardToLoRa` was false because `destinationNode == SIM_NODE_ID`). The physical Bluetooth transport target and the packet's logical destination were collapsed into a single field.
+
+### Fix
+Android app (`MainActivity.kt`):
+- Added an optional `localBridgeNode: String? = null` parameter to `createBluetoothProtocolPacket()`.
+- When `localBridgeNode` is provided, `hopPath` is built as `ANDROID_APP>localBridgeNode` while `destinationNode` remains the remote target.
+- Updated both live-bridge call sites (main chat composer `onSend` and Simulation tab `onSendLoRaMessage`) to pass `localBridgeNode = localEsp32NodeId(connectedDevice)` alongside `destinationNode = peerNodeForConnectedEsp32(connectedDevice)`.
+
+Result for Phone A connected to `PUP-MANET-NODE_A`:
+- `destinationNode = NODE_B`
+- `localBridgeNode = NODE_A`
+- `hopPath = ANDROID_APP>NODE_A`
+- ESP32 (Node A) sees `destinationNode != SIM_NODE_ID`, so `shouldForwardToLoRa = true`, triggers `[LORA_TX]`, and Node B receives `[LORA_RX]`.
+
+Simulation fallback, BT-MANET-1.0 JSON format, and ESP32 firmware behavior are unchanged.
+
+### Expected Flow After Fix
+```
+Phone A → BT SPP → Node A → [BT_RX] → LoRa forward → [LORA_TX]
+                                            ↓
+Phone B ← BT SPP ← Node B ← [BT_TX] ← [LORA_RX]
+```
+
+### Files Changed
+- `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt`
+  - `createBluetoothProtocolPacket()` signature and body
+  - Main chat composer `onSend` live-bridge block
+  - Simulation tab `onSendLoRaMessage` live-bridge block
+
+## STEP 035 Outcome Addendum (2026-05-22)
+
+The physical validation that followed the STEP 034 routing/debug fixes is now recorded as STEP 035 - Real End-to-End LoRa Message Delivery.
+
+Confirmed flow:
+
+```text
+Phone A -> Bluetooth SPP -> NODE_A ESP32 -> LoRa RF -> NODE_B ESP32 -> Bluetooth SPP -> Phone B
+```
+
+Evidence summary:
+- Phone A connected to `PUP-MANET-NODE_A` with MAC shown.
+- Phone B connected to `PUP-MANET-NODE_B` with MAC shown.
+- NODE_A log shows `BT_RX` and LoRa forwarding.
+- NODE_B log shows `LORA_RX` and `BT_TX`.
+- Phone B displays `Incoming: Emergency message from Phone A`.
+- Status includes `RECEIVED_OVER_LORA`.
+- ACK path returns `FORWARDED_OVER_LORA`.
+
+Next incomplete step:
+- STEP 036 - Real Chat UI Integration.
