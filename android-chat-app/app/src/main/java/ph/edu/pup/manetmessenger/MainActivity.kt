@@ -1104,6 +1104,7 @@ fun MessengerApp() {
     }
     var realBluetoothSocketState by remember { mutableStateOf(RealBluetoothSocketState()) }
     var demoLoRaMessage by remember { mutableStateOf("Emergency message from Phone A") }
+    var autoReceivedPacketIds by remember { mutableStateOf(setOf<String>()) }
     var validationItems by remember { mutableStateOf(defaultValidationItems()) }
     var activeTransport by remember {
         mutableStateOf<ManetTransportInterface>(transportFor(TransportOption.Simulation))
@@ -1169,6 +1170,83 @@ fun MessengerApp() {
             while (eventLog.size > 10) {
                 eventLog.removeAt(eventLog.lastIndex)
             }
+        }
+    }
+
+    LaunchedEffect(realBluetoothSocketState.connected) {
+        if (!realBluetoothSocketState.connected) return@LaunchedEffect
+        while (realBluetoothSocketState.connected) {
+            val result = androidBluetoothSocketClient.readAvailableLine()
+            result.fold(
+                onSuccess = { line ->
+                    if (!line.isNullOrBlank()) {
+                        realBluetoothSocketState = realBluetoothSocketState.copy(lastReceivedLine = line)
+                        if (line.contains("\"packetType\":\"MESSAGE\"")) {
+                            val incomingPacket = deserializeBluetoothProtocolPacket(line)
+                            val incomingText = readableDemoMessageFromProtocolLine(line)
+                            if (incomingPacket != null && incomingText.isNotBlank() && !autoReceivedPacketIds.contains(incomingPacket.packetId)) {
+                                autoReceivedPacketIds = autoReceivedPacketIds + incomingPacket.packetId
+                                val incomingMessageId = nextMessageId++
+                                val incomingChatMessage = ChatMessage(
+                                    id = incomingMessageId,
+                                    text = incomingText,
+                                    sourceNode = incomingPacket.sourceNode,
+                                    targetNode = "ANDROID_APP",
+                                    route = RouteLabel.Lora,
+                                    status = MessageStatus.Delivered,
+                                    metrics = SimMetrics(0, 0.0, 0, "Live", "n/a"),
+                                    path = incomingPacket.hopPath,
+                                    note = "Received via LoRa | Source node: ${incomingPacket.sourceNode} | Time: ${currentTimeLabel()}",
+                                    sentAt = currentTimeLabel(),
+                                    progressStep = 0,
+                                    routeQuality = "Live",
+                                    delayMs = 0L,
+                                    packet = LoraManetPacket(
+                                        packetId = incomingPacket.packetId,
+                                        sourceNodeId = incomingPacket.sourceNode,
+                                        destinationNodeId = incomingPacket.destinationNode,
+                                        selectedTransport = RouteLabel.Lora.label,
+                                        payloadText = incomingText,
+                                        timestamp = incomingPacket.timestamp,
+                                        hopPath = incomingPacket.hopPath,
+                                        hopCount = incomingPacket.hopPath.size - 1,
+                                        rssi = 0,
+                                        snr = 0.0,
+                                        gatewayStatus = "live",
+                                        satelliteStatus = "n/a",
+                                        deliveryStatus = MessageStatus.Delivered.label,
+                                        queuedAt = incomingPacket.timestamp
+                                    ),
+                                    retryCount = 0,
+                                    deliveryProgress = "Received via LoRa"
+                                )
+                                messages.add(incomingChatMessage)
+                                eventLog.add(0, "[CHAT_RX_LORA] packetId=${incomingPacket.packetId} src=${incomingPacket.sourceNode} text=$incomingText")
+                                eventLog.add(0, "[ANDROID_RX] packetId=${incomingPacket.packetId} src=${incomingPacket.sourceNode} text=$incomingText")
+                                while (eventLog.size > 10) {
+                                    eventLog.removeAt(eventLog.lastIndex)
+                                }
+                                realBluetoothSocketState = realBluetoothSocketState.copy(
+                                    liveTestStatus = "Incoming: $incomingText",
+                                    lastDemoMessage = incomingText,
+                                    lastError = "None"
+                                )
+                                bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_INCOMING")
+                            }
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    realBluetoothSocketState = realBluetoothSocketState.copy(
+                        connectedDevice = null,
+                        connectedDeviceAddress = null,
+                        socketStatus = "Disconnected - reconnect ESP32",
+                        liveTestStatus = "Auto read failed",
+                        lastError = error.message ?: "Unknown Bluetooth read error"
+                    )
+                }
+            )
+            delay(300L)
         }
     }
 
@@ -1913,7 +1991,8 @@ fun MessengerApp() {
                                                 } else {
                                                     val incomingText = readableDemoMessageFromProtocolLine(line)
                                                     val incomingPacket = deserializeBluetoothProtocolPacket(line)
-                                                    if (incomingPacket != null && incomingText.isNotBlank()) {
+                                                    if (incomingPacket != null && incomingText.isNotBlank() && !autoReceivedPacketIds.contains(incomingPacket.packetId)) {
+                                                        autoReceivedPacketIds = autoReceivedPacketIds + incomingPacket.packetId
                                                         val incomingMessageId = nextMessageId++
                                                         val incomingChatMessage = ChatMessage(
                                                             id = incomingMessageId,
@@ -1924,7 +2003,7 @@ fun MessengerApp() {
                                                             status = MessageStatus.Delivered,
                                                             metrics = SimMetrics(0, 0.0, 0, "Live", "n/a"),
                                                             path = incomingPacket.hopPath,
-                                                            note = "Received over LoRa bridge",
+                                                            note = "Received via LoRa | Source node: ${incomingPacket.sourceNode} | Time: ${currentTimeLabel()}",
                                                             sentAt = currentTimeLabel(),
                                                             progressStep = 0,
                                                             routeQuality = "Live",
@@ -1946,9 +2025,10 @@ fun MessengerApp() {
                                                                 queuedAt = incomingPacket.timestamp
                                                             ),
                                                             retryCount = 0,
-                                                            deliveryProgress = "Received over LoRa"
+                                                            deliveryProgress = "Received via LoRa"
                                                         )
                                                         messages.add(incomingChatMessage)
+                                                        eventLog.add(0, "[CHAT_RX_LORA] packetId=${incomingPacket.packetId} src=${incomingPacket.sourceNode} text=$incomingText")
                                                         eventLog.add(0, "[ANDROID_RX] packetId=${incomingPacket.packetId} src=${incomingPacket.sourceNode} text=$incomingText")
                                                         while (eventLog.size > 10) {
                                                             eventLog.removeAt(eventLog.lastIndex)

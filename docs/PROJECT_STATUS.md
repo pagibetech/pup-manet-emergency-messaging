@@ -2,15 +2,15 @@
 
 Last updated: 2026-05-22
 
-Overall state: STEP 035 is the first confirmed real RF end-to-end messaging milestone. The next incomplete milestone is STEP 036 - Real Chat UI Integration.
+Overall state: STEP 036 is complete. Incoming real LoRa messages are now automatically inserted into the Chat tab UI. The next incomplete milestone is open.
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed: `147431c fix(firmware): clarify ACK status for LoRa-not-ready case`
+Local HEAD observed: STEP 036 changes staged.
 
 Workbook current milestone: STEP 036 - Real Chat UI Integration.
 
-Latest completed workbook step: STEP 035 - Real End-to-End LoRa Message Delivery.
+Latest completed workbook step: STEP 036 - Real Chat UI Integration.
 
 Completed highlights:
 - ESP32 simulation and multi-node simulation baseline.
@@ -34,8 +34,14 @@ STEP 035 physical validation evidence:
 
 Tested branch/HEAD: `step-002-003-esp32-simulation` @ `147431c4da544c6f0b0cc972f83bcc124ac2a069`. Existing uncommitted Android/ESP32 validation fixes were present and are intentionally not staged in this docs-only commit.
 
+STEP 036 changes:
+- Added auto-receive `LaunchedEffect` in `MainActivity.kt` that polls Bluetooth SPP while connected.
+- Auto-inserts incoming `MESSAGE` packets into the Chat tab with `Received via LoRa` indicator, source node, and timestamp.
+- Adds `[CHAT_RX_LORA]` and `[ANDROID_RX]` logs to the event log.
+- Preserves Sim tab diagnostics, manual Check In button, and simulation fallback.
+
 Current blocker:
-- No blocker for continuity update. STEP 036 implementation/validation is next.
+- No blocker. Physical build validation must be performed on the Android build machine.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket
