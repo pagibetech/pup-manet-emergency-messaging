@@ -96,6 +96,9 @@ struct ProtocolPacket {
   String destinationNode;
   String payload;
   String hopPath;
+  int hopCount;
+  int ttl;
+  String previousHop;
   int retryCount;
   unsigned long timestamp;
   String status;
@@ -108,6 +111,7 @@ struct PacketParseResult {
   ProtocolPacket packet;
 };
 
+constexpr int DEFAULT_TTL = 5;
 constexpr int MAX_HOP_COUNT = 5;
 constexpr size_t DUPLICATE_CACHE_SIZE = 32;
 constexpr size_t NEIGHBOR_COUNT = 2;
@@ -296,6 +300,9 @@ ProtocolPacket emptyProtocolPacket() {
   packet.destinationNode = "";
   packet.payload = "";
   packet.hopPath = "";
+  packet.hopCount = 0;
+  packet.ttl = 0;
+  packet.previousHop = "";
   packet.retryCount = 0;
   packet.timestamp = 0;
   packet.status = "";
@@ -316,6 +323,9 @@ PacketParseResult parseProtocolPacket(const String &line) {
   result.packet.destinationNode = extractJsonString(line, "destinationNode");
   result.packet.payload = extractJsonString(line, "payload");
   result.packet.hopPath = extractJsonString(line, "hopPath");
+  result.packet.hopCount = static_cast<int>(extractJsonInteger(line, "hopCount", 0));
+  result.packet.ttl = static_cast<int>(extractJsonInteger(line, "ttl", DEFAULT_TTL));
+  result.packet.previousHop = extractJsonString(line, "previousHop");
   result.packet.retryCount = static_cast<int>(extractJsonInteger(line, "retryCount", 0));
   result.packet.timestamp = static_cast<unsigned long>(extractJsonInteger(line, "timestamp", 0));
   result.packet.status = extractJsonString(line, "status");
@@ -384,6 +394,9 @@ String serializeProtocolPacket(const ProtocolPacket &packet) {
   json += "\"destinationNode\":\"" + jsonEscape(packet.destinationNode) + "\",";
   json += "\"payload\":\"" + jsonEscape(packet.payload) + "\",";
   json += "\"hopPath\":\"" + jsonEscape(packet.hopPath) + "\",";
+  json += "\"hopCount\":" + String(packet.hopCount) + ",";
+  json += "\"ttl\":" + String(packet.ttl) + ",";
+  json += "\"previousHop\":\"" + jsonEscape(packet.previousHop) + "\",";
   json += "\"retryCount\":\"" + String(packet.retryCount) + "\",";
   json += "\"timestamp\":\"" + String(packet.timestamp) + "\",";
   json += "\"status\":\"" + jsonEscape(packet.status) + "\",";
@@ -629,6 +642,10 @@ String serializeLoRaRelayPacket(const ProtocolPacket &packet) {
   relay += "|" + sanitizeLoRaRelayField(packet.destinationNode);
   relay += "|" + sanitizeLoRaRelayField(packet.payload);
   relay += "|" + String(packet.timestamp);
+  relay += "|" + String(packet.ttl);
+  relay += "|" + String(packet.hopCount);
+  relay += "|" + sanitizeLoRaRelayField(packet.previousHop);
+  relay += "|" + sanitizeLoRaRelayField(packet.hopPath);
   return relay;
 }
 
@@ -646,8 +663,19 @@ bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet) {
   packet.hopPath = packet.sourceNode + ">" + String(SIM_NODE_ID);
   packet.retryCount = 0;
   packet.timestamp = static_cast<unsigned long>(loRaRelayFieldAt(line, 5).toInt());
+  packet.ttl = loRaRelayFieldAt(line, 6).toInt();
+  packet.hopCount = loRaRelayFieldAt(line, 7).toInt();
+  packet.previousHop = loRaRelayFieldAt(line, 8);
+  String parsedHopPath = loRaRelayFieldAt(line, 9);
+  if (parsedHopPath.length() > 0) {
+    packet.hopPath = parsedHopPath;
+  }
   packet.status = "RECEIVED_OVER_LORA";
   packet.checksum = CHECKSUM_PLACEHOLDER;
+
+  if (packet.ttl == 0 && loRaRelayFieldAt(line, 6).length() == 0) {
+    packet.ttl = DEFAULT_TTL;
+  }
 
   return packet.packetId.length() > 0 &&
          packet.sourceNode.length() > 0 &&
@@ -657,31 +685,7 @@ bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet) {
 
 void sendBluetoothPacket(const ProtocolPacket &packet);
 
-void deliverLoRaProtocolPacketToBluetooth(const ProtocolPacket &packet) {
-  Serial.print("[LORA_RX] packet_type=");
-  Serial.print(packet.packetType);
-  Serial.print(" packet_id=");
-  Serial.print(packet.packetId);
-  Serial.print(" src=");
-  Serial.print(packet.sourceNode);
-  Serial.print(" dest=");
-  Serial.print(packet.destinationNode);
-  Serial.print(" hopPath=");
-  Serial.println(packet.hopPath);
-
-  if (hasSeenMessage(packet.packetId)) {
-    Serial.print("[LORA_PROTOCOL_DUPLICATE] packet_id=");
-    Serial.println(packet.packetId);
-    return;
-  }
-  rememberMessage(packet.packetId);
-
-  if (!protocolPacketTargetsLocalNode(packet)) {
-    Serial.print("[LORA_PROTOCOL_IGNORED] destination=");
-    Serial.println(packet.destinationNode);
-    return;
-  }
-
+void deliverToBluetooth(const ProtocolPacket &packet) {
   if (!SerialBT.hasClient()) {
     Serial.print("[BT_PENDING_FROM_LORA] no Android Bluetooth client for packet_id=");
     Serial.println(packet.packetId);
@@ -694,6 +698,61 @@ void deliverLoRaProtocolPacketToBluetooth(const ProtocolPacket &packet) {
   sendBluetoothPacket(packet);
 }
 
+void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceLabel) {
+  if (hasSeenMessage(packet.packetId)) {
+    Serial.print("[DUPLICATE_DROP] packet_id=");
+    Serial.println(packet.packetId);
+    return;
+  }
+  rememberMessage(packet.packetId);
+
+  if (protocolPacketTargetsLocalNode(packet)) {
+    Serial.print("[ROUTE_DECISION] deliver_local packet_id=");
+    Serial.print(packet.packetId);
+    Serial.print(" source=");
+    Serial.println(sourceLabel);
+    deliverToBluetooth(packet);
+    return;
+  }
+
+  ProtocolPacket relayPacket = packet;
+  relayPacket.ttl -= 1;
+  relayPacket.hopCount += 1;
+  relayPacket.previousHop = String(SIM_NODE_ID);
+  relayPacket.hopPath = relayPacket.hopPath.length() > 0
+    ? relayPacket.hopPath + ">" + String(SIM_NODE_ID)
+    : String(SIM_NODE_ID);
+
+  if (relayPacket.ttl <= 0) {
+    Serial.print("[TTL_DROP] packet_id=");
+    Serial.print(packet.packetId);
+    Serial.print(" ttl_exhausted_at=");
+    Serial.println(SIM_NODE_ID);
+    return;
+  }
+
+  Serial.print("[ROUTE_DECISION] relay packet_id=");
+  Serial.print(packet.packetId);
+  Serial.print(" dest=");
+  Serial.print(packet.destinationNode);
+  Serial.print(" next_ttl=");
+  Serial.print(relayPacket.ttl);
+  Serial.print(" next_hopCount=");
+  Serial.print(relayPacket.hopCount);
+  Serial.print(" source=");
+  Serial.println(sourceLabel);
+
+  const String relayLine = serializeLoRaRelayPacket(relayPacket);
+  if (sendLoRaLine(relayLine)) {
+    Serial.print("[LORA_RELAY] packet_id=");
+    Serial.print(packet.packetId);
+    Serial.print(" relayed_by=");
+    Serial.print(SIM_NODE_ID);
+    Serial.print(" new_path=");
+    Serial.println(relayPacket.hopPath);
+  }
+}
+
 void processIncomingLoRaRelayPacket(const String &line) {
   ProtocolPacket packet;
   if (!parseLoRaRelayPacket(line, packet)) {
@@ -701,7 +760,7 @@ void processIncomingLoRaRelayPacket(const String &line) {
     return;
   }
 
-  deliverLoRaProtocolPacketToBluetooth(packet);
+  routeLoRaProtocolPacket(packet, "lora");
 }
 
 void processIncomingLoRaProtocolPacket(const String &line) {
@@ -712,7 +771,7 @@ void processIncomingLoRaProtocolPacket(const String &line) {
     return;
   }
 
-  deliverLoRaProtocolPacketToBluetooth(result.packet);
+  routeLoRaProtocolPacket(result.packet, "lora");
 }
 
 void processIncomingLoRaLine(const String &line, int rssi, float snr) {
@@ -755,6 +814,9 @@ ProtocolPacket createProtocolPacket(
   packet.destinationNode = destinationNode;
   packet.payload = payload;
   packet.hopPath = hopPath;
+  packet.hopCount = 0;
+  packet.ttl = 0;
+  packet.previousHop = "";
   packet.retryCount = retryCount;
   packet.timestamp = simulationTimestamp();
   packet.status = status;
@@ -837,6 +899,12 @@ void printProtocolPacketFields(const ProtocolPacket &packet) {
   Serial.println(packet.payload);
   Serial.print("  hopPath=");
   Serial.println(packet.hopPath);
+  Serial.print("  hopCount=");
+  Serial.println(packet.hopCount);
+  Serial.print("  ttl=");
+  Serial.println(packet.ttl);
+  Serial.print("  previousHop=");
+  Serial.println(packet.previousHop);
   Serial.print("  retryCount=");
   Serial.println(packet.retryCount);
   Serial.print("  timestamp=");
@@ -899,7 +967,12 @@ void processIncomingBluetoothProtocolPacket(const String &line) {
     bool forwardedToLoRa = false;
 
     if (shouldForwardToLoRa) {
-      forwardedToLoRa = sendLoRaLine(serializeLoRaRelayPacket(result.packet));
+      ProtocolPacket relayPacket = result.packet;
+      relayPacket.hopCount = 0;
+      relayPacket.ttl = DEFAULT_TTL;
+      relayPacket.previousHop = String(SIM_NODE_ID);
+      relayPacket.hopPath = String(SIM_NODE_ID) + ">" + result.packet.destinationNode;
+      forwardedToLoRa = sendLoRaLine(serializeLoRaRelayPacket(relayPacket));
     }
 
     String payload = "accepted=" + result.packet.packetId;
@@ -985,7 +1058,7 @@ void printProtocolSpec() {
     Serial.print("    - ");
     Serial.println(SUPPORTED_PACKET_TYPES[i]);
   }
-  Serial.println("  required_fields=protocolVersion, packetType, packetId, sourceNode, destinationNode, payload, hopPath, retryCount, timestamp, status, checksum");
+  Serial.println("  required_fields=protocolVersion, packetType, packetId, sourceNode, destinationNode, payload, hopPath, hopCount, ttl, previousHop, retryCount, timestamp, status, checksum");
   Serial.println("  manual_modes=AUTO, LORA, WIFI, GSM");
   Serial.println("  sample_message=");
   Serial.println(sampleMessagePacket());
@@ -1202,6 +1275,11 @@ void processSerialLine(String line) {
     } else {
       processIncomingMessage(line);
     }
+    return;
+  }
+
+  if (line.startsWith(LORA_RELAY_PREFIX + "|")) {
+    processIncomingLoRaRelayPacket(line);
     return;
   }
 
