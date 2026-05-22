@@ -658,12 +658,16 @@ bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet) {
 void sendBluetoothPacket(const ProtocolPacket &packet);
 
 void deliverLoRaProtocolPacketToBluetooth(const ProtocolPacket &packet) {
-  Serial.print("[LORA_PROTOCOL_RX] packet_id=");
+  Serial.print("[LORA_RX] packet_type=");
+  Serial.print(packet.packetType);
+  Serial.print(" packet_id=");
   Serial.print(packet.packetId);
   Serial.print(" src=");
   Serial.print(packet.sourceNode);
   Serial.print(" dest=");
-  Serial.println(packet.destinationNode);
+  Serial.print(packet.destinationNode);
+  Serial.print(" hopPath=");
+  Serial.println(packet.hopPath);
 
   if (hasSeenMessage(packet.packetId)) {
     Serial.print("[LORA_PROTOCOL_DUPLICATE] packet_id=");
@@ -683,6 +687,9 @@ void deliverLoRaProtocolPacketToBluetooth(const ProtocolPacket &packet) {
     Serial.println(packet.packetId);
     return;
   }
+
+  Serial.print("[LORA_RX] Forwarding LoRa packet to Bluetooth SPP. packet_id=");
+  Serial.println(packet.packetId);
 
   sendBluetoothPacket(packet);
 }

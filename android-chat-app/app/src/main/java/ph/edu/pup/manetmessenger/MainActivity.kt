@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -260,6 +261,7 @@ data class RealBluetoothSocketState(
     val bondedDevices: List<String> = emptyList(),
     val selectedDevice: String? = null,
     val connectedDevice: String? = null,
+    val connectedDeviceAddress: String? = null,
     val socketStatus: String = "Not connected",
     val liveTestStatus: String = "Not started",
     val liveTestPassed: Int = 0,
@@ -272,6 +274,11 @@ data class RealBluetoothSocketState(
     val connected: Boolean
         get() = connectedDevice != null
 }
+
+data class ConnectedBtDevice(
+    val name: String,
+    val address: String
+)
 
 data class BluetoothProtocolPacket(
     val protocolVersion: String = BLUETOOTH_PROTOCOL_VERSION,
@@ -613,7 +620,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    suspend fun connect(deviceName: String): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun connect(deviceName: String): Result<ConnectedBtDevice> = withContext(Dispatchers.IO) {
         if (!hasBluetoothConnectPermission(context)) {
             return@withContext Result.failure(IllegalStateException("Bluetooth permission required"))
         }
@@ -632,16 +639,27 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
         val newSocket = device.createRfcommSocketToServiceRecord(BLUETOOTH_SPP_UUID)
         newSocket.connect()
         socket = newSocket
-        Result.success(deviceName)
+
+        val actualDevice = newSocket.remoteDevice
+        val actualName = actualDevice.name ?: deviceName
+        val actualAddress = actualDevice.address ?: "unknown"
+        Log.d("MANET_BT", "[ANDROID_SOCKET_CONNECTED] name=$actualName address=$actualAddress")
+        Result.success(ConnectedBtDevice(name = actualName, address = actualAddress))
     }
 
+    @SuppressLint("MissingPermission")
     suspend fun sendLine(line: String): Result<String> = withContext(Dispatchers.IO) {
         val activeSocket = socket
             ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
 
+        val actualDevice = activeSocket.remoteDevice
+        val name = actualDevice.name ?: "unknown"
+        val address = actualDevice.address ?: "unknown"
+
         runCatching {
             activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
             activeSocket.outputStream.flush()
+            Log.d("MANET_BT", "[ANDROID_SEND_SOCKET] name=$name address=$address localBridgeNode=${localEsp32NodeId(name)} destinationNode=${peerNodeForConnectedEsp32(name)}")
             line
         }.onFailure { disconnect() }
     }
@@ -669,7 +687,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
             val input = activeSocket.inputStream
             while (System.currentTimeMillis() < deadline) {
                 if (input.available() > 0) {
-                    return@runCatching readLineFromInput(activeSocket)
+                    return@runCatching readLineBlocking(activeSocket)
                 }
                 Thread.sleep(100L)
             }
@@ -686,8 +704,8 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
             val input = activeSocket.inputStream
             while (System.currentTimeMillis() < deadline) {
                 if (input.available() > 0) {
-                    val line = readLineFromInput(activeSocket)
-                    if (line.contains("\"packetType\":\"MESSAGE\"") && line.contains("RECEIVED_OVER_LORA")) {
+                    val line = readLineBlocking(activeSocket)
+                    if (line.contains("\"packetType\":\"MESSAGE\"")) {
                         return@runCatching line
                     }
                 }
@@ -697,6 +715,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
         }.onFailure { disconnect() }
     }
 
+    @SuppressLint("MissingPermission")
     suspend fun sendLineAndWaitForResponse(
         line: String,
         timeoutMs: Long = 3000L
@@ -704,16 +723,21 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
         val activeSocket = socket
             ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
 
+        val actualDevice = activeSocket.remoteDevice
+        val name = actualDevice.name ?: "unknown"
+        val address = actualDevice.address ?: "unknown"
+
         runCatching {
             drainAvailableLines(activeSocket)
             activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
             activeSocket.outputStream.flush()
+            Log.d("MANET_BT", "[ANDROID_SEND_SOCKET] name=$name address=$address localBridgeNode=${localEsp32NodeId(name)} destinationNode=${peerNodeForConnectedEsp32(name)}")
 
             val deadline = System.currentTimeMillis() + timeoutMs
             val input = activeSocket.inputStream
             while (System.currentTimeMillis() < deadline) {
                 if (input.available() > 0) {
-                    return@runCatching line to readLineFromInput(activeSocket)
+                    return@runCatching line to readLineBlocking(activeSocket)
                 }
                 Thread.sleep(100L)
             }
@@ -730,6 +754,21 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
         val input = activeSocket.inputStream
         val bytes = mutableListOf<Byte>()
         while (input.available() > 0) {
+            val value = input.read()
+            if (value < 0 || value.toChar() == '\n') {
+                break
+            }
+            if (value.toChar() != '\r') {
+                bytes.add(value.toByte())
+            }
+        }
+        return bytes.toByteArray().toString(Charsets.UTF_8)
+    }
+
+    private fun readLineBlocking(activeSocket: BluetoothSocket): String {
+        val input = activeSocket.inputStream
+        val bytes = mutableListOf<Byte>()
+        while (true) {
             val value = input.read()
             if (value < 0 || value.toChar() == '\n') {
                 break
@@ -1163,11 +1202,15 @@ fun MessengerApp() {
 
                             val isLiveBridgeMode = realBluetoothSocketState.connected && decision.route == RouteLabel.Lora
                             if (isLiveBridgeMode) {
-                                val destinationNode = peerNodeForConnectedEsp32(realBluetoothSocketState.connectedDevice)
+                                val actualSocketDevice = realBluetoothSocketState.connectedDevice ?: "unknown"
+                                val actualSocketAddress = realBluetoothSocketState.connectedDeviceAddress ?: "unknown"
+                                val localBridgeNode = localEsp32NodeId(actualSocketDevice)
+                                val destinationNode = peerNodeForConnectedEsp32(actualSocketDevice)
                                 val btPacket = createBluetoothProtocolPacket(
                                     packetType = BluetoothProtocolPacketType.Message,
                                     payload = "MODE=LORA;TEXT=${sanitizeDemoMessageText(trimmedMessage)}",
                                     destinationNode = destinationNode,
+                                    localBridgeNode = localBridgeNode,
                                     status = "QUEUED_FOR_LORA"
                                 )
                                 val line = compactSerializedPacketText(btPacket)
@@ -1181,7 +1224,7 @@ fun MessengerApp() {
                                         decision = decision,
                                         sourceNodeName = localNode.name,
                                         targetNodeName = targetNode.name,
-                                        note = "Live bridge to ${realBluetoothSocketState.connectedDevice} -> LoRa -> $destinationNode",
+                                        note = "Live bridge to $actualSocketDevice ($actualSocketAddress) -> LoRa -> $destinationNode",
                                         sentAt = currentTimeLabel(),
                                         delayMs = delayMs
                                     )
@@ -1619,7 +1662,14 @@ fun MessengerApp() {
                                     }
                                 },
                                 onRealDeviceSelected = { device ->
-                                    realBluetoothSocketState = realBluetoothSocketState.copy(selectedDevice = device)
+                                    androidBluetoothSocketClient.disconnect()
+                                    realBluetoothSocketState = realBluetoothSocketState.copy(
+                                        selectedDevice = device,
+                                        connectedDevice = null,
+                                        connectedDeviceAddress = null,
+                                        socketStatus = "Device changed; previous socket closed",
+                                        lastError = "None"
+                                    )
                                 },
                                 onRealSocketConnect = {
                                     val device = realBluetoothSocketState.selectedDevice
@@ -1634,18 +1684,21 @@ fun MessengerApp() {
                                             lastError = "None"
                                         )
                                         queueScope.launch {
+                                            androidBluetoothSocketClient.disconnect()
                                             val result = androidBluetoothSocketClient.connect(device)
                                             realBluetoothSocketState = result.fold(
-                                                onSuccess = { connectedDevice ->
+                                                onSuccess = { connected ->
                                                     realBluetoothSocketState.copy(
-                                                        connectedDevice = connectedDevice,
-                                                        socketStatus = "Connected",
+                                                        connectedDevice = connected.name,
+                                                        connectedDeviceAddress = connected.address,
+                                                        socketStatus = "Connected to ${connected.name} (${connected.address})",
                                                         lastError = "None"
                                                     )
                                                 },
                                                 onFailure = { error ->
                                                     realBluetoothSocketState.copy(
                                                         connectedDevice = null,
+                                                        connectedDeviceAddress = null,
                                                         socketStatus = "Connection failed",
                                                         lastError = error.message ?: "Unknown Bluetooth error"
                                                     )
@@ -1675,6 +1728,7 @@ fun MessengerApp() {
                                                 realBluetoothSocketState.copy(
                                                     socketStatus = "HELLO failed",
                                                     connectedDevice = null,
+                                                    connectedDeviceAddress = null,
                                                     lastError = error.message ?: "Unknown Bluetooth error"
                                                 )
                                             }
@@ -1693,6 +1747,7 @@ fun MessengerApp() {
                                             onFailure = { error ->
                                                 realBluetoothSocketState.copy(
                                                     connectedDevice = null,
+                                                    connectedDeviceAddress = null,
                                                     socketStatus = "Disconnected - reconnect ESP32",
                                                     lastError = error.message ?: "Unknown Bluetooth read error"
                                                 )
@@ -1760,6 +1815,7 @@ fun MessengerApp() {
                                                     failed += 1
                                                     realBluetoothSocketState = realBluetoothSocketState.copy(
                                                         connectedDevice = null,
+                                                        connectedDeviceAddress = null,
                                                         socketStatus = "Disconnected - reconnect ESP32",
                                                         liveTestStatus = "Test ${index + 1}/${tests.size} failed",
                                                         liveTestPassed = passed,
@@ -1783,18 +1839,22 @@ fun MessengerApp() {
                                     demoLoRaMessage = sanitizeDemoMessageText(value)
                                 },
                                 onSendLoRaMessage = {
-                                    val destinationNode = peerNodeForConnectedEsp32(realBluetoothSocketState.connectedDevice)
+                                    val actualSocketDevice = realBluetoothSocketState.connectedDevice ?: "unknown"
+                                    val actualSocketAddress = realBluetoothSocketState.connectedDeviceAddress ?: "unknown"
+                                    val localBridgeNode = localEsp32NodeId(actualSocketDevice)
+                                    val destinationNode = peerNodeForConnectedEsp32(actualSocketDevice)
                                     val demoText = sanitizeDemoMessageText(demoLoRaMessage)
                                     val packet = createBluetoothProtocolPacket(
                                         packetType = BluetoothProtocolPacketType.Message,
                                         payload = "MODE=LORA;TEXT=$demoText",
                                         destinationNode = destinationNode,
+                                        localBridgeNode = localBridgeNode,
                                         status = "QUEUED_FOR_LORA"
                                     )
                                     val line = compactSerializedPacketText(packet)
 
                                     realBluetoothSocketState = realBluetoothSocketState.copy(
-                                        liveTestStatus = "Sending \"$demoText\" to $destinationNode",
+                                        liveTestStatus = "Sending \"$demoText\" via $actualSocketDevice ($actualSocketAddress) -> $destinationNode",
                                         lastDemoMessage = demoText,
                                         lastError = "None"
                                     )
@@ -1862,7 +1922,7 @@ fun MessengerApp() {
                                                             targetNode = "ANDROID_APP",
                                                             route = RouteLabel.Lora,
                                                             status = MessageStatus.Delivered,
-                                                            metrics = SimMetrics(0, 0f, 0, "live", "n/a"),
+                                                            metrics = SimMetrics(0, 0.0, 0, "Live", "n/a"),
                                                             path = incomingPacket.hopPath,
                                                             note = "Received over LoRa bridge",
                                                             sentAt = currentTimeLabel(),
@@ -1879,7 +1939,7 @@ fun MessengerApp() {
                                                                 hopPath = incomingPacket.hopPath,
                                                                 hopCount = incomingPacket.hopPath.size - 1,
                                                                 rssi = 0,
-                                                                snr = 0f,
+                                                                snr = 0.0,
                                                                 gatewayStatus = "live",
                                                                 satelliteStatus = "n/a",
                                                                 deliveryStatus = MessageStatus.Delivered.label,
@@ -1889,6 +1949,10 @@ fun MessengerApp() {
                                                             deliveryProgress = "Received over LoRa"
                                                         )
                                                         messages.add(incomingChatMessage)
+                                                        eventLog.add(0, "[ANDROID_RX] packetId=${incomingPacket.packetId} src=${incomingPacket.sourceNode} text=$incomingText")
+                                                        while (eventLog.size > 10) {
+                                                            eventLog.removeAt(eventLog.lastIndex)
+                                                        }
                                                     }
                                                     bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_INCOMING")
                                                     realBluetoothSocketState.copy(
@@ -1914,6 +1978,7 @@ fun MessengerApp() {
                                     androidBluetoothSocketClient.disconnect()
                                     realBluetoothSocketState = realBluetoothSocketState.copy(
                                         connectedDevice = null,
+                                        connectedDeviceAddress = null,
                                         socketStatus = "Disconnected"
                                     )
                                 },
@@ -2607,6 +2672,7 @@ private fun RealBluetoothSocketPanel(
         StatusRow(label = "Failed", value = socketState.liveTestFailed.toString())
         StatusRow(label = "Selected", value = socketState.selectedDevice ?: "None")
         StatusRow(label = "Connected", value = socketState.connectedDevice ?: "None")
+        StatusRow(label = "Connected MAC", value = socketState.connectedDeviceAddress ?: "None")
         StatusRow(label = "Demo message", value = socketState.lastDemoMessage)
         StatusRow(label = "Last sent", value = socketState.lastSentLine)
         StatusRow(label = "Last received", value = socketState.lastReceivedLine)
@@ -3933,15 +3999,21 @@ private fun createBluetoothProtocolPacket(
     packetType: BluetoothProtocolPacketType,
     payload: String,
     destinationNode: String = "ESP32_BRIDGE",
+    localBridgeNode: String? = null,
     status: String = "REQUEST"
 ): BluetoothProtocolPacket {
+    val hopPath = if (localBridgeNode != null) {
+        listOf("ANDROID_APP", localBridgeNode)
+    } else {
+        listOf("ANDROID_APP", destinationNode)
+    }
     return BluetoothProtocolPacket(
         packetType = packetType,
         packetId = "BT-${packetType.wireName}-${System.currentTimeMillis()}",
         sourceNode = "ANDROID_APP",
         destinationNode = destinationNode,
         payload = payload,
-        hopPath = listOf("ANDROID_APP", destinationNode),
+        hopPath = hopPath,
         retryCount = 0,
         timestamp = System.currentTimeMillis() / 1000L,
         status = status
