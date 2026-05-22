@@ -1278,8 +1278,7 @@ fun MessengerApp() {
                                 decision = decision
                             )
 
-                            val isLiveBridgeMode = realBluetoothSocketState.connected && decision.route == RouteLabel.Lora
-                            if (isLiveBridgeMode) {
+                            if (realBluetoothSocketState.connected) {
                                 val actualSocketDevice = realBluetoothSocketState.connectedDevice ?: "unknown"
                                 val actualSocketAddress = realBluetoothSocketState.connectedDeviceAddress ?: "unknown"
                                 val localBridgeNode = localEsp32NodeId(actualSocketDevice)
@@ -1292,23 +1291,44 @@ fun MessengerApp() {
                                     status = "QUEUED_FOR_LORA"
                                 )
                                 val line = compactSerializedPacketText(btPacket)
+                                val bridgePacket = LoraManetPacket(
+                                    packetId = btPacket.packetId,
+                                    sourceNodeId = localBridgeNode,
+                                    destinationNodeId = destinationNode,
+                                    selectedTransport = RouteLabel.Lora.label,
+                                    payloadText = trimmedMessage,
+                                    timestamp = System.currentTimeMillis() / 1000L,
+                                    hopPath = listOf("ANDROID_APP", localBridgeNode, destinationNode),
+                                    hopCount = 2,
+                                    rssi = 0,
+                                    snr = 0.0,
+                                    gatewayStatus = "live",
+                                    satelliteStatus = "n/a",
+                                    deliveryStatus = MessageStatus.Relaying.label,
+                                    queuedAt = System.currentTimeMillis() / 1000L
+                                )
                                 messages.add(
-                                    packetToChatMessage(
-                                        messageId = messageId,
-                                        packet = packet.copy(
-                                            deliveryStatus = MessageStatus.Relaying.label,
-                                            selectedTransport = RouteLabel.Lora.label
-                                        ),
-                                        decision = decision,
-                                        sourceNodeName = localNode.name,
-                                        targetNodeName = targetNode.name,
+                                    ChatMessage(
+                                        id = messageId,
+                                        text = trimmedMessage,
+                                        sourceNode = localNode.name,
+                                        targetNode = targetNode.name,
+                                        route = RouteLabel.Lora,
+                                        status = MessageStatus.Relaying,
+                                        metrics = SimMetrics(0, 0.0, 0, "Live", "n/a"),
+                                        path = listOf(localNode.name, destinationNode),
                                         note = "Live bridge to $actualSocketDevice ($actualSocketAddress) -> LoRa -> $destinationNode",
                                         sentAt = currentTimeLabel(),
-                                        delayMs = delayMs
+                                        progressStep = 0,
+                                        routeQuality = "Live",
+                                        delayMs = 0L,
+                                        packet = bridgePacket,
+                                        retryCount = 0,
+                                        deliveryProgress = "Sending over LoRa bridge..."
                                     )
                                 )
                                 draftMessage = ""
-                                packetLog.add(0, packet)
+                                packetLog.add(0, bridgePacket)
                                 if (packetLog.size > 8) {
                                     packetLog.removeAt(packetLog.lastIndex)
                                 }
@@ -1335,7 +1355,7 @@ fun MessengerApp() {
                                                     bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_ACK")
                                                 }
                                                 updatePacketLog(packetLog, finalPacket)
-                                                eventLog.add(0, "Live bridge ${if (forwarded) "forwarded" else "failed"} ${packet.packetId}")
+                                                eventLog.add(0, "Live bridge ${if (forwarded) "forwarded" else "failed"} ${btPacket.packetId}")
                                                 while (eventLog.size > 10) {
                                                     eventLog.removeAt(eventLog.lastIndex)
                                                 }
@@ -1350,7 +1370,7 @@ fun MessengerApp() {
                                                     deliveryProgress = "Bridge send failed: ${error.message ?: "Unknown error"}"
                                                 )
                                                 updatePacketLog(packetLog, failedPacket)
-                                                eventLog.add(0, "Live bridge send failed for ${packet.packetId}")
+                                                eventLog.add(0, "Live bridge send failed for ${btPacket.packetId}")
                                                 while (eventLog.size > 10) {
                                                     eventLog.removeAt(eventLog.lastIndex)
                                                 }
