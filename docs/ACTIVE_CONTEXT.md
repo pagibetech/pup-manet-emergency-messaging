@@ -1,6 +1,6 @@
 # Active Context
 
-Last updated: 2026-05-22
+Last updated: 2026-05-23
 
 Project: PUP MANET Emergency Messaging Prototype
 
@@ -10,7 +10,7 @@ Local path: `/Users/macbookm1max321tb/A_Design/A_Coding/ADM_Manet`
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed: `f7e2501 STEP 037 — Multi-Hop Routing Foundation`
+Local HEAD observed: `6929119 STEP 038 — Real Multi-Hop Relay Validation`
 
 Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
@@ -32,10 +32,14 @@ Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Cha
 
 Evidence summary: logs show `[BT_RX]`, `[LORA_TX]`, `[LORA_RX]`, `[ROUTE_DECISION] deliver_local`, and `[BT_TX]`; new multi-hop fields `hopCount`, `ttl`, and `previousHop` are active; no regression from STEP 035 / STEP 036.
 
-Tested branch/HEAD: `step-002-003-esp32-simulation` @ `f7e2501`.
+Current design direction: `RPi3B Gateway A <-> Tailscale VPN <-> RPi3B Gateway B`.
 
-Recommended next task: start STEP 038 - Real Multi-Hop Relay Validation.
+Architecture update: the old WiFi router-to-router simulated satellite link is removed. Each Raspberry Pi 3B gateway connects directly to the internet through LAN or WiFi, and the two gateways communicate over Tailscale VPN. WiFi routers are local internet access/router/AP devices only, not the inter-network backhaul. GSM/cellular remains optional fallback/backhaul.
 
-Recommended model/tool: local hardware bench + Android/PlatformIO tools; Codex only for focused validation or difficult blockers.
+Future gateway code must support Tailscale peer IP configuration, a message relay API/socket between gateways, store-and-forward queue, link status monitoring, and optional GSM fallback.
 
-Escalation guidance: keep STEP 038 scoped to real multi-hop relay validation unless the workbook explicitly authorizes broader routing work.
+Recommended next task: continue STEP 038 - Real Multi-Hop Relay Validation; prepare STEP 039 - Raspberry Pi Tailscale Gateway Backhaul Architecture.
+
+Recommended model/tool: local hardware bench + RPi/Tailscale tools when validating; Codex only for focused validation or difficult blockers.
+
+Escalation guidance: do not mark Tailscale implementation complete until RPi3B-to-RPi3B communication over internet/VPN is validated.

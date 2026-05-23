@@ -1,16 +1,18 @@
 # Project Status
 
-Last updated: 2026-05-22
+Last updated: 2026-05-23
 
-Overall state: STEP 037 is complete. Multi-hop routing foundation is active and validated without breaking real 2-node LoRa Chat delivery. The next incomplete milestone is STEP 038 - Real Multi-Hop Relay Validation.
+Overall state: STEP 038 remains the current validation task. The gateway/backhaul architecture has changed to Raspberry Pi 3B gateways communicating over Tailscale VPN instead of WiFi router-to-router simulated satellite backhaul.
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed: `f7e2501 STEP 037 — Multi-Hop Routing Foundation`
+Local HEAD observed: `6929119 STEP 038 — Real Multi-Hop Relay Validation`
 
 Workbook current milestone: STEP 038 - Real Multi-Hop Relay Validation.
 
 Latest completed workbook step: STEP 037 - Multi-Hop Routing Foundation.
+
+Next design milestone: STEP 039 - Raspberry Pi Tailscale Gateway Backhaul Architecture.
 
 Completed highlights:
 - ESP32 simulation and multi-node simulation baseline.
@@ -24,6 +26,16 @@ Completed highlights:
 - STEP 035 real RF flow passed: Phone A -> Bluetooth SPP -> NODE_A ESP32 -> LoRa RF -> NODE_B ESP32 -> Bluetooth SPP -> Phone B.
 - STEP 036 real Chat UI integration passed.
 - STEP 037 multi-hop routing foundation passed with `hopCount`, `ttl`, and `previousHop` active.
+
+Current gateway/backhaul design:
+- `RPi3B Gateway A <-> Tailscale VPN <-> RPi3B Gateway B`.
+- Each MANET network still has 3 ESP32 LoRa nodes paired to Android phones via Bluetooth.
+- Each local MANET has a Raspberry Pi 3B gateway with LoRa module.
+- Gateway A and Gateway B connect directly to the internet through LAN or WiFi.
+- Tailscale provides encrypted tunneling/private networking between the two gateways.
+- Router-to-router simulated satellite link is removed.
+- WiFi routers are local internet access/router/AP devices only, not inter-network backhaul.
+- GSM/cellular remains optional fallback/backhaul.
 
 STEP 035 physical validation evidence:
 - Phone A connected to `PUP-MANET-NODE_A` with MAC shown.
@@ -50,7 +62,14 @@ STEP 037 validation evidence:
 - No regression from STEP 035 / STEP 036.
 
 Current blocker:
-- No blocker for continuity update. STEP 038 real multi-hop relay validation remains pending.
+- No blocker for continuity update. STEP 038 real multi-hop relay validation remains pending, and Tailscale gateway backhaul implementation is not yet validated.
+
+Future gateway-code requirements:
+- Tailscale peer IP configuration.
+- Message relay API/socket between gateways.
+- Store-and-forward queue.
+- Link status monitoring.
+- Optional GSM fallback.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket

@@ -1,21 +1,32 @@
 # AI Session Handoff
 
-Last updated: 2026-05-22
+Last updated: 2026-05-23
 
 Current milestone: STEP 038 - Real Multi-Hop Relay Validation.
 
 Latest completed milestone: STEP 037 - Multi-Hop Routing Foundation.
 
-Unfinished task: validate a real multi-hop relay path using the new routing foundation.
+Unfinished task: validate a real multi-hop relay path using the new routing foundation; next design milestone is STEP 039 - Raspberry Pi Tailscale Gateway Backhaul Architecture.
 
 Pending validations:
 - Real multi-hop relay behavior beyond the confirmed 2-node Chat LoRa path.
 - Route logs show relay decisions, ttl handling, hopCount updates, and previousHop tracking.
 - Existing 2-node Chat LoRa path remains non-regressed.
+- RPi3B-to-RPi3B internet/Tailscale VPN backhaul is not yet validated.
 
 Blockers:
 - No blocker for continuity update.
 - STEP 038 physical relay validation remains pending.
+- Tailscale implementation must not be marked complete until Gateway A and Gateway B communicate over internet/VPN.
+
+Architecture change:
+- Old backhaul removed: WiFi router-to-router simulated satellite link.
+- New backhaul direction: `RPi3B Gateway A <-> Tailscale VPN <-> RPi3B Gateway B`.
+- Each MANET still has 3 ESP32 LoRa nodes paired to Android phones.
+- Each local MANET has one Raspberry Pi 3B gateway with LoRa module.
+- Gateway A and Gateway B connect to internet over LAN or WiFi and communicate through Tailscale VPN.
+- WiFi routers are local internet access/router/AP devices only.
+- GSM/cellular remains optional fallback/backhaul.
 
 Confirmed STEP 037 evidence:
 - Existing 2-node path still works after multi-hop foundation: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`.
@@ -35,6 +46,7 @@ Expected outputs:
 - STEP 038 real multi-hop relay validation evidence.
 - Route logs showing relay behavior and hop metadata.
 - Confirmation that the 2-node Chat LoRa path still works.
+- STEP 039 architecture output: Tailscale peer IP plan, gateway relay API/socket plan, store-and-forward queue plan, link status monitoring, optional GSM fallback.
 
 Latest build/test result:
 - STEP 037 Multi-Hop Routing Foundation passed.
@@ -48,3 +60,10 @@ Routing notes carried into STEP 038:
 - Confirm `hopCount`, `ttl`, and `previousHop` are updated as expected.
 
 Recommended next model/tool: local hardware bench + Android/PlatformIO tools for STEP 038; use Codex only for focused validation or difficult blocker analysis.
+
+Future gateway-code requirements:
+- Tailscale peer IP configuration.
+- Message relay API/socket between gateways.
+- Store-and-forward queue.
+- Link status monitoring.
+- Optional GSM fallback.
