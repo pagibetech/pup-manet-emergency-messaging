@@ -1,0 +1,10 @@
+{
+  "mode": "server",
+  "bind_host": "0.0.0.0",
+  "bind_port": 5050,
+  "peer_host": "100.79.214.18",
+  "peer_port": 5050,
+  "heartbeat_interval_sec": 10,
+  "reconnect_delay_sec": 5,
+  "log_level": "INFO"
+}
