@@ -2,17 +2,17 @@
 
 Last updated: 2026-05-23
 
-Overall state: STEP 038 remains the current validation task. The gateway/backhaul architecture has changed to Raspberry Pi 3B gateways communicating over Tailscale VPN instead of WiFi router-to-router simulated satellite backhaul.
+Overall state: STEP039 gateway/backhaul architecture direction is finalized. Internet/Tailscale is the primary gateway backhaul, with long-range LoRa gateway backhaul as backup.
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed: `6929119 STEP 038 — Real Multi-Hop Relay Validation`
+Local HEAD observed: `102ffe9 fix(step038): enforce TTL drop before relay delivery`
 
-Workbook current milestone: STEP 038 - Real Multi-Hop Relay Validation.
+Workbook current milestone: STEP 039 - Raspberry Pi Tailscale Gateway Backhaul Architecture.
 
-Latest completed workbook step: STEP 037 - Multi-Hop Routing Foundation.
+Latest completed workbook step: STEP 038 - Real Multi-Hop Relay Validation / Stable STEP038 baseline firmware.
 
-Next design milestone: STEP 039 - Raspberry Pi Tailscale Gateway Backhaul Architecture.
+Implementation note: Tailscale gateway backhaul is not validated yet and must not be marked complete until Raspberry Pi 3B gateway-to-gateway communication over internet/VPN is proven.
 
 Completed highlights:
 - ESP32 simulation and multi-node simulation baseline.
@@ -26,16 +26,25 @@ Completed highlights:
 - STEP 035 real RF flow passed: Phone A -> Bluetooth SPP -> NODE_A ESP32 -> LoRa RF -> NODE_B ESP32 -> Bluetooth SPP -> Phone B.
 - STEP 036 real Chat UI integration passed.
 - STEP 037 multi-hop routing foundation passed with `hopCount`, `ttl`, and `previousHop` active.
+- STEP 038 stable baseline firmware preserves TTL, hopCount, duplicate suppression, Bluetooth bridge, and LoRa forwarding.
 
 Current gateway/backhaul design:
-- `RPi3B Gateway A <-> Tailscale VPN <-> RPi3B Gateway B`.
+- `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
 - Each MANET network still has 3 ESP32 LoRa nodes paired to Android phones via Bluetooth.
 - Each local MANET has a Raspberry Pi 3B gateway with LoRa module.
-- Gateway A and Gateway B connect directly to the internet through LAN or WiFi.
-- Tailscale provides encrypted tunneling/private networking between the two gateways.
-- Router-to-router simulated satellite link is removed.
+- Internet backhaul is the primary gateway transport.
+- Tailscale VPN is the primary encrypted tunnel.
+- Ethernet/WiFi internet connectivity is preferred.
+- LoRa-to-LoRa gateway backhaul is the backup path if internet is unavailable.
+- `WiFi Router A <-> WiFi Router B simulated satellite link` is removed.
 - WiFi routers are local internet access/router/AP devices only, not inter-network backhaul.
-- GSM/cellular remains optional fallback/backhaul.
+- GSM/cellular remains optional future fallback.
+
+Architecture priority order:
+- Priority 1: Local LoRa MANET.
+- Priority 2: Tailscale VPN gateway tunnel.
+- Priority 3: Long-range LoRa gateway backup.
+- Priority 4: GSM/cellular optional fallback.
 
 STEP 035 physical validation evidence:
 - Phone A connected to `PUP-MANET-NODE_A` with MAC shown.
@@ -62,14 +71,22 @@ STEP 037 validation evidence:
 - No regression from STEP 035 / STEP 036.
 
 Current blocker:
-- No blocker for continuity update. STEP 038 real multi-hop relay validation remains pending, and Tailscale gateway backhaul implementation is not yet validated.
+- No blocker for continuity update. Tailscale gateway backhaul implementation is not yet validated.
+
+Firmware status:
+- STEP038 ESP32 firmware is not final.
+- STEP038 is now Stable STEP038 baseline firmware.
+- Existing ESP32 routing logic remains valid: TTL, hopCount, duplicate suppression, Bluetooth bridge, and LoRa forwarding.
+- Future ESP32 firmware will support NODE mode and GATEWAY mode.
 
 Future gateway-code requirements:
-- Tailscale peer IP configuration.
-- Message relay API/socket between gateways.
 - Store-and-forward queue.
-- Link status monitoring.
-- Optional GSM fallback.
+- Gateway ACK tracking.
+- Heartbeat monitoring.
+- Peer online detection.
+- Automatic reconnect.
+- Gateway relay mode.
+- LoRa backup backhaul mode.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket

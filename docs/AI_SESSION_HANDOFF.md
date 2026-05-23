@@ -2,31 +2,34 @@
 
 Last updated: 2026-05-23
 
-Current milestone: STEP 038 - Real Multi-Hop Relay Validation.
+Current milestone: STEP 039 - Raspberry Pi Tailscale Gateway Backhaul Architecture.
 
-Latest completed milestone: STEP 037 - Multi-Hop Routing Foundation.
+Latest completed milestone: STEP 038 - Real Multi-Hop Relay Validation / Stable STEP038 baseline firmware.
 
-Unfinished task: validate a real multi-hop relay path using the new routing foundation; next design milestone is STEP 039 - Raspberry Pi Tailscale Gateway Backhaul Architecture.
+Unfinished task: implement and validate the finalized STEP039 gateway/backhaul architecture only when a later workbook task explicitly allows it.
 
 Pending validations:
 - Real multi-hop relay behavior beyond the confirmed 2-node Chat LoRa path.
 - Route logs show relay decisions, ttl handling, hopCount updates, and previousHop tracking.
 - Existing 2-node Chat LoRa path remains non-regressed.
-- RPi3B-to-RPi3B internet/Tailscale VPN backhaul is not yet validated.
+- Raspberry Pi 3B-to-Raspberry Pi 3B internet/Tailscale VPN backhaul is not yet validated.
+- LoRa-to-LoRa gateway backup backhaul is not yet validated.
 
 Blockers:
 - No blocker for continuity update.
-- STEP 038 physical relay validation remains pending.
 - Tailscale implementation must not be marked complete until Gateway A and Gateway B communicate over internet/VPN.
 
 Architecture change:
-- Old backhaul removed: WiFi router-to-router simulated satellite link.
-- New backhaul direction: `RPi3B Gateway A <-> Tailscale VPN <-> RPi3B Gateway B`.
+- Old backhaul removed: `WiFi Router A <-> WiFi Router B simulated satellite link`.
+- Finalized STEP039 backhaul direction: `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
 - Each MANET still has 3 ESP32 LoRa nodes paired to Android phones.
 - Each local MANET has one Raspberry Pi 3B gateway with LoRa module.
-- Gateway A and Gateway B connect to internet over LAN or WiFi and communicate through Tailscale VPN.
+- Internet backhaul is the primary gateway transport.
+- Tailscale VPN is the primary encrypted tunnel.
+- Ethernet/WiFi internet connectivity is preferred.
+- LoRa-to-LoRa gateway backhaul is the backup path if internet is unavailable.
 - WiFi routers are local internet access/router/AP devices only.
-- GSM/cellular remains optional fallback/backhaul.
+- GSM/cellular remains optional future fallback.
 
 Confirmed STEP 037 evidence:
 - Existing 2-node path still works after multi-hop foundation: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`.
@@ -49,21 +52,30 @@ Expected outputs:
 - STEP 039 architecture output: Tailscale peer IP plan, gateway relay API/socket plan, store-and-forward queue plan, link status monitoring, optional GSM fallback.
 
 Latest build/test result:
-- STEP 037 Multi-Hop Routing Foundation passed.
-- Tested branch/HEAD recorded as `step-002-003-esp32-simulation` @ `f7e2501`.
+- STEP 038 is treated as Stable STEP038 baseline firmware, not final firmware.
+- Tested branch/HEAD recorded as `step-002-003-esp32-simulation` @ `102ffe9`.
 - RPi gateway simulation tests last known passing through failover/recovery baseline.
 - No build, test, or simulation run was performed during this continuity documentation update.
 
-Routing notes carried into STEP 038:
-- Preserve STEP 035 / STEP 036 real Chat LoRa behavior.
-- Watch `[ROUTE_DECISION] deliver_local` versus relay logs.
-- Confirm `hopCount`, `ttl`, and `previousHop` are updated as expected.
+Architecture priority order:
+- Priority 1: Local LoRa MANET.
+- Priority 2: Tailscale VPN gateway tunnel.
+- Priority 3: Long-range LoRa gateway backup.
+- Priority 4: GSM/cellular optional fallback.
 
-Recommended next model/tool: local hardware bench + Android/PlatformIO tools for STEP 038; use Codex only for focused validation or difficult blocker analysis.
+ESP32 firmware status:
+- STEP038 ESP32 firmware is not final.
+- It is now considered Stable STEP038 baseline firmware.
+- Existing TTL, hopCount, duplicate suppression, Bluetooth bridge, and LoRa forwarding logic remains valid.
+- Future ESP32 firmware will support NODE mode and GATEWAY mode.
 
 Future gateway-code requirements:
-- Tailscale peer IP configuration.
-- Message relay API/socket between gateways.
 - Store-and-forward queue.
-- Link status monitoring.
-- Optional GSM fallback.
+- Gateway ACK tracking.
+- Heartbeat monitoring.
+- Peer online detection.
+- Automatic reconnect.
+- Gateway relay mode.
+- LoRa backup backhaul mode.
+
+Recommended next model/tool: local RPi/Tailscale hardware tools for future validation; use Codex only for focused validation or difficult blocker analysis.
