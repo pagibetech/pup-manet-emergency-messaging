@@ -701,16 +701,36 @@ void deliverToBluetooth(const ProtocolPacket &packet) {
 void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceLabel) {
   if (hasSeenMessage(packet.packetId)) {
     Serial.print("[DUPLICATE_DROP] packet_id=");
-    Serial.println(packet.packetId);
+    Serial.print(packet.packetId);
+    if (sourceLabel.indexOf("test") >= 0) {
+      Serial.print(" test_packet=true");
+    }
+    Serial.println();
     return;
   }
   rememberMessage(packet.packetId);
+
+  if (packet.ttl <= 0) {
+    Serial.print("[TTL_DROP] packet_id=");
+    Serial.print(packet.packetId);
+    Serial.print(" ttl_exhausted_at=");
+    Serial.print(SIM_NODE_ID);
+    if (sourceLabel.indexOf("test") >= 0) {
+      Serial.print(" test_packet=true");
+    }
+    Serial.println();
+    return;
+  }
 
   if (protocolPacketTargetsLocalNode(packet)) {
     Serial.print("[ROUTE_DECISION] deliver_local packet_id=");
     Serial.print(packet.packetId);
     Serial.print(" source=");
-    Serial.println(sourceLabel);
+    Serial.print(sourceLabel);
+    if (sourceLabel.indexOf("test") >= 0) {
+      Serial.print(" test_packet=true");
+    }
+    Serial.println();
     deliverToBluetooth(packet);
     return;
   }
@@ -740,7 +760,11 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
   Serial.print(" next_hopCount=");
   Serial.print(relayPacket.hopCount);
   Serial.print(" source=");
-  Serial.println(sourceLabel);
+  Serial.print(sourceLabel);
+  if (sourceLabel.indexOf("test") >= 0) {
+    Serial.print(" test_packet=true");
+  }
+  Serial.println();
 
   const String relayLine = serializeLoRaRelayPacket(relayPacket);
   sendLoRaLine(relayLine);
@@ -749,7 +773,11 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
   Serial.print(" relayed_by=");
   Serial.print(SIM_NODE_ID);
   Serial.print(" new_path=");
-  Serial.println(relayPacket.hopPath);
+  Serial.print(relayPacket.hopPath);
+  if (sourceLabel.indexOf("test") >= 0) {
+    Serial.print(" test_packet=true");
+  }
+  Serial.println();
 }
 
 void processIncomingLoRaRelayPacket(const String &line) {
@@ -1194,7 +1222,8 @@ void relayTestDestCommand(const String &line) {
   packet.checksum = CHECKSUM_PLACEHOLDER;
 
   Serial.print("[RELAY_TEST] injecting packet dest=");
-  Serial.println(dest);
+  Serial.print(dest);
+  Serial.println(" test_packet=true");
   routeLoRaProtocolPacket(packet, "serial_test");
 }
 
@@ -1216,10 +1245,10 @@ void relayTestDuplicateCommand() {
   packet.status = "RECEIVED_OVER_LORA";
   packet.checksum = CHECKSUM_PLACEHOLDER;
 
-  Serial.println("[RELAY_TEST] injecting packet first time");
+  Serial.println("[RELAY_TEST] injecting packet first time test_packet=true");
   routeLoRaProtocolPacket(packet, "serial_test");
 
-  Serial.println("[RELAY_TEST] injecting same packet again (duplicate)");
+  Serial.println("[RELAY_TEST] injecting same packet again (duplicate) test_packet=true");
   routeLoRaProtocolPacket(packet, "serial_test");
 }
 
@@ -1259,7 +1288,7 @@ void relayTestTtl0Command(const String &line) {
   packet.status = "RECEIVED_OVER_LORA";
   packet.checksum = CHECKSUM_PLACEHOLDER;
 
-  Serial.println("[RELAY_TEST] injecting packet with ttl=0");
+  Serial.println("[RELAY_TEST] injecting packet with ttl=0 test_packet=true");
   routeLoRaProtocolPacket(packet, "serial_test");
 }
 
