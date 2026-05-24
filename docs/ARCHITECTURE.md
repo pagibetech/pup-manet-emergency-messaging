@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
 Purpose: PUP MANET emergency messaging prototype with Android phones connected to ESP32 nodes, LoRa node-to-node transport, Raspberry Pi 3B local gateways, primary internet/Tailscale gateway backhaul, and long-range LoRa gateway backup backhaul.
 
@@ -19,6 +19,15 @@ Reverse direction is validated through STEP 037.
 Final STEP039 gateway/backhaul design:
 
 `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`
+
+Confirmed STEP040B gateway relay validation:
+- Gateway A: `pup-gateway-a` / `100.123.79.41`.
+- Gateway B: `pup-gateway-b` / `100.79.214.18`.
+- TCP relay port: `5050`.
+- Tailscale ping between gateways: PASS.
+- TCP relay test over Tailscale: PASS.
+- Python gateway TCP relay successfully transferred JSON messages from Gateway A to Gateway B through Tailscale VPN.
+- ACK and heartbeat behavior worked.
 
 Architecture change:
 - The previous `WiFi Router A <-> WiFi Router B simulated satellite link` is removed.
@@ -56,5 +65,6 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP 039 - Raspberry Pi Tailscale Gateway Backhaul Architecture is finalized as the design direction.
-- Do not mark Tailscale implementation complete until RPi3B-to-RPi3B internet/VPN communication is validated.
+- STEP041 - ESP32-to-Raspberry Pi Serial Bridge Integration is next incomplete.
+- Goal: connect ESP32 gateway node to Raspberry Pi via USB serial and pass BT-MANET/LORA protocol JSON lines between ESP32 and Raspberry Pi gateway service.
+- Do not mark ESP32 serial integration complete until validated.

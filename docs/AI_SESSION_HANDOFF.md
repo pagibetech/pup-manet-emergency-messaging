@@ -1,23 +1,23 @@
 # AI Session Handoff
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
-Current milestone: STEP 039 - Raspberry Pi Tailscale Gateway Backhaul Architecture.
+Current milestone: STEP041 - ESP32-to-Raspberry Pi Serial Bridge Integration.
 
-Latest completed milestone: STEP 038 - Real Multi-Hop Relay Validation / Stable STEP038 baseline firmware.
+Latest completed milestone: STEP040B - Python Gateway TCP Relay Service.
 
-Unfinished task: implement and validate the finalized STEP039 gateway/backhaul architecture only when a later workbook task explicitly allows it.
+Unfinished task: connect ESP32 gateway node to Raspberry Pi via USB serial and pass BT-MANET/LORA protocol JSON lines between ESP32 and Raspberry Pi gateway service.
 
 Pending validations:
 - Real multi-hop relay behavior beyond the confirmed 2-node Chat LoRa path.
 - Route logs show relay decisions, ttl handling, hopCount updates, and previousHop tracking.
 - Existing 2-node Chat LoRa path remains non-regressed.
-- Raspberry Pi 3B-to-Raspberry Pi 3B internet/Tailscale VPN backhaul is not yet validated.
+- ESP32 gateway node to Raspberry Pi USB serial bridge is not yet validated.
 - LoRa-to-LoRa gateway backup backhaul is not yet validated.
 
 Blockers:
 - No blocker for continuity update.
-- Tailscale implementation must not be marked complete until Gateway A and Gateway B communicate over internet/VPN.
+- STEP041 must not be marked complete until ESP32 serial bridge integration is validated.
 
 Architecture change:
 - Old backhaul removed: `WiFi Router A <-> WiFi Router B simulated satellite link`.
@@ -30,6 +30,18 @@ Architecture change:
 - LoRa-to-LoRa gateway backhaul is the backup path if internet is unavailable.
 - WiFi routers are local internet access/router/AP devices only.
 - GSM/cellular remains optional future fallback.
+
+Confirmed STEP040B evidence:
+- Gateway A `pup-gateway-a` Tailscale IP: `100.123.79.41`.
+- Gateway B `pup-gateway-b` Tailscale IP: `100.79.214.18`.
+- TCP relay port: `5050`.
+- Tailscale ping between gateways: PASS.
+- TCP relay test over Tailscale: PASS.
+- Gateway B server logged `[GATEWAY_START] Starting in SERVER mode` and `[TCP_SERVER] Listening on 0.0.0.0:5050`.
+- Gateway A client logged `[GATEWAY_START] Starting in CLIENT mode` and `[PEER_STATUS] Connected to 100.79.214.18:5050`.
+- Gateway A sent `{"type":"test","message":"HELLO_FROM_GATEWAY_A"}` and logged `[TCP_TX] Sent type=test to peer`.
+- Gateway B logged `[TCP_RX] From 100.123.79.41:<port> type=test body={"type":"test","message":"HELLO_FROM_GATEWAY_A"}`.
+- ACK returned successfully and heartbeat packets worked.
 
 Confirmed STEP 037 evidence:
 - Existing 2-node path still works after multi-hop foundation: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`.
@@ -46,14 +58,15 @@ Latest implementation instructions:
 - Follow hybrid AI workflow Codex conservation rules.
 
 Expected outputs:
-- STEP 038 real multi-hop relay validation evidence.
-- Route logs showing relay behavior and hop metadata.
-- Confirmation that the 2-node Chat LoRa path still works.
-- STEP 039 architecture output: Tailscale peer IP plan, gateway relay API/socket plan, store-and-forward queue plan, link status monitoring, optional GSM fallback.
+- STEP041 ESP32 USB serial logs.
+- Raspberry Pi gateway service serial receive/transmit logs.
+- Proof that BT-MANET/LORA protocol JSON lines pass between ESP32 gateway node and Raspberry Pi gateway service.
+- Confirmation that local LoRa MANET routing remains non-regressed.
 
 Latest build/test result:
 - STEP 038 is treated as Stable STEP038 baseline firmware, not final firmware.
-- Tested branch/HEAD recorded as `step-002-003-esp32-simulation` @ `102ffe9`.
+- STEP040B tested branch/HEAD recorded as `step-002-003-esp32-simulation` @ `8e018c0`.
+- Gateway-to-gateway encrypted internet tunnel is operational through Tailscale TCP relay.
 - RPi gateway simulation tests last known passing through failover/recovery baseline.
 - No build, test, or simulation run was performed during this continuity documentation update.
 
@@ -78,4 +91,4 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-Recommended next model/tool: local RPi/Tailscale hardware tools for future validation; use Codex only for focused validation or difficult blocker analysis.
+Recommended next model/tool: local ESP32/RPi USB serial hardware tools for STEP041; use Codex only for focused validation or difficult blocker analysis.

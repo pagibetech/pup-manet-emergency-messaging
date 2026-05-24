@@ -1,18 +1,18 @@
 # Project Status
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
-Overall state: STEP039 gateway/backhaul architecture direction is finalized. Internet/Tailscale is the primary gateway backhaul, with long-range LoRa gateway backhaul as backup.
+Overall state: STEP040B Tailscale TCP relay validation passed. Internet/Tailscale is the primary gateway backhaul, with long-range LoRa gateway backhaul as backup.
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed: `102ffe9 fix(step038): enforce TTL drop before relay delivery`
+Local HEAD observed: `8e018c0 feat(gateway): add TCP relay service foundation`
 
-Workbook current milestone: STEP 039 - Raspberry Pi Tailscale Gateway Backhaul Architecture.
+Workbook current milestone: STEP041 - ESP32-to-Raspberry Pi Serial Bridge Integration.
 
-Latest completed workbook step: STEP 038 - Real Multi-Hop Relay Validation / Stable STEP038 baseline firmware.
+Latest completed workbook step: STEP040B - Python Gateway TCP Relay Service.
 
-Implementation note: Tailscale gateway backhaul is not validated yet and must not be marked complete until Raspberry Pi 3B gateway-to-gateway communication over internet/VPN is proven.
+Implementation note: Tailscale gateway-to-gateway TCP relay is validated. ESP32-to-Raspberry Pi serial integration is not complete yet and must remain STEP041.
 
 Completed highlights:
 - ESP32 simulation and multi-node simulation baseline.
@@ -27,6 +27,7 @@ Completed highlights:
 - STEP 036 real Chat UI integration passed.
 - STEP 037 multi-hop routing foundation passed with `hopCount`, `ttl`, and `previousHop` active.
 - STEP 038 stable baseline firmware preserves TTL, hopCount, duplicate suppression, Bluetooth bridge, and LoRa forwarding.
+- STEP040B Python gateway TCP relay passed over Tailscale VPN with JSON relay, ACK, and heartbeat behavior working.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -45,6 +46,17 @@ Architecture priority order:
 - Priority 2: Tailscale VPN gateway tunnel.
 - Priority 3: Long-range LoRa gateway backup.
 - Priority 4: GSM/cellular optional fallback.
+
+STEP040B Tailscale TCP relay validation:
+- Gateway A: `pup-gateway-a` / `100.123.79.41`.
+- Gateway B: `pup-gateway-b` / `100.79.214.18`.
+- TCP relay port: `5050`.
+- Tailscale ping between gateways: PASS.
+- TCP relay test over Tailscale: PASS.
+- Gateway B server logs include `[GATEWAY_START] Starting in SERVER mode` and `[TCP_SERVER] Listening on 0.0.0.0:5050`.
+- Gateway A client logs include `[GATEWAY_START] Starting in CLIENT mode` and `[PEER_STATUS] Connected to 100.79.214.18:5050`.
+- Test JSON packet `{"type":"test","message":"HELLO_FROM_GATEWAY_A"}` transferred from Gateway A to Gateway B.
+- ACK returned successfully and heartbeat packets worked.
 
 STEP 035 physical validation evidence:
 - Phone A connected to `PUP-MANET-NODE_A` with MAC shown.
@@ -71,7 +83,7 @@ STEP 037 validation evidence:
 - No regression from STEP 035 / STEP 036.
 
 Current blocker:
-- No blocker for continuity update. Tailscale gateway backhaul implementation is not yet validated.
+- No blocker for continuity update. STEP041 ESP32-to-Raspberry Pi serial bridge integration is pending.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -87,6 +99,11 @@ Future gateway-code requirements:
 - Automatic reconnect.
 - Gateway relay mode.
 - LoRa backup backhaul mode.
+
+Next incomplete task:
+- STEP041 - ESP32-to-Raspberry Pi Serial Bridge Integration.
+- Goal: connect ESP32 gateway node to Raspberry Pi via USB serial and pass BT-MANET/LORA protocol JSON lines between ESP32 and Raspberry Pi gateway service.
+- Do not mark ESP32 serial integration complete until validated.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket
