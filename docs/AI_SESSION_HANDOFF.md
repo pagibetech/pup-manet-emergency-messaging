@@ -1,18 +1,18 @@
 # AI Session Handoff
 
-Last updated: 2026-06-02
+Last updated: 2026-06-04
 
-Current milestone: STEP041 — ESP32 ↔ Raspberry Pi Serial Bridge Integration — COMPLETE.
+Current milestone: STEP042A - Node Discovery and Reachability - discovery export fix built; physical acceptance pending.
 
-Latest completed milestone: STEP041 - ESP32 ↔ Raspberry Pi Serial Bridge Integration.
+Latest completed milestone: STEP041 - ESP32 ↔ Raspberry Pi Serial Bridge Integration; gateway Bluetooth cleanup validated.
 
-Unfinished task: 8.2 Degradation Test — RSSI < -78 dBm for 10 sec detection. STEP041 is complete.
+Unfinished task: STEP042A physical validation. Do not mark STEP042A complete and do not start STEP042B messaging yet.
 
 Pending validations:
-- Real multi-hop relay behavior beyond the confirmed 2-node Chat LoRa path.
-- Route logs show relay decisions, ttl handling, hopCount updates, and previousHop tracking.
-- Existing 2-node Chat LoRa path remains non-regressed.
-- ESP32 gateway node to Raspberry Pi USB serial bridge: VALIDATED with STEP041.
+- Flash `nodeA1_lora` and `nodeA2_lora`, power both nodes, wait 60 seconds, connect Phone A to `PUP-MANET-nodeA1`, connect Phone B to `PUP-MANET-nodeA2`, press Refresh Nodes, and confirm Android NODE_LIST `count>=2`.
+- Expected discovered nodes: `nodeA1,A,ONLINE` and `nodeA2,A,ONLINE`.
+- Existing 2-node Chat LoRa path and gateway Bluetooth-disable behavior must remain non-regressed.
+- ESP32 gateway node to Raspberry Pi USB serial bridge remains VALIDATED with STEP041.
 - LoRa-to-LoRa gateway backup backhaul is not yet validated.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
@@ -25,8 +25,8 @@ Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Delivery tracking statuses: MESSAGE, DELIVERED, SEEN.
 
 Blockers:
-- No blocker. STEP041 serial bridge integration is complete and validated.
-- No blocker. Next incomplete step: 8.2 Degradation Test.
+- STEP042A physical acceptance is pending. The firmware fix is built, but Android must still show NODE_LIST `count>=2`.
+- Do not start STEP042B messaging yet.
 
 Architecture change:
 - Old backhaul removed: `WiFi Router A <-> WiFi Router B simulated satellite link`.
@@ -58,6 +58,17 @@ STEP041 bug fix documented:
 - Only lines prefixed with `[GW_JSON]` are deserialized and relayed.
 - Backup of pre-STEP041 gateway service preserved at `raspberry-pi-gateway/gateway_service.py.backup-step041`.
 
+Gateway Bluetooth cleanup documented:
+- Gateway ESP32 devices connected to Raspberry Pi gateways by USB serial boot with Bluetooth DISABLED.
+- Android Bluetooth scan now shows only `PUP-MANET-nodeA1` and `PUP-MANET-nodeA2`.
+- Gateway ESP32 devices no longer appear in Android scans or accept Android pairing.
+- Normal MANET node ESP32 devices keep Bluetooth enabled.
+
+STEP042A discovery export root cause and fix:
+- Root cause: compact LoRa relay HELLO packets such as `HELLO-nodeA1` and `HELLO-nodeA2` were parsed as `MESSAGE` unconditionally. They were routed, relayed, and sometimes duplicate-dropped before node table insertion, causing NODE_LIST to export only the local boot entry.
+- Fix in `esp32-node-platformio/src/main.cpp`: infer compact relay HELLO packets from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId` payload; learn HELLO packets before route/duplicate handling; add `hopCount` to node table entries; add `[NEIGHBOR_ADD]`, `[NEIGHBOR_UPDATE]`, and `[NODE_LIST_EXPORT]` logs; remove expired nodes before NODE_LIST export and log each exported row.
+- Build result after fix: `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, and `gatewayB_lora` all SUCCESS.
+
 Confirmed STEP040B evidence:
 - Gateway A `pup-gateway-a` Tailscale IP: `100.123.79.41`.
 - Gateway B `pup-gateway-b` Tailscale IP: `100.79.214.18`.
@@ -83,13 +94,13 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete step: 8.2 Degradation Test.
-- STEP042A-D are queued as the next design/implementation milestones after clarified requirements.
+- Next incomplete task for this thread: STEP042A physical validation.
+- STEP042B-D remain queued. Do not start STEP042B until STEP042A is physically accepted.
 
 Expected outputs:
-- STEP041 is complete and validated.
-- Next expected outputs (8.2): RSSI degradation detection log showing RSSI < -78 dBm for 10 seconds, detection time recorded, route change triggered.
-- Local LoRa MANET routing must remain non-regressed during 8.2.
+- Android NODE_LIST `count>=2` on Phone A connected to `PUP-MANET-nodeA1` and Phone B connected to `PUP-MANET-nodeA2`.
+- Logs include `[NEIGHBOR_ADD]`, `[NEIGHBOR_UPDATE]`, and `[NODE_LIST_EXPORT]` with node id, gateway id, last seen, hop count, and exported node count.
+- Local LoRa MANET routing must remain non-regressed during STEP042A validation.
 
 Latest build/test result:
 - STEP 038 is treated as Stable STEP038 baseline firmware, not final firmware.
@@ -97,8 +108,10 @@ Latest build/test result:
 - STEP041 tested on same branch/HEAD with serial bridge integration.
 - Gateway-to-gateway encrypted internet tunnel is operational through Tailscale TCP relay.
 - ESP32-to-Raspberry Pi USB serial bridge is operational with `[GW_JSON]` protocol.
+- Gateway Bluetooth cleanup passed: gateway builds boot Bluetooth DISABLED; normal node builds keep Bluetooth enabled.
+- STEP042A fix build passed: `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, and `gatewayB_lora`.
 - RPi gateway simulation tests last known passing through failover/recovery baseline.
-- No build, test, or simulation run was performed during this continuity documentation update.
+- No physical STEP042A Android acceptance has been recorded yet.
 
 Architecture priority order:
 - Priority 1: Local LoRa MANET.
@@ -121,4 +134,4 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-Recommended next model/tool: proceed with 8.2 Degradation Test. Use local ESP32/RPi hardware; Codex for focused validation only.
+Recommended next model/tool: proceed with local ESP32/Android hardware validation for STEP042A; Codex for focused validation only.

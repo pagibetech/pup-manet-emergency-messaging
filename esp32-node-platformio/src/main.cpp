@@ -97,6 +97,7 @@ struct NodeEntry {
   String gatewayId;
   int rssi;
   unsigned long lastSeen;
+  int hopCount;
   bool online;
   bool degraded;
   unsigned long degradedSinceMs;
@@ -472,13 +473,32 @@ NodeEntry *findNodeEntry(const String &nodeId) {
   return nullptr;
 }
 
-NodeEntry *upsertNodeEntry(const String &nodeId, const String &gatewayId, int rssi, bool online) {
+void logNodeTableChange(const char *label, const NodeEntry &entry) {
+  Serial.print("[");
+  Serial.print(label);
+  Serial.print("] node=");
+  Serial.print(entry.nodeId);
+  Serial.print(" gateway=");
+  Serial.print(entry.gatewayId);
+  Serial.print(" lastSeen=");
+  Serial.print(entry.lastSeen);
+  Serial.print(" hopCount=");
+  Serial.print(entry.hopCount);
+  Serial.print(" rssi=");
+  Serial.print(entry.rssi);
+  Serial.print(" nodeCount=");
+  Serial.println(nodeTableCount);
+}
+
+NodeEntry *upsertNodeEntry(const String &nodeId, const String &gatewayId, int rssi, bool online, int hopCount = 0) {
   NodeEntry *existing = findNodeEntry(nodeId);
   if (existing != nullptr) {
     existing->gatewayId = gatewayId;
     existing->rssi = rssi;
     existing->lastSeen = millis();
+    existing->hopCount = hopCount;
     existing->online = online;
+    logNodeTableChange("NEIGHBOR_UPDATE", *existing);
     return existing;
   }
   if (nodeTableCount < MAX_NODE_TABLE_SIZE) {
@@ -487,11 +507,14 @@ NodeEntry *upsertNodeEntry(const String &nodeId, const String &gatewayId, int rs
       gatewayId,
       rssi,
       millis(),
+      hopCount,
       online,
       false,
       0
     };
-    return &nodeTable[nodeTableCount++];
+    NodeEntry *created = &nodeTable[nodeTableCount++];
+    logNodeTableChange("NEIGHBOR_ADD", *created);
+    return created;
   }
   return nullptr;
 }
@@ -814,6 +837,14 @@ bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet) {
   packet.status = "RECEIVED_OVER_LORA";
   packet.checksum = CHECKSUM_PLACEHOLDER;
 
+  const bool looksLikeHello =
+    packet.packetId.startsWith("HELLO-") ||
+    (packet.destinationNode == "BROADCAST" && packet.payload.indexOf("gatewayId") >= 0);
+  if (looksLikeHello) {
+    packet.packetType = "HELLO";
+    packet.status = "ALIVE";
+  }
+
   if (packet.ttl == 0 && loRaRelayFieldAt(line, 6).length() == 0) {
     packet.ttl = DEFAULT_TTL;
   }
@@ -822,6 +853,32 @@ bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet) {
          packet.sourceNode.length() > 0 &&
          packet.destinationNode.length() > 0 &&
          packet.payload.length() > 0;
+}
+
+void learnNodeFromHelloPacket(const ProtocolPacket &packet, int rssi, const String &sourceLabel) {
+  if (packet.packetType != "HELLO") {
+    return;
+  }
+  if (packet.sourceNode.length() == 0 || packet.sourceNode == String(SIM_NODE_ID)) {
+    return;
+  }
+
+  String gatewayId = extractJsonString(packet.payload, "gatewayId");
+  if (gatewayId.length() == 0) {
+    gatewayId = "UNKNOWN";
+  }
+
+  upsertNodeEntry(packet.sourceNode, gatewayId, rssi, true, packet.hopCount);
+  Serial.print("[DISCOVERY] HELLO from ");
+  Serial.print(packet.sourceNode);
+  Serial.print(" gateway=");
+  Serial.print(gatewayId);
+  Serial.print(" hopCount=");
+  Serial.print(packet.hopCount);
+  Serial.print(" rssi=");
+  Serial.print(rssi);
+  Serial.print(" source=");
+  Serial.println(sourceLabel);
 }
 
 void sendBluetoothPacket(const ProtocolPacket &packet);
@@ -928,17 +985,18 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
   Serial.println();
 }
 
-void processIncomingLoRaRelayPacket(const String &line) {
+void processIncomingLoRaRelayPacket(const String &line, int rssi = -70) {
   ProtocolPacket packet;
   if (!parseLoRaRelayPacket(line, packet)) {
     Serial.println("[LORA_PROTOCOL_ERROR] invalid compact relay packet");
     return;
   }
 
+  learnNodeFromHelloPacket(packet, rssi, "lora_relay");
   routeLoRaProtocolPacket(packet, "lora");
 }
 
-void processIncomingLoRaProtocolPacket(const String &line) {
+void processIncomingLoRaProtocolPacket(const String &line, int rssi = -70) {
   const PacketParseResult result = parseProtocolPacket(line);
   if (!result.valid) {
     Serial.print("[LORA_PROTOCOL_ERROR] ");
@@ -946,19 +1004,7 @@ void processIncomingLoRaProtocolPacket(const String &line) {
     return;
   }
 
-  // Ingest HELLO packets for node discovery
-  if (result.packet.packetType == "HELLO") {
-    String gw = extractJsonString(result.packet.payload, "gatewayId");
-    if (gw.length() == 0) {
-      gw = "UNKNOWN";
-    }
-    upsertNodeEntry(result.packet.sourceNode, gw, -70, true);
-    Serial.print("[DISCOVERY] HELLO from ");
-    Serial.print(result.packet.sourceNode);
-    Serial.print(" gateway=");
-    Serial.println(gw);
-  }
-
+  learnNodeFromHelloPacket(result.packet, rssi, "lora_json");
   routeLoRaProtocolPacket(result.packet, "lora");
 }
 
@@ -977,10 +1023,10 @@ void processIncomingLoRaLine(const String &line, int rssi, float snr) {
   }
 
   if (line.startsWith(LORA_RELAY_PREFIX + "|")) {
-    processIncomingLoRaRelayPacket(line);
+    processIncomingLoRaRelayPacket(line, rssi);
   } else if (line.startsWith("{")) {
     if (line.indexOf("\"protocolVersion\"") >= 0) {
-      processIncomingLoRaProtocolPacket(line);
+      processIncomingLoRaProtocolPacket(line, rssi);
     } else {
       processIncomingMessage(line);
     }
@@ -1069,13 +1115,34 @@ ProtocolPacket createStatusResponsePacket(const ProtocolPacket &request) {
 }
 
 ProtocolPacket createNodeListResponsePacket(const ProtocolPacket &request) {
+  removeExpiredNodes();
+
   String payload = "type=NODE_LIST";
   payload += ";localNode=" + String(SIM_NODE_ID);
   payload += ";gateway=" + String(GATEWAY_ID);
   payload += ";count=" + String(nodeTableCount);
 
+  Serial.print("[NODE_LIST_EXPORT] requester=");
+  Serial.print(request.sourceNode);
+  Serial.print(" localNode=");
+  Serial.print(SIM_NODE_ID);
+  Serial.print(" nodeCount=");
+  Serial.println(nodeTableCount);
+
   for (size_t i = 0; i < nodeTableCount; ++i) {
     payload += ";" + nodeTable[i].nodeId + "," + nodeTable[i].gatewayId + "," + String(nodeTable[i].online ? "ONLINE" : "OFFLINE");
+    Serial.print("[NODE_LIST_EXPORT] node=");
+    Serial.print(nodeTable[i].nodeId);
+    Serial.print(" gateway=");
+    Serial.print(nodeTable[i].gatewayId);
+    Serial.print(" state=");
+    Serial.print(nodeTable[i].online ? "ONLINE" : "OFFLINE");
+    Serial.print(" lastSeen=");
+    Serial.print(nodeTable[i].lastSeen);
+    Serial.print(" hopCount=");
+    Serial.print(nodeTable[i].hopCount);
+    Serial.print(" exportedCount=");
+    Serial.println(nodeTableCount);
   }
 
   return createProtocolPacket(
@@ -1606,6 +1673,8 @@ void printNeighbors() {
     Serial.print(nodeTable[i].rssi);
     Serial.print(" last_seen=");
     Serial.print(nodeTable[i].lastSeen);
+    Serial.print(" hopCount=");
+    Serial.print(nodeTable[i].hopCount);
     Serial.print(" state=");
     Serial.println(nodeTable[i].online ? "ONLINE" : "OFFLINE");
   }

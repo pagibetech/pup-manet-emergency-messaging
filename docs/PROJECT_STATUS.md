@@ -1,8 +1,8 @@
 # Project Status
 
-Last updated: 2026-06-02
+Last updated: 2026-06-04
 
-Overall state: STEP041 — ESP32 ↔ Raspberry Pi Serial Bridge Integration is COMPLETE. Gateway service opens /dev/ttyUSB0, Tailscale TCP relay remains working, and BT-MANET/LORA protocol JSON lines pass bidirectionally between ESP32 gateway node and Raspberry Pi gateway service.
+Overall state: STEP041 is COMPLETE and gateway Bluetooth cleanup is validated. STEP042A Node Discovery and Reachability has a firmware discovery export fix built, but physical Android acceptance is still pending.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,11 +17,11 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed: `8e018c0 feat(gateway): add TCP relay service foundation`
 
-Workbook current milestone: STEP041 marked COMPLETE/PASS. Next incomplete steps: 8.2 Degradation Test; STEP042A Node Discovery and Reachability.
+Workbook current milestone: STEP042A Node Discovery and Reachability - fix built / physical acceptance pending.
 
 Latest completed workbook step: STEP041 - ESP32 ↔ Raspberry Pi Serial Bridge Integration.
 
-Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway B → TCP → Gateway A → SERIAL_TX → ESP32 → GATEWAY_SERIAL_PARSE → ROUTE_DECISION → LORA_TX path works.
+Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway Bluetooth-disable cleanup is validated and must not be undone. STEP042A is not complete until Android shows NODE_LIST `count>=2`.
 
 Completed highlights:
 - ESP32 simulation and multi-node simulation baseline.
@@ -38,6 +38,8 @@ Completed highlights:
 - STEP 038 stable baseline firmware preserves TTL, hopCount, duplicate suppression, Bluetooth bridge, and LoRa forwarding.
 - STEP040B Python gateway TCP relay passed over Tailscale VPN with JSON relay, ACK, and heartbeat behavior working.
 - STEP041 ESP32 ↔ Raspberry Pi Serial Bridge Integration complete with validated bidirectional flow.
+- Gateway Bluetooth cleanup passed: `gatewayA_lora` and `gatewayB_lora` boot with Bluetooth DISABLED; Android Bluetooth scan shows only `PUP-MANET-nodeA1` and `PUP-MANET-nodeA2`, not gateway ESP32 devices.
+- STEP042A discovery export root cause found and fixed in `esp32-node-platformio/src/main.cpp`; build passed but physical Android acceptance is pending.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -110,8 +112,26 @@ STEP041 bug fix documented:
 - The `_serial_read_loop` only attempts JSON parsing on lines prefixed with `[GW_JSON]`.
 - Backup of pre-STEP041 gateway service preserved at `raspberry-pi-gateway/gateway_service.py.backup-step041`.
 
+Gateway Bluetooth cleanup validation:
+- Gateway ESP32 devices are connected to Raspberry Pi gateways by USB serial and must not appear in Android Bluetooth scans or accept Android pairing.
+- `gatewayA_lora` and `gatewayB_lora` boot with `Bluetooth: DISABLED`.
+- Normal MANET node ESP32 devices still keep Bluetooth enabled.
+
+STEP042A discovery export root cause:
+- Compact LoRa relay HELLO packets such as `HELLO-nodeA1` and `HELLO-nodeA2` were parsed as `MESSAGE` unconditionally.
+- They were routed, relayed, and sometimes duplicate-dropped before node table insertion.
+- NODE_LIST exported only the local boot entry, so Android showed `count=1` even while LoRa HELLO traffic was working.
+
+STEP042A discovery export fix:
+- Infer compact relay HELLO packets from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId` payload.
+- Learn HELLO packets before route/duplicate handling.
+- Add `hopCount` to node table entries.
+- Add debug logs: `[NEIGHBOR_ADD]`, `[NEIGHBOR_UPDATE]`, `[NODE_LIST_EXPORT]`.
+- NODE_LIST generation removes expired nodes before export and logs each exported row.
+- Build passed for `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, and `gatewayB_lora`.
+
 Current blocker:
-- No blocker. STEP041 is complete and validated.
+- STEP042A physical acceptance pending. Do not mark STEP042A complete until `nodeA1_lora` and `nodeA2_lora` are flashed and Android NODE_LIST shows `count>=2`.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -129,8 +149,9 @@ Future gateway-code requirements:
 - LoRa backup backhaul mode.
 
 Next incomplete task:
-- 8.2 Degradation Test — RSSI < -78 dBm for 10 sec detection. Run DOCX degradation detection test per workbook.
-- STEP042A Node Discovery and Reachability — queued after clarified requirements.
+- STEP042A physical validation.
+- Procedure: flash `nodeA1_lora` and `nodeA2_lora`; power both nodes; wait 60 seconds; connect Phone A to `PUP-MANET-nodeA1`; connect Phone B to `PUP-MANET-nodeA2`; press Refresh Nodes; expect Android NODE_LIST `count >= 2`; expect `nodeA1,A,ONLINE` and `nodeA2,A,ONLINE`.
+- Do not start STEP042B messaging yet.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket
