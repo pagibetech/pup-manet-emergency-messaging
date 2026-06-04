@@ -1,5 +1,11 @@
 #include <Arduino.h>
+#ifndef ENABLE_BLUETOOTH
+#define ENABLE_BLUETOOTH 1
+#endif
+
+#if ENABLE_BLUETOOTH
 #include <BluetoothSerial.h>
+#endif
 #if ENABLE_LORA
 #include <SPI.h>
 #include <LoRa.h>
@@ -12,6 +18,10 @@
 
 #ifndef DEFAULT_DEST_ID
 #define DEFAULT_DEST_ID "NODE_B"
+#endif
+
+#ifndef GATEWAY_ID
+#define GATEWAY_ID "A"
 #endif
 
 #ifndef LORA_SS_PIN
@@ -54,6 +64,7 @@ const String PROTOCOL_VERSION = "BT-MANET-1.0";
 const String CHECKSUM_PLACEHOLDER = "checksum pending / simulated";
 const String BLUETOOTH_SERVICE_PREFIX = "PUP-MANET-";
 const String LORA_RELAY_PREFIX = "BT1";
+const String GW_JSON_PREFIX = "[GW_JSON]";
 const char *SUPPORTED_PACKET_TYPES[] = {
   "HELLO",
   "ACK",
@@ -81,11 +92,14 @@ struct SimMessage {
   unsigned long timestamp;
 };
 
-struct Neighbor {
+struct NodeEntry {
   String nodeId;
+  String gatewayId;
   int rssi;
   unsigned long lastSeen;
   bool online;
+  bool degraded;
+  unsigned long degradedSinceMs;
 };
 
 struct ProtocolPacket {
@@ -113,11 +127,16 @@ struct PacketParseResult {
 
 constexpr int DEFAULT_TTL = 5;
 constexpr int MAX_HOP_COUNT = 5;
+constexpr int RSSI_DEGRADE_THRESHOLD_DBM = -78;
+constexpr unsigned long DEGRADE_TIMEOUT_MS = 10000UL;
 constexpr size_t DUPLICATE_CACHE_SIZE = 32;
-constexpr size_t NEIGHBOR_COUNT = 2;
+constexpr size_t MAX_NODE_TABLE_SIZE = 16;
+constexpr unsigned long HELLO_INTERVAL_MS = 10000UL;
+constexpr unsigned long NODE_EXPIRE_MS = 30000UL;
 
 String seenMessageIds[DUPLICATE_CACHE_SIZE];
-Neighbor neighbors[NEIGHBOR_COUNT];
+NodeEntry nodeTable[MAX_NODE_TABLE_SIZE];
+size_t nodeTableCount = 0;
 size_t seenMessageIndex = 0;
 unsigned long outboundCounter = 0;
 String serialBuffer;
@@ -127,7 +146,10 @@ bool bluetoothServiceStarted = false;
 bool loraReady = false;
 unsigned long loraTxCounter = 0;
 unsigned long loraRxCounter = 0;
+unsigned long lastHelloSentMs = 0;
+#if ENABLE_BLUETOOTH
 BluetoothSerial SerialBT;
+#endif
 
 unsigned long simulationTimestamp() {
   return millis() / 1000UL;
@@ -155,6 +177,14 @@ String toUpperCopy(String value) {
 
 String bluetoothServiceName() {
   return BLUETOOTH_SERVICE_PREFIX + String(SIM_NODE_ID);
+}
+
+bool hasBluetoothClient() {
+#if ENABLE_BLUETOOTH
+  return bluetoothServiceStarted && SerialBT.hasClient();
+#else
+  return false;
+#endif
 }
 
 String extractJsonString(const String &json, const String &key) {
@@ -429,57 +459,168 @@ void rememberMessage(const String &msgId) {
   seenMessageIndex = (seenMessageIndex + 1) % DUPLICATE_CACHE_SIZE;
 }
 
-Neighbor *findNeighbor(const String &nodeId) {
-  for (size_t i = 0; i < NEIGHBOR_COUNT; ++i) {
-    if (neighbors[i].nodeId == nodeId) {
-      return &neighbors[i];
+// ------------------------------------------------------------------
+// Dynamic Node Table (replaces fixed Neighbor array)
+// ------------------------------------------------------------------
+
+NodeEntry *findNodeEntry(const String &nodeId) {
+  for (size_t i = 0; i < nodeTableCount; ++i) {
+    if (nodeTable[i].nodeId == nodeId) {
+      return &nodeTable[i];
     }
   }
   return nullptr;
 }
 
-void setNeighborState(const String &nodeId, bool online) {
-  Neighbor *neighbor = findNeighbor(nodeId);
-  if (neighbor == nullptr) {
-    Serial.print("[ERROR] Unknown simulated neighbor: ");
+NodeEntry *upsertNodeEntry(const String &nodeId, const String &gatewayId, int rssi, bool online) {
+  NodeEntry *existing = findNodeEntry(nodeId);
+  if (existing != nullptr) {
+    existing->gatewayId = gatewayId;
+    existing->rssi = rssi;
+    existing->lastSeen = millis();
+    existing->online = online;
+    return existing;
+  }
+  if (nodeTableCount < MAX_NODE_TABLE_SIZE) {
+    nodeTable[nodeTableCount] = NodeEntry{
+      nodeId,
+      gatewayId,
+      rssi,
+      millis(),
+      online,
+      false,
+      0
+    };
+    return &nodeTable[nodeTableCount++];
+  }
+  return nullptr;
+}
+
+void removeExpiredNodes() {
+  const unsigned long now = millis();
+  size_t i = 0;
+  while (i < nodeTableCount) {
+    if (nodeTable[i].nodeId != String(SIM_NODE_ID) && (now - nodeTable[i].lastSeen >= NODE_EXPIRE_MS)) {
+      Serial.print("[NODE_EXPIRE] ");
+      Serial.println(nodeTable[i].nodeId);
+      for (size_t j = i; j + 1 < nodeTableCount; ++j) {
+        nodeTable[j] = nodeTable[j + 1];
+      }
+      --nodeTableCount;
+    } else {
+      ++i;
+    }
+  }
+}
+
+void setNodeState(const String &nodeId, bool online) {
+  NodeEntry *entry = findNodeEntry(nodeId);
+  if (entry == nullptr) {
+    Serial.print("[ERROR] Unknown node: ");
     Serial.println(nodeId);
     return;
   }
-
-  neighbor->online = online;
-  neighbor->lastSeen = online ? simulationTimestamp() : neighbor->lastSeen;
-  Serial.print("[NEIGHBOR] ");
+  entry->online = online;
+  entry->lastSeen = online ? millis() : entry->lastSeen;
+  Serial.print("[NODE] ");
   Serial.print(nodeId);
   Serial.println(online ? " ONLINE" : " OFFLINE");
 }
 
-void initNeighbors() {
-  const unsigned long now = simulationTimestamp();
-  const String nodeId = SIM_NODE_ID;
+void initNodeTable() {
+  nodeTableCount = 0;
+  upsertNodeEntry(String(SIM_NODE_ID), String(GATEWAY_ID), 0, true);
+}
 
-  if (nodeId == "NODE_A") {
-    neighbors[0] = Neighbor{"NODE_B", -55, now, true};
-    neighbors[1] = Neighbor{"NODE_C", -72, now, true};
-  } else if (nodeId == "NODE_B") {
-    neighbors[0] = Neighbor{"NODE_A", -58, now, true};
-    neighbors[1] = Neighbor{"NODE_C", -49, now, true};
-  } else {
-    neighbors[0] = Neighbor{"NODE_B", -52, now, true};
-    neighbors[1] = Neighbor{"NODE_A", -76, now, true};
+String loRaRelayFieldAt(const String &line, int fieldIndex);
+
+String extractLoRaSourceNode(const String &line) {
+  if (line.startsWith(LORA_RELAY_PREFIX + "|")) {
+    return loRaRelayFieldAt(line, 2);
+  }
+  if (line.startsWith("{")) {
+    return extractJsonString(line, "sourceNode");
+  }
+  return "";
+}
+
+void updateNodeRssi(const String &nodeId, int rssi) {
+  NodeEntry *entry = findNodeEntry(nodeId);
+  if (entry == nullptr) {
+    return;
+  }
+  entry->rssi = rssi;
+  entry->lastSeen = millis();
+}
+
+void updateNodeHealth() {
+  const unsigned long now = millis();
+
+  for (size_t i = 0; i < nodeTableCount; ++i) {
+    if (!nodeTable[i].online) {
+      continue;
+    }
+
+    const bool wasDegraded = nodeTable[i].degraded;
+
+    if (nodeTable[i].rssi < RSSI_DEGRADE_THRESHOLD_DBM) {
+      if (nodeTable[i].degradedSinceMs == 0) {
+        nodeTable[i].degradedSinceMs = now;
+      }
+      if (!nodeTable[i].degraded && (now - nodeTable[i].degradedSinceMs >= DEGRADE_TIMEOUT_MS)) {
+        nodeTable[i].degraded = true;
+      }
+      if (nodeTable[i].degraded) {
+        nodeTable[i].degradedSinceMs = now;
+      }
+    } else {
+      nodeTable[i].degraded = false;
+      nodeTable[i].degradedSinceMs = 0;
+    }
+
+    if (nodeTable[i].degraded && !wasDegraded) {
+      Serial.print("[DEGRADATION] node=");
+      Serial.print(nodeTable[i].nodeId);
+      Serial.print(" rssi=");
+      Serial.print(nodeTable[i].rssi);
+      Serial.println(" state=DEGRADED");
+    }
+
+    if (!nodeTable[i].degraded && wasDegraded) {
+      Serial.print("[RECOVERY] node=");
+      Serial.print(nodeTable[i].nodeId);
+      Serial.print(" rssi=");
+      Serial.println(nodeTable[i].rssi);
+    }
   }
 }
 
-Neighbor *selectBestNeighbor() {
-  Neighbor *best = nullptr;
-  for (size_t i = 0; i < NEIGHBOR_COUNT; ++i) {
-    if (!neighbors[i].online) {
+NodeEntry *selectBestNextHop() {
+  NodeEntry *best = nullptr;
+  NodeEntry *bestDegraded = nullptr;
+
+  for (size_t i = 0; i < nodeTableCount; ++i) {
+    if (nodeTable[i].nodeId == String(SIM_NODE_ID)) {
       continue;
     }
-    if (best == nullptr || neighbors[i].rssi > best->rssi) {
-      best = &neighbors[i];
+    if (!nodeTable[i].online) {
+      continue;
+    }
+    if (!nodeTable[i].degraded) {
+      if (best == nullptr || nodeTable[i].rssi > best->rssi) {
+        best = &nodeTable[i];
+      }
+    } else {
+      if (bestDegraded == nullptr || nodeTable[i].rssi > bestDegraded->rssi) {
+        bestDegraded = &nodeTable[i];
+      }
     }
   }
-  return best;
+
+  if (best != nullptr) {
+    return best;
+  }
+  return bestDegraded;
 }
 
 SimMessage createOutboundMessage(const String &dest, const String &payload) {
@@ -535,9 +676,9 @@ void routeMessage(SimMessage message) {
     return;
   }
 
-  Neighbor *nextHop = selectBestNeighbor();
+  NodeEntry *nextHop = selectBestNextHop();
   if (nextHop == nullptr) {
-    dropMessage("no online neighbors", message);
+    dropMessage("no online nodes", message);
     return;
   }
 
@@ -686,7 +827,7 @@ bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet) {
 void sendBluetoothPacket(const ProtocolPacket &packet);
 
 void deliverToBluetooth(const ProtocolPacket &packet) {
-  if (!SerialBT.hasClient()) {
+  if (!hasBluetoothClient()) {
     Serial.print("[BT_PENDING_FROM_LORA] no Android Bluetooth client for packet_id=");
     Serial.println(packet.packetId);
     return;
@@ -731,6 +872,13 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
       Serial.print(" test_packet=true");
     }
     Serial.println();
+
+    if (sourceLabel == "lora") {
+      Serial.print(GW_JSON_PREFIX);
+      Serial.print(" ");
+      Serial.println(serializeProtocolPacket(packet));
+    }
+
     deliverToBluetooth(packet);
     return;
   }
@@ -798,6 +946,19 @@ void processIncomingLoRaProtocolPacket(const String &line) {
     return;
   }
 
+  // Ingest HELLO packets for node discovery
+  if (result.packet.packetType == "HELLO") {
+    String gw = extractJsonString(result.packet.payload, "gatewayId");
+    if (gw.length() == 0) {
+      gw = "UNKNOWN";
+    }
+    upsertNodeEntry(result.packet.sourceNode, gw, -70, true);
+    Serial.print("[DISCOVERY] HELLO from ");
+    Serial.print(result.packet.sourceNode);
+    Serial.print(" gateway=");
+    Serial.println(gw);
+  }
+
   routeLoRaProtocolPacket(result.packet, "lora");
 }
 
@@ -809,6 +970,11 @@ void processIncomingLoRaLine(const String &line, int rssi, float snr) {
   Serial.print(snr);
   Serial.print(" payload=");
   Serial.println(line);
+
+  const String sourceNode = extractLoRaSourceNode(line);
+  if (sourceNode.length() > 0) {
+    updateNodeRssi(sourceNode, rssi);
+  }
 
   if (line.startsWith(LORA_RELAY_PREFIX + "|")) {
     processIncomingLoRaRelayPacket(line);
@@ -886,7 +1052,7 @@ ProtocolPacket createStatusResponsePacket(const ProtocolPacket &request) {
   String payload = "node=" + String(SIM_NODE_ID);
   payload += ";state=" + String(localNodeOnline ? "ONLINE" : "OFFLINE");
   payload += ";bluetoothService=" + String(bluetoothServiceStarted ? "STARTED" : "STOPPED");
-  payload += ";bluetoothClient=" + String(SerialBT.hasClient() ? "CONNECTED" : "DISCONNECTED");
+  payload += ";bluetoothClient=" + String(hasBluetoothClient() ? "CONNECTED" : "DISCONNECTED");
   payload += ";loRa=" + String(loraReady ? "READY" : "SIMULATION_PLACEHOLDER");
   payload += ";manualModes=AUTO,LORA,WIFI,GSM";
 
@@ -902,11 +1068,35 @@ ProtocolPacket createStatusResponsePacket(const ProtocolPacket &request) {
   );
 }
 
+ProtocolPacket createNodeListResponsePacket(const ProtocolPacket &request) {
+  String payload = "type=NODE_LIST";
+  payload += ";localNode=" + String(SIM_NODE_ID);
+  payload += ";gateway=" + String(GATEWAY_ID);
+  payload += ";count=" + String(nodeTableCount);
+
+  for (size_t i = 0; i < nodeTableCount; ++i) {
+    payload += ";" + nodeTable[i].nodeId + "," + nodeTable[i].gatewayId + "," + String(nodeTable[i].online ? "ONLINE" : "OFFLINE");
+  }
+
+  return createProtocolPacket(
+    "STATUS",
+    bluetoothPacketId("BT-STATUS"),
+    String(SIM_NODE_ID),
+    request.sourceNode,
+    payload,
+    String(SIM_NODE_ID) + ">" + request.sourceNode,
+    0,
+    "ONLINE"
+  );
+}
+
 void sendBluetoothPacket(const ProtocolPacket &packet) {
   const String serialized = serializeProtocolPacket(packet);
-  if (SerialBT.hasClient()) {
+#if ENABLE_BLUETOOTH
+  if (hasBluetoothClient()) {
     SerialBT.println(serialized);
   }
+#endif
   Serial.print("[BT_TX] ");
   Serial.println(serialized);
 }
@@ -962,6 +1152,56 @@ void printProtocolParseResult(const String &label, const String &rawPacket) {
   }
 }
 
+void processGatewaySerialProtocolPacket(const String &line) {
+  printProtocolParseResult("GATEWAY_SERIAL_PARSE", line);
+  const PacketParseResult result = parseProtocolPacket(line);
+  if (!result.valid) {
+    return;
+  }
+
+  // Gateway may inject a NODE_LIST from the remote mesh
+  if (result.packet.packetType == "STATUS") {
+    if (result.packet.payload.indexOf("type=NODE_LIST") >= 0) {
+      Serial.println("[GATEWAY_NODE_LIST] injecting remote nodes");
+      // Parse out remote nodes after count field
+      int countIndex = result.packet.payload.indexOf("count=");
+      if (countIndex >= 0) {
+        int afterCount = result.packet.payload.indexOf(';', countIndex);
+        if (afterCount < 0) {
+          afterCount = countIndex + String("count=").length();
+        }
+        String rest = result.packet.payload.substring(afterCount + 1);
+        int pos = 0;
+        while (pos < rest.length()) {
+          int nextSemi = rest.indexOf(';', pos);
+          String token;
+          if (nextSemi < 0) {
+            token = rest.substring(pos);
+            pos = rest.length();
+          } else {
+            token = rest.substring(pos, nextSemi);
+            pos = nextSemi + 1;
+          }
+          int comma1 = token.indexOf(',');
+          int comma2 = token.indexOf(',', comma1 + 1);
+          if (comma1 > 0 && comma2 > comma1) {
+            String remoteNodeId = token.substring(0, comma1);
+            String remoteGateway = token.substring(comma1 + 1, comma2);
+            upsertNodeEntry(remoteNodeId, remoteGateway, -80, true);
+            Serial.print("[REMOTE_NODE] ");
+            Serial.print(remoteNodeId);
+            Serial.print(" gw=");
+            Serial.println(remoteGateway);
+          }
+        }
+      }
+      return;
+    }
+  }
+
+  routeLoRaProtocolPacket(result.packet, "gateway_serial");
+}
+
 void processIncomingProtocolPacket(const String &line) {
   printProtocolParseResult("PROTOCOL_PARSE", line);
 }
@@ -976,6 +1216,10 @@ void processIncomingBluetoothProtocolPacket(const String &line) {
   }
 
   if (result.packet.packetType == "STATUS") {
+    if (result.packet.payload == "REQUEST_NODE_LIST") {
+      sendBluetoothPacket(createNodeListResponsePacket(result.packet));
+      return;
+    }
     sendBluetoothPacket(createStatusResponsePacket(result.packet));
     return;
   }
@@ -1058,6 +1302,20 @@ String sampleStatusPacket() {
   return serializeProtocolPacket(packet);
 }
 
+String sampleNodeListPacket() {
+  ProtocolPacket packet = createProtocolPacket(
+    "STATUS",
+    "BT-NODELIST-001",
+    "ANDROID_APP",
+    String(SIM_NODE_ID),
+    "REQUEST_NODE_LIST",
+    "ANDROID_APP>" + String(SIM_NODE_ID),
+    0,
+    "REQUEST"
+  );
+  return serializeProtocolPacket(packet);
+}
+
 String sampleBadPacket() {
   ProtocolPacket packet = createProtocolPacket(
     "UNKNOWN",
@@ -1093,12 +1351,14 @@ void printProtocolSpec() {
 
 void printBluetoothStatus() {
   Serial.println("[BT_SERVICE]");
+  Serial.print("  build=");
+  Serial.println(ENABLE_BLUETOOTH ? "ENABLED" : "DISABLED");
   Serial.print("  service_name=");
   Serial.println(bluetoothServiceName());
   Serial.print("  state=");
   Serial.println(bluetoothServiceStarted ? "STARTED" : "STOPPED");
   Serial.print("  client=");
-  Serial.println(SerialBT.hasClient() ? "CONNECTED" : "DISCONNECTED");
+  Serial.println(hasBluetoothClient() ? "CONNECTED" : "DISCONNECTED");
   Serial.print("  protocolVersion=");
   Serial.println(PROTOCOL_VERSION);
   Serial.println("  transport=Classic Bluetooth SPP");
@@ -1336,16 +1596,18 @@ void sendPlainTextFallback(const String &line) {
 }
 
 void printNeighbors() {
-  Serial.println("[NEIGHBORS]");
-  for (size_t i = 0; i < NEIGHBOR_COUNT; ++i) {
+  Serial.println("[NODES]");
+  for (size_t i = 0; i < nodeTableCount; ++i) {
     Serial.print("  node=");
-    Serial.print(neighbors[i].nodeId);
+    Serial.print(nodeTable[i].nodeId);
+    Serial.print(" gw=");
+    Serial.print(nodeTable[i].gatewayId);
     Serial.print(" rssi=");
-    Serial.print(neighbors[i].rssi);
+    Serial.print(nodeTable[i].rssi);
     Serial.print(" last_seen=");
-    Serial.print(neighbors[i].lastSeen);
+    Serial.print(nodeTable[i].lastSeen);
     Serial.print(" state=");
-    Serial.println(neighbors[i].online ? "ONLINE" : "OFFLINE");
+    Serial.println(nodeTable[i].online ? "ONLINE" : "OFFLINE");
   }
 }
 
@@ -1353,6 +1615,8 @@ void printStatus() {
   Serial.println("[STATUS]");
   Serial.print("  node=");
   Serial.println(SIM_NODE_ID);
+  Serial.print("  gateway=");
+  Serial.println(GATEWAY_ID);
   Serial.print("  state=");
   Serial.println(localNodeOnline ? "ONLINE" : "OFFLINE");
   Serial.print("  default_dest=");
@@ -1365,6 +1629,8 @@ void printStatus() {
   Serial.println(DUPLICATE_CACHE_SIZE);
   Serial.print("  message_counter=");
   Serial.println(outboundCounter);
+  Serial.print("  node_table_count=");
+  Serial.println(nodeTableCount);
 }
 
 void setOfflineCommand(const String &line) {
@@ -1379,7 +1645,7 @@ void setOfflineCommand(const String &line) {
 
   String nodeId = line.substring(spaceIndex + 1);
   nodeId.trim();
-  setNeighborState(nodeId, false);
+  setNodeState(nodeId, false);
 }
 
 void setOnlineCommand(const String &line) {
@@ -1394,7 +1660,7 @@ void setOnlineCommand(const String &line) {
 
   String nodeId = line.substring(spaceIndex + 1);
   nodeId.trim();
-  setNeighborState(nodeId, true);
+  setNodeState(nodeId, true);
 }
 
 void processSerialLine(String line) {
@@ -1403,9 +1669,18 @@ void processSerialLine(String line) {
     return;
   }
 
+  if (line.startsWith(GW_JSON_PREFIX)) {
+    String jsonPart = line.substring(GW_JSON_PREFIX.length());
+    jsonPart.trim();
+    if (jsonPart.length() > 0) {
+      processGatewaySerialProtocolPacket(jsonPart);
+    }
+    return;
+  }
+
   if (line.startsWith("{")) {
     if (line.indexOf("\"protocolVersion\"") >= 0) {
-      processIncomingProtocolPacket(line);
+      processGatewaySerialProtocolPacket(line);
     } else {
       processIncomingMessage(line);
     }
@@ -1435,6 +1710,8 @@ void processSerialLine(String line) {
     printProtocolParseResult("PARSE_MESSAGE", sampleMessagePacket());
   } else if (command == "PARSE_STATUS") {
     printProtocolParseResult("PARSE_STATUS", sampleStatusPacket());
+  } else if (command == "PARSE_NODE_LIST") {
+    printProtocolParseResult("PARSE_NODE_LIST", sampleNodeListPacket());
   } else if (command == "PARSE_BAD_PACKET") {
     printProtocolParseResult("PARSE_BAD_PACKET", sampleBadPacket());
   } else if (command == "PRINT_PROTOCOL") {
@@ -1459,6 +1736,7 @@ void processSerialLine(String line) {
 }
 
 void processBluetoothLine(String line) {
+#if ENABLE_BLUETOOTH
   line.trim();
   if (line.length() == 0) {
     return;
@@ -1483,9 +1761,13 @@ void processBluetoothLine(String line) {
     "REJECTED"
   );
   sendBluetoothPacket(errorPacket);
+#else
+  (void)line;
+#endif
 }
 
 void readBluetoothInput() {
+#if ENABLE_BLUETOOTH
   while (SerialBT.available() > 0) {
     const char c = static_cast<char>(SerialBT.read());
     if (c == '\n' || c == '\r') {
@@ -1495,6 +1777,7 @@ void readBluetoothInput() {
       bluetoothBuffer += c;
     }
   }
+#endif
 }
 
 void readLoRaInput() {
@@ -1520,26 +1803,53 @@ void readLoRaInput() {
 #endif
 }
 
+void sendHelloBroadcast() {
+  String payload = "{\"gatewayId\":\"" + jsonEscape(String(GATEWAY_ID)) + "\"}";
+  ProtocolPacket packet = createProtocolPacket(
+    "HELLO",
+    bluetoothPacketId("HELLO"),
+    String(SIM_NODE_ID),
+    "BROADCAST",
+    payload,
+    String(SIM_NODE_ID),
+    0,
+    "ALIVE"
+  );
+  packet.ttl = DEFAULT_TTL;
+
+  const String relayLine = serializeLoRaRelayPacket(packet);
+  sendLoRaLine(relayLine);
+
+  Serial.print("[HELLO] broadcast gateway=");
+  Serial.println(GATEWAY_ID);
+}
+
 void printStartupBanner() {
   Serial.println();
   Serial.println("PUP MANET ESP32 Multi-Node Simulation");
   Serial.print("Node ID: ");
   Serial.println(SIM_NODE_ID);
+  Serial.print("Gateway: ");
+  Serial.println(GATEWAY_ID);
   Serial.print("Default destination: ");
   Serial.println(DEFAULT_DEST_ID);
+  Serial.print("Bluetooth: ");
+  Serial.println(ENABLE_BLUETOOTH ? "ENABLED" : "DISABLED");
   Serial.println("Simulation only: Serial input/output represents MANET packets.");
   Serial.println("Commands: SEND <DEST> <MESSAGE>, STATUS, NEIGHBORS, OFFLINE, ONLINE");
-  Serial.println("Optional neighbor state commands: OFFLINE <NODE_ID>, ONLINE <NODE_ID>");
-  Serial.println("Protocol parser commands: PARSE_HELLO, PARSE_MESSAGE, PARSE_STATUS, PARSE_BAD_PACKET, PRINT_PROTOCOL");
+  Serial.println("Optional node state commands: OFFLINE <NODE_ID>, ONLINE <NODE_ID>");
+  Serial.println("Protocol parser commands: PARSE_HELLO, PARSE_MESSAGE, PARSE_STATUS, PARSE_NODE_LIST, PARSE_BAD_PACKET, PRINT_PROTOCOL");
   Serial.println("Bluetooth service command: BT_STATUS");
   Serial.println("LoRa live-test commands: LORA_STATUS, LORA_PING, LORA_SEND <DEST> <MESSAGE>");
   Serial.println("Relay validation commands: RELAY_DEST <DEST> <PAYLOAD>, RELAY_DUPLICATE, RELAY_TTL0 <DEST> <PAYLOAD>");
   Serial.println("Paste a JSON message to simulate receiving a packet from another node.");
   Serial.println("Paste a BT-MANET-1.0 protocol JSON packet to test parser validation.");
+  Serial.println("Gateway serial bridge: [GW_JSON] <json> for Pi backhaul. Raw protocol JSON also accepted.");
   Serial.println();
 }
 
 void beginBluetoothService() {
+#if ENABLE_BLUETOOTH
   bluetoothServiceStarted = SerialBT.begin(bluetoothServiceName());
   if (bluetoothServiceStarted) {
     Serial.print("[BT_SERVICE] started name=");
@@ -1548,6 +1858,10 @@ void beginBluetoothService() {
   } else {
     Serial.println("[BT_SERVICE] failed to start");
   }
+#else
+  bluetoothServiceStarted = false;
+  Serial.println("[BT_SERVICE] disabled in this build");
+#endif
 }
 
 void beginLoRaService() {
@@ -1575,7 +1889,7 @@ void beginLoRaService() {
 void setup() {
   Serial.begin(115200);
   delay(500);
-  initNeighbors();
+  initNodeTable();
   beginBluetoothService();
   beginLoRaService();
   printStartupBanner();
@@ -1592,9 +1906,20 @@ void loop() {
     }
   }
 
+#if ENABLE_BLUETOOTH
   if (bluetoothServiceStarted) {
     readBluetoothInput();
   }
+#endif
 
   readLoRaInput();
+
+  updateNodeHealth();
+  removeExpiredNodes();
+
+  const unsigned long now = millis();
+  if (now - lastHelloSentMs >= HELLO_INTERVAL_MS) {
+    lastHelloSentMs = now;
+    sendHelloBroadcast();
+  }
 }
