@@ -67,6 +67,16 @@ STEP042A/STEP042B physical validation checkpoint:
 - This is a 2-node validation only; `nodeA3` has not been flashed or deployed.
 - Temporary Android validation mapping: `peerNodeForConnectedEsp32()` was changed from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` is not deployed.
 
+STEP043 LoRa HELLO packet format:
+- RF receive is confirmed: Gateway B receives Gateway A LoRa payloads.
+- Failure mode: Gateway A sent `BT1|HELLO-...|gatewayA|BROADCAST|{"gatewayId":"A"}` and Gateway B rejected the payload with `[LORA_ERROR] Expected simulation JSON packet from LoRa peer.`
+- ESP32 LoRa protocol JSON parser expects BT-MANET JSON containing `protocolVersion`, `packetType`, `packetId`, `sourceNode`, `destinationNode`, `payload`, `hopPath`, `hopCount`, `ttl`, `previousHop`, `retryCount`, `timestamp`, `status`, and `checksum`.
+- Sender-side fix: periodic LoRa HELLO advertisements now transmit as full BT-MANET JSON from `sendHelloBroadcast()`.
+- Relayed HELLO packets also remain BT-MANET JSON; existing compact `BT1|...` format remains for non-HELLO message relay.
+- Discovery logs now include `[HELLO] discovered <nodeId>`.
+- Local builds pass for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
+- Physical validation pending: Gateway B should log `[HELLO] discovered gatewayA`; Gateway A should log `[HELLO] discovered gatewayB`; `STATUS` and `NEIGHBORS` should list both gateways.
+
 Current Android/topology limitations:
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
 - Route tab can show `No route` even while real LoRa messages are delivered.
@@ -119,7 +129,8 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
+- STEP043 Fix LoRa HELLO Packet Format - fix built / physical validation pending.
 - STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
 - STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.
-- Next validation activity: investigate `gatewayB` discovery, then replace hardcoded Android destination mapping with live discovered-node selection.
+- Next validation activity: physically validate reciprocal gateway HELLO discovery, then return to gatewayB Android discovery and live discovered-node destination selection.
 - Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.

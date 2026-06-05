@@ -869,6 +869,16 @@ void learnNodeFromHelloPacket(const ProtocolPacket &packet, int rssi, const Stri
   }
 
   upsertNodeEntry(packet.sourceNode, gatewayId, rssi, true, packet.hopCount);
+  Serial.print("[HELLO] discovered ");
+  Serial.print(packet.sourceNode);
+  Serial.print(" gateway=");
+  Serial.print(gatewayId);
+  Serial.print(" hopCount=");
+  Serial.print(packet.hopCount);
+  Serial.print(" rssi=");
+  Serial.print(rssi);
+  Serial.print(" source=");
+  Serial.println(sourceLabel);
   Serial.print("[DISCOVERY] HELLO from ");
   Serial.print(packet.sourceNode);
   Serial.print(" gateway=");
@@ -971,7 +981,9 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
   }
   Serial.println();
 
-  const String relayLine = serializeLoRaRelayPacket(relayPacket);
+  const String relayLine = relayPacket.packetType == "HELLO"
+    ? serializeProtocolPacket(relayPacket)
+    : serializeLoRaRelayPacket(relayPacket);
   sendLoRaLine(relayLine);
   Serial.print("[LORA_RELAY] packet_id=");
   Serial.print(packet.packetId);
@@ -1886,8 +1898,8 @@ void sendHelloBroadcast() {
   );
   packet.ttl = DEFAULT_TTL;
 
-  const String relayLine = serializeLoRaRelayPacket(packet);
-  sendLoRaLine(relayLine);
+  const String jsonLine = serializeProtocolPacket(packet);
+  sendLoRaLine(jsonLine);
 
   Serial.print("[HELLO] broadcast gateway=");
   Serial.println(GATEWAY_ID);
