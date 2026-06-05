@@ -1,17 +1,19 @@
 # AI Session Handoff
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
-Current milestone: STEP042A - Node Discovery and Reachability - discovery export fix built; physical acceptance pending.
+Current milestone: STEP042A/STEP042B physical validation checkpoint. STEP042A is PASS for A-side discovery only; STEP042B is PASS for bidirectional 2-node Android LoRa messaging only.
 
-Latest completed milestone: STEP041 - ESP32 ↔ Raspberry Pi Serial Bridge Integration; gateway Bluetooth cleanup validated.
+Latest completed milestone: STEP042B - Destination Messaging physical validation, limited to `nodeA1 <-> nodeA2`.
 
-Unfinished task: STEP042A physical validation. Do not mark STEP042A complete and do not start STEP042B messaging yet.
+Unfinished task: investigate why `gatewayB` is not exported to Android discovery, then replace the temporary hardcoded Android destination mapping with live discovered-node selection.
 
 Pending validations:
-- Flash `nodeA1_lora` and `nodeA2_lora`, power both nodes, wait 60 seconds, connect Phone A to `PUP-MANET-nodeA1`, connect Phone B to `PUP-MANET-nodeA2`, press Refresh Nodes, and confirm Android NODE_LIST `count>=2`.
-- Expected discovered nodes: `nodeA1,A,ONLINE` and `nodeA2,A,ONLINE`.
+- STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
+- STEP042B 2-node messaging is physically validated: Phone A `hello from A` reached Phone B via `nodeA1 -> nodeA2`; Phone B `hello from b` reached Phone A via `nodeA2 -> nodeA1`.
 - Existing 2-node Chat LoRa path and gateway Bluetooth-disable behavior must remain non-regressed.
+- `gatewayB` boots/broadcasts `HELLO-gatewayB` but does not yet appear in Android discovery.
+- `nodeA3` has not been flashed or validated.
 - ESP32 gateway node to Raspberry Pi USB serial bridge remains VALIDATED with STEP041.
 - LoRa-to-LoRa gateway backup backhaul is not yet validated.
 
@@ -25,8 +27,11 @@ Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Delivery tracking statuses: MESSAGE, DELIVERED, SEEN.
 
 Blockers:
-- STEP042A physical acceptance is pending. The firmware fix is built, but Android must still show NODE_LIST `count>=2`.
-- Do not start STEP042B messaging yet.
+- `gatewayB` discovery is incomplete: firmware boots and broadcasts `HELLO-gatewayB`, but Android does not show `gatewayB` in the discovered node list.
+- Android send destination is still not fully driven by live discovered nodes; `MainActivity.kt` currently uses a temporary validation mapping from `nodeA2` to `nodeA1` because `nodeA3` is not deployed.
+- Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
+- Route tab can show `No route` even while real LoRa messages are delivered.
+- GatewayB repeated reset/garbage serial output needs investigation.
 
 Architecture change:
 - Old backhaul removed: `WiFi Router A <-> WiFi Router B simulated satellite link`.
@@ -60,7 +65,7 @@ STEP041 bug fix documented:
 
 Gateway Bluetooth cleanup documented:
 - Gateway ESP32 devices connected to Raspberry Pi gateways by USB serial boot with Bluetooth DISABLED.
-- Android Bluetooth scan now shows only `PUP-MANET-nodeA1` and `PUP-MANET-nodeA2`.
+- Android Bluetooth scan shows normal node ESP32 devices only; gateway ESP32 devices do not appear for pairing.
 - Gateway ESP32 devices no longer appear in Android scans or accept Android pairing.
 - Normal MANET node ESP32 devices keep Bluetooth enabled.
 
@@ -68,6 +73,19 @@ STEP042A discovery export root cause and fix:
 - Root cause: compact LoRa relay HELLO packets such as `HELLO-nodeA1` and `HELLO-nodeA2` were parsed as `MESSAGE` unconditionally. They were routed, relayed, and sometimes duplicate-dropped before node table insertion, causing NODE_LIST to export only the local boot entry.
 - Fix in `esp32-node-platformio/src/main.cpp`: infer compact relay HELLO packets from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId` payload; learn HELLO packets before route/duplicate handling; add `hopCount` to node table entries; add `[NEIGHBOR_ADD]`, `[NEIGHBOR_UPDATE]`, and `[NODE_LIST_EXPORT]` logs; remove expired nodes before NODE_LIST export and log each exported row.
 - Build result after fix: `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, and `gatewayB_lora` all SUCCESS.
+
+STEP042A physical validation result:
+- PASS for A-side discovery only.
+- Flashed/running firmware: `gatewayA_lora` as `gatewayA`, `gatewayB_lora` as `gatewayB`, `nodeA1_lora` as `nodeA1`, and `nodeA2_lora` as `nodeA2`.
+- Android discovered nodes: `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
+- Remaining gap: `gatewayB` is flashed and broadcasts `HELLO-gatewayB`, but is not yet visible in Android discovery.
+
+STEP042B physical validation result:
+- PASS for bidirectional 2-node Android-to-Android LoRa messaging only.
+- Validated paths: `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1`.
+- Phone A sent `hello from A`; Phone B received it via LoRa.
+- Phone B sent `hello from b`; Phone A received it via LoRa.
+- Temporary Android validation fix: `peerNodeForConnectedEsp32()` in `MainActivity.kt` was changed from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` has not been deployed.
 
 Confirmed STEP040B evidence:
 - Gateway A `pup-gateway-a` Tailscale IP: `100.123.79.41`.
@@ -94,13 +112,13 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete task for this thread: STEP042A physical validation.
-- STEP042B-D remain queued. Do not start STEP042B until STEP042A is physically accepted.
+- Next incomplete activity for this thread: investigate `gatewayB` discovery, then replace hardcoded Android destination mapping with live discovered-node selection.
+- STEP042C-D remain queued. Do not start delivery tracking or store-and-forward work yet.
 
 Expected outputs:
-- Android NODE_LIST `count>=2` on Phone A connected to `PUP-MANET-nodeA1` and Phone B connected to `PUP-MANET-nodeA2`.
-- Logs include `[NEIGHBOR_ADD]`, `[NEIGHBOR_UPDATE]`, and `[NODE_LIST_EXPORT]` with node id, gateway id, last seen, hop count, and exported node count.
-- Local LoRa MANET routing must remain non-regressed during STEP042A validation.
+- Android discovery includes `gatewayB` after its HELLO is received/exported.
+- Android message destination selection is driven by live discovered nodes instead of the temporary `nodeA2 -> nodeA1` mapping.
+- Local LoRa MANET routing and validated `nodeA1 <-> nodeA2` Chat delivery remain non-regressed.
 
 Latest build/test result:
 - STEP 038 is treated as Stable STEP038 baseline firmware, not final firmware.
@@ -109,9 +127,10 @@ Latest build/test result:
 - Gateway-to-gateway encrypted internet tunnel is operational through Tailscale TCP relay.
 - ESP32-to-Raspberry Pi USB serial bridge is operational with `[GW_JSON]` protocol.
 - Gateway Bluetooth cleanup passed: gateway builds boot Bluetooth DISABLED; normal node builds keep Bluetooth enabled.
-- STEP042A fix build passed: `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, and `gatewayB_lora`.
+- STEP042A A-side physical discovery PASS: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
+- STEP042B 2-node physical messaging PASS: Android Chat delivery validated both directions between `nodeA1` and `nodeA2`.
 - RPi gateway simulation tests last known passing through failover/recovery baseline.
-- No physical STEP042A Android acceptance has been recorded yet.
+- Full 6-node/gateway discovery is not complete: `nodeA3` is not deployed and `gatewayB` is not yet visible in Android discovery.
 
 Architecture priority order:
 - Priority 1: Local LoRa MANET.
@@ -134,4 +153,4 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-Recommended next model/tool: proceed with local ESP32/Android hardware validation for STEP042A; Codex for focused validation only.
+Recommended next model/tool: proceed with local ESP32/Android hardware validation for `gatewayB` discovery; Codex for focused validation or the live discovered-node destination-selection change after the workbook permits it.

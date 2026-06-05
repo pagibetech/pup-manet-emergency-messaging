@@ -1,6 +1,6 @@
 # Active Context
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 Project: PUP MANET Emergency Messaging Prototype
 
@@ -10,23 +10,25 @@ Local path: `/Users/macbookm1max321tb/A_Design/A_Coding/ADM_Manet`
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed: `8e018c0 feat(gateway): add TCP relay service foundation`
+Local HEAD observed: `dd90bfe STEP042A: Fix discovery export and update handoff memory`
 
 Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
-Workbook latest referenced commit: `8e018c0`
+Workbook latest referenced commit: `dd90bfe`
 
-Latest completed workbook step: STEP041 - ESP32 ↔ Raspberry Pi Serial Bridge Integration; gateway Bluetooth cleanup validated
+Latest completed workbook step: STEP042B - Destination Messaging physical validation, limited to bidirectional 2-node Android LoRa messaging.
 
-Current milestone: STEP042A Node Discovery and Reachability - discovery export fix built; physical acceptance pending.
+Current milestone: STEP042A/STEP042B physical validation checkpoint. STEP042A is PASS for A-side discovery only (`nodeA1`, `nodeA2`, `gatewayA`). STEP042B is PASS for bidirectional 2-node Android LoRa messaging only (`nodeA1 <-> nodeA2`).
 
-Current feature: NODE_LIST export for online/reachable LoRa nodes using HELLO-derived node table entries.
+Current feature: live A-side node discovery plus 2-node Android Chat delivery over real LoRa.
 
-Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix and preserves gateway Bluetooth-disable behavior. No Android, Raspberry Pi gateway service, workbook, or MD implementation changes are part of STEP042A firmware acceptance.
+Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix and preserves gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` has a temporary validation mapping change in `peerNodeForConnectedEsp32()` from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` has not been flashed or deployed.
 
-Unresolved issue: STEP042A is not physically accepted until `nodeA1_lora` and `nodeA2_lora` are flashed and Android NODE_LIST shows `count>=2`.
+Unresolved issue: `gatewayB_lora` is flashed/running and broadcasts `HELLO-gatewayB`, but `gatewayB` does not yet appear in the Android discovered node list.
 
-Current testing state: Gateway Bluetooth cleanup passed; `gatewayA_lora` and `gatewayB_lora` boot with Bluetooth DISABLED. Android Bluetooth scan now shows only `PUP-MANET-nodeA1` and `PUP-MANET-nodeA2`, not `PUP-MANET-NODE_A` or `PUP-MANET-NODE_B`. STEP042A firmware fix builds passed for `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, and `gatewayB_lora`; physical Android acceptance is pending.
+Current testing state: `gatewayA_lora` restored and running as `gatewayA`; `gatewayB_lora` restored and running as `gatewayB`; `nodeA1_lora` flashed/running as `nodeA1`; `nodeA2_lora` flashed/running as `nodeA2`. Android discovery now shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`. STEP042A is physically validated for this A-side discovery scope.
+
+STEP042B physical validation: PASS for bidirectional 2-node Android-to-Android LoRa bridge after the temporary Android mapping fix. Phone A sent `hello from A`; Phone B received `hello from A` via LoRa on path `nodeA1 -> nodeA2`. Phone B sent `hello from b`; Phone A received `hello from b` via LoRa on path `nodeA2 -> nodeA1`.
 
 Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`, plus reverse `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
 
@@ -55,20 +57,24 @@ STEP042A discovery export root cause: compact LoRa relay HELLO packets such as `
 STEP042A discovery export fix in `esp32-node-platformio/src/main.cpp`: infer compact relay HELLO packets from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId` payload; learn HELLO packets before route/duplicate handling; add `hopCount` to node table entries; add `[NEIGHBOR_ADD]`, `[NEIGHBOR_UPDATE]`, and `[NODE_LIST_EXPORT]` logs; remove expired nodes before NODE_LIST export and log each exported row.
 
 STEP042A physical acceptance procedure:
-1. Flash `nodeA1_lora` and `nodeA2_lora`.
-2. Power both nodes.
-3. Wait 60 seconds.
-4. Connect Phone A to `PUP-MANET-nodeA1`.
-5. Connect Phone B to `PUP-MANET-nodeA2`.
-6. Press Refresh Nodes.
-7. Expected Android NODE_LIST `count >= 2`.
-8. Expected discovered nodes: `nodeA1,A,ONLINE` and `nodeA2,A,ONLINE`.
+1. Completed for A-side two-node discovery.
+2. Flashed/running: `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, `gatewayB_lora`.
+3. Android discovered nodes: `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
+4. Remaining discovery gap: `gatewayB` broadcasts `HELLO-gatewayB` but is not visible in Android discovery.
+
+Open issues:
+- This is a 2-node validation only; `nodeA3` has not been flashed or validated.
+- `gatewayB` is flashed and broadcasting but not yet visible in Android discovery.
+- Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
+- Route tab can show `No route` even while real LoRa messages are delivered.
+- Discovered node list works, but send destination is still not fully driven by live discovered nodes.
+- GatewayB repeated reset/garbage serial output needs investigation.
 
 Future gateway code must support store-and-forward queue, gateway ACK tracking, heartbeat monitoring, peer online detection, automatic reconnect, gateway relay mode, and LoRa backup backhaul mode.
 
-Recommended model/tool: proceed with local ESP32/Android hardware validation for STEP042A. Use Codex only for focused validation or difficult blocker analysis.
+Recommended model/tool: proceed with local ESP32/Android hardware validation for `gatewayB` discovery, then replace the hardcoded Android destination mapping with live discovered-node selection.
 
-Escalation guidance: do not mark STEP042A complete until Android shows NODE_LIST `count>=2` with `nodeA1,A,ONLINE` and `nodeA2,A,ONLINE`. Do not start STEP042B messaging yet.
+Escalation guidance: do not start STEP042C/D. Keep STEP042B recorded as a 2-node physical PASS only until live discovered-node destination selection replaces the temporary mapping.
 
 Clarified requirements (2026-06-02):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -79,4 +85,4 @@ Clarified requirements (2026-06-02):
 - STEP042 split into: STEP042A Node Discovery and Reachability; STEP042B Destination Messaging; STEP042C Delivery Tracking; STEP042D Store-and-Forward.
 - Delivery tracking statuses: MESSAGE (sent), DELIVERED (received at destination node), SEEN (read by recipient Android user).
 
-Do not start STEP042B-D until STEP042A physical acceptance is confirmed.
+Next validation activity: investigate why `gatewayB` is not exported to Android discovery, then replace hardcoded Android destination mapping with live discovered-node selection.

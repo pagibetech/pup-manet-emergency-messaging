@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 Purpose: PUP MANET emergency messaging prototype with Android phones connected to ESP32 nodes, LoRa node-to-node transport, Raspberry Pi 3B local gateways, primary internet/Tailscale gateway backhaul, long-range LoRa gateway backup backhaul, and validated ESP32-to-Raspberry Pi USB serial bridge.
 
@@ -55,7 +55,23 @@ STEP042A discovery export fix:
 - Fix in `esp32-node-platformio/src/main.cpp`: infer compact relay HELLO packets from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId` payload, learn HELLO packets before route/duplicate handling, store `hopCount` in node table entries, and log `[NEIGHBOR_ADD]`, `[NEIGHBOR_UPDATE]`, and `[NODE_LIST_EXPORT]`.
 - NODE_LIST generation now removes expired nodes before export and logs each exported row.
 - Build passed for `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, and `gatewayB_lora`.
-- Physical acceptance remains pending until Android NODE_LIST shows `count>=2` with `nodeA1,A,ONLINE` and `nodeA2,A,ONLINE`.
+- Physical A-side discovery validation is PASS for `nodeA1`, `nodeA2`, and `gatewayA`.
+
+STEP042A/STEP042B physical validation checkpoint:
+- Flashed/running firmware: `gatewayA_lora` restored as `gatewayA`, `gatewayB_lora` restored as `gatewayB`, `nodeA1_lora` as `nodeA1`, and `nodeA2_lora` as `nodeA2`.
+- Android discovery shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
+- `gatewayB` boots and broadcasts `HELLO-gatewayB`, but does not yet appear in Android discovery.
+- STEP042B bidirectional 2-node Android LoRa messaging is PASS for `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1`.
+- Phone A sent `hello from A`; Phone B received it via LoRa on path `nodeA1 -> nodeA2`.
+- Phone B sent `hello from b`; Phone A received it via LoRa on path `nodeA2 -> nodeA1`.
+- This is a 2-node validation only; `nodeA3` has not been flashed or deployed.
+- Temporary Android validation mapping: `peerNodeForConnectedEsp32()` was changed from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` is not deployed.
+
+Current Android/topology limitations:
+- Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
+- Route tab can show `No route` even while real LoRa messages are delivered.
+- Discovered node list works, but send destination is still not fully driven by live discovered nodes.
+- GatewayB repeated reset/garbage serial output needs investigation.
 
 Architecture change:
 - The previous `WiFi Router A <-> WiFi Router B simulated satellite link` is removed.
@@ -103,8 +119,7 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP042A Node Discovery and Reachability - fix built / physical acceptance pending.
-- Next validation: flash `nodeA1_lora` and `nodeA2_lora`; power both nodes; wait 60 seconds; connect Phone A to `PUP-MANET-nodeA1`; connect Phone B to `PUP-MANET-nodeA2`; press Refresh Nodes.
-- Expected Android NODE_LIST `count >= 2` with `nodeA1,A,ONLINE` and `nodeA2,A,ONLINE`.
-- Do not mark STEP042A complete yet.
-- Do not start STEP042B messaging yet.
+- STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
+- STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.
+- Next validation activity: investigate `gatewayB` discovery, then replace hardcoded Android destination mapping with live discovered-node selection.
+- Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.

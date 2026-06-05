@@ -1,8 +1,8 @@
 # Project Status
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
-Overall state: STEP041 is COMPLETE and gateway Bluetooth cleanup is validated. STEP042A Node Discovery and Reachability has a firmware discovery export fix built, but physical Android acceptance is still pending.
+Overall state: STEP042A is physically validated for A-side discovery only, and STEP042B is physically validated for bidirectional 2-node Android LoRa messaging only. This checkpoint covers `nodeA1`, `nodeA2`, and `gatewayA`; it is not a full 6-node/gateway validation.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -15,13 +15,13 @@ Clarified requirements recorded 2026-06-02 (no source changes yet):
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed: `8e018c0 feat(gateway): add TCP relay service foundation`
+Local HEAD observed: `dd90bfe STEP042A: Fix discovery export and update handoff memory`
 
-Workbook current milestone: STEP042A Node Discovery and Reachability - fix built / physical acceptance pending.
+Workbook current milestone: STEP042A/STEP042B physical validation checkpoint, limited to A-side discovery and 2-node messaging.
 
-Latest completed workbook step: STEP041 - ESP32 ↔ Raspberry Pi Serial Bridge Integration.
+Latest completed workbook step: STEP042B - Destination Messaging physical validation, limited to `nodeA1 <-> nodeA2`.
 
-Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway Bluetooth-disable cleanup is validated and must not be undone. STEP042A is not complete until Android shows NODE_LIST `count>=2`.
+Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway Bluetooth-disable cleanup is validated and must not be undone. The current Android mapping change is temporary for 2-node validation because `nodeA3` has not been deployed.
 
 Completed highlights:
 - ESP32 simulation and multi-node simulation baseline.
@@ -38,8 +38,9 @@ Completed highlights:
 - STEP 038 stable baseline firmware preserves TTL, hopCount, duplicate suppression, Bluetooth bridge, and LoRa forwarding.
 - STEP040B Python gateway TCP relay passed over Tailscale VPN with JSON relay, ACK, and heartbeat behavior working.
 - STEP041 ESP32 ↔ Raspberry Pi Serial Bridge Integration complete with validated bidirectional flow.
-- Gateway Bluetooth cleanup passed: `gatewayA_lora` and `gatewayB_lora` boot with Bluetooth DISABLED; Android Bluetooth scan shows only `PUP-MANET-nodeA1` and `PUP-MANET-nodeA2`, not gateway ESP32 devices.
-- STEP042A discovery export root cause found and fixed in `esp32-node-platformio/src/main.cpp`; build passed but physical Android acceptance is pending.
+- Gateway Bluetooth cleanup passed: `gatewayA_lora` and `gatewayB_lora` boot with Bluetooth DISABLED; gateway ESP32 devices do not appear for Android pairing.
+- STEP042A discovery export root cause found and fixed in `esp32-node-platformio/src/main.cpp`; A-side physical discovery validation passed for `nodeA1`, `nodeA2`, and `gatewayA`.
+- STEP042B bidirectional 2-node Android LoRa messaging passed for `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1`.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -130,8 +131,26 @@ STEP042A discovery export fix:
 - NODE_LIST generation removes expired nodes before export and logs each exported row.
 - Build passed for `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, and `gatewayB_lora`.
 
-Current blocker:
-- STEP042A physical acceptance pending. Do not mark STEP042A complete until `nodeA1_lora` and `nodeA2_lora` are flashed and Android NODE_LIST shows `count>=2`.
+STEP042A physical validation status:
+- PASS for A-side discovery only.
+- Flashed/running: `gatewayA_lora` as `gatewayA`, `gatewayB_lora` as `gatewayB`, `nodeA1_lora` as `nodeA1`, and `nodeA2_lora` as `nodeA2`.
+- Android phones show `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
+- This is not full topology validation: `nodeA3` has not been flashed or validated, and `gatewayB` is flashed/broadcasting `HELLO-gatewayB` but is not yet visible in Android discovery.
+
+STEP042B physical validation status:
+- PASS for bidirectional 2-node Android-to-Android LoRa bridge only.
+- Validated paths: `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1`.
+- Phone A sent `hello from A`; Phone B received it via LoRa on path `nodeA1 -> nodeA2`.
+- Phone B sent `hello from b`; Phone A received it via LoRa on path `nodeA2 -> nodeA1`.
+- Temporary Android validation fix: `peerNodeForConnectedEsp32()` in `MainActivity.kt` was changed from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` is not deployed.
+
+Current blockers / open issues:
+- `gatewayB` firmware boots and broadcasts `HELLO-gatewayB`, but `gatewayB` does not yet appear in Android discovered nodes.
+- Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
+- Route tab can show `No route` while real LoRa messages are delivered.
+- Discovered node list works, but send destination is still not fully driven by live discovered nodes.
+- `nodeA3` has not been flashed or validated.
+- GatewayB repeated reset/garbage serial output needs investigation.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -149,9 +168,8 @@ Future gateway-code requirements:
 - LoRa backup backhaul mode.
 
 Next incomplete task:
-- STEP042A physical validation.
-- Procedure: flash `nodeA1_lora` and `nodeA2_lora`; power both nodes; wait 60 seconds; connect Phone A to `PUP-MANET-nodeA1`; connect Phone B to `PUP-MANET-nodeA2`; press Refresh Nodes; expect Android NODE_LIST `count >= 2`; expect `nodeA1,A,ONLINE` and `nodeA2,A,ONLINE`.
-- Do not start STEP042B messaging yet.
+- Investigate `gatewayB` discovery, then replace the hardcoded Android destination mapping with live discovered-node selection.
+- Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket
