@@ -16,15 +16,15 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
-Latest completed workbook step: STEP042B - Destination Messaging physical validation, limited to bidirectional 2-node Android LoRa messaging.
+Latest completed workbook step: STEP044 - Strict compact BT1 LoRa packet validation.
 
-Current milestone: STEP044 - Strict compact BT1 LoRa packet validation. Initial physical validation failed; stricter HELLO semantic validation is built and physical retest is pending.
+Current milestone: STEP044 - Strict compact BT1 LoRa packet validation. Physical validation PASS / COMPLETE after corrective firmware commit `9dba0ef`.
 
 Current feature: strict compact `BT1` LoRa RX validation before neighbor learning or routing.
 
 Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix and preserves gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` has a temporary validation mapping change in `peerNodeForConnectedEsp32()` from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` has not been flashed or deployed.
 
-Unresolved issue: corrupted LoRa packets can appear on RF and must be dropped without creating malformed neighbors such as `gateway=UNKNOWN`, `node=BROADCAST`, or misspelled node IDs.
+Resolved issue: corrupted compact `BT1` LoRa packets are now rejected before neighbor learning and no longer create malformed neighbors such as `gateway=UNKNOWN`, `node=BROADCAST`, or misspelled node IDs.
 
 Current testing state: `gatewayA_lora` restored and running as `gatewayA`; `gatewayB_lora` restored and running as `gatewayB`; `nodeA1_lora` flashed/running as `nodeA1`; `nodeA2_lora` flashed/running as `nodeA2`. Android discovery now shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`. STEP042A is physically validated for this A-side discovery scope.
 
@@ -36,9 +36,13 @@ STEP043 corrected fix: `esp32-node-platformio/src/main.cpp` keeps `sendHelloBroa
 
 STEP043 physical validation: PASS. Gateway A and Gateway B discover each other over compact `BT1` HELLO packets, and `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
 
-STEP044 physical validation failed after commit `93dd506`: corrupt `BT1|HELLO-nodeA1-40000zno4eA1|...` was accepted and created `[NEIGHBOR_ADD] node=BROADCAST gateway=UNKNOWN`; corrupt source `gatlwayB` was accepted as `[NEIGHBOR_ADD] node=gatlwayB gateway=B`.
+STEP044 first physical validation failed after commit `93dd506`: corrupt `BT1|HELLO-nodeA1-40000zno4eA1|...` was accepted and created `[NEIGHBOR_ADD] node=BROADCAST gateway=UNKNOWN`; corrupt source `gatlwayB` was accepted as `[NEIGHBOR_ADD] node=gatlwayB gateway=B`.
 
 STEP044 corrective fix: `esp32-node-platformio/src/main.cpp` now performs strict compact `BT1` validation before packet learning/routing and adds HELLO semantic validation. HELLO learning rejects sources outside known formats (`nodeA1`-`nodeA3`, `nodeB1`-`nodeB3`, `gatewayA`, `gatewayB`), rejects `sourceNode=BROADCAST`, requires packet ID exactly `HELLO-<sourceNode>-<numeric timestamp>`, and requires strict gateway payload JSON of `{"gatewayId":"A"}` or `{"gatewayId":"B"}`. Invalid compact packets log `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>` and return before `learnNodeFromHelloPacket()`.
+
+STEP044 physical validation: PASS / COMPLETE. Corrective firmware commit `9dba0ef` was flashed and tested under RF stress with four active LoRa nodes: `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
+
+STEP044 evidence: corrupt LoRa packets were rejected with `[LORA_DROP_CORRUPT] reason=bad_prefix`, `[LORA_DROP_CORRUPT] reason=bad_field_count`, and `[LORA_DROP_CORRUPT] reason=malformed_gatewayId_json`. Valid packets still parsed with `[LORA_RELAY_PARSE] valid packet_id=HELLO-gatewayB...`, `[LORA_RELAY_PARSE] valid packet_id=HELLO-nodeA1...`, and `[LORA_RELAY_PARSE] valid packet_id=HELLO-nodeA2...`. No ghost neighbors were observed: no `gateway=UNKNOWN`, no `node=BROADCAST`, and no malformed names like `gatlwayB`. Node table remained stable at 4 nodes: `gatewayA`, `gatewayB`, `nodeA1`, `nodeA2`.
 
 STEP044 local validation: PlatformIO builds PASS for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora` after the corrective fix.
 
@@ -84,7 +88,7 @@ Open issues:
 
 Future gateway code must support store-and-forward queue, gateway ACK tracking, heartbeat monitoring, peer online detection, automatic reconnect, gateway relay mode, and LoRa backup backhaul mode.
 
-Recommended model/tool: proceed with local ESP32/Raspberry Pi hardware validation for STEP044 corrupt compact packet rejection.
+Recommended model/tool: proceed with next workbook-approved task after STEP044; use Codex only for focused validation or difficult blocker analysis.
 
 Escalation guidance: do not start STEP042C/D. Do not replace the temporary Android destination mapping until STEP043 gateway HELLO discovery is physically accepted.
 
@@ -97,7 +101,7 @@ Clarified requirements (2026-06-02):
 - STEP042 split into: STEP042A Node Discovery and Reachability; STEP042B Destination Messaging; STEP042C Delivery Tracking; STEP042D Store-and-Forward.
 - Delivery tracking statuses: MESSAGE (sent), DELIVERED (received at destination node), SEEN (read by recipient Android user).
 
-STEP044 validation rules added:
+STEP044 validation rules validated:
 - Reject packets without `BT1|` prefix.
 - Reject compact packets with field count other than 10.
 - Reject blank `packetId`, `sourceNode`, or `destinationNode`.
@@ -109,4 +113,4 @@ STEP044 validation rules added:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: flash corrected STEP044 firmware, verify known-good gatewayA/gatewayB and nodeA1/nodeA2 discovery/routing still works, then replay/observe the failed corrupt cases and confirm `[LORA_DROP_CORRUPT]` with no `BROADCAST`, `UNKNOWN`, or misspelled-neighbor creation.
+Next validation activity: continue only from the next incomplete workbook task; do not regress STEP044 corrupt-packet rejection, gatewayA/gatewayB/nodeA1/nodeA2 discovery, or nodeA1/nodeA2 routing.

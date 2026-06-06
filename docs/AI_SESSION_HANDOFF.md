@@ -2,11 +2,11 @@
 
 Last updated: 2026-06-06
 
-Current milestone: STEP044 - Strict compact BT1 LoRa packet validation. Initial physical corrupt-packet validation failed; corrective HELLO semantic validation is built and physical retest is pending.
+Current milestone: STEP044 - Strict compact BT1 LoRa packet validation. Physical validation PASS / COMPLETE after corrective firmware commit `9dba0ef`.
 
-Latest completed milestone: STEP042B - Destination Messaging physical validation, limited to `nodeA1 <-> nodeA2`.
+Latest completed milestone: STEP044 - Strict compact BT1 LoRa packet validation.
 
-Unfinished task: flash/validate corrected STEP044 firmware and confirm corrupted compact LoRa packets log `[LORA_DROP_CORRUPT]` without creating bad neighbors.
+Unfinished task: continue only from the next incomplete workbook task after STEP044.
 
 Pending validations:
 - STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
@@ -17,7 +17,7 @@ Pending validations:
 - ESP32 gateway node to Raspberry Pi USB serial bridge remains VALIDATED with STEP041.
 - LoRa-to-LoRa gateway backup backhaul is not yet validated.
 - STEP043 is physically validated: Gateway A and Gateway B discover each other and `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
-- STEP044 strict corrupt-packet rejection failed first physical validation after commit `93dd506`; corrected HELLO validation is built locally, but physical retest has not yet been accepted.
+- STEP044 strict corrupt-packet rejection is physically validated PASS after corrective firmware commit `9dba0ef`.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -29,7 +29,7 @@ Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Delivery tracking statuses: MESSAGE, DELIVERED, SEEN.
 
 Blockers:
-- STEP044 physical validation failed once: corrupt `HELLO-nodeA1-40000zno4eA1` created `node=BROADCAST gateway=UNKNOWN`, and corrupt source `gatlwayB` created `node=gatlwayB gateway=B`. Corrected firmware must drop both with `[LORA_DROP_CORRUPT]`.
+- STEP044 first physical validation failed once: corrupt `HELLO-nodeA1-40000zno4eA1` created `node=BROADCAST gateway=UNKNOWN`, and corrupt source `gatlwayB` created `node=gatlwayB gateway=B`. Corrective firmware commit `9dba0ef` fixed this and passed physical validation.
 - Prior `gatewayB` discovery is incomplete: firmware boots and broadcasts `HELLO-gatewayB`, but Android does not show `gatewayB` in the discovered node list.
 - Android send destination is still not fully driven by live discovered nodes; `MainActivity.kt` currently uses a temporary validation mapping from `nodeA2` to `nodeA1` because `nodeA3` is not deployed.
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
@@ -108,7 +108,9 @@ STEP044 strict compact packet validation:
 - Corrective fix: HELLO source must be a known firmware node/gateway format (`nodeA1`-`nodeA3`, `nodeB1`-`nodeB3`, `gatewayA`, `gatewayB`), source cannot be `BROADCAST`, packet ID must exactly match `HELLO-<sourceNode>-<numeric timestamp>`, and gateway payload must be strict `{"gatewayId":"A"}` or `{"gatewayId":"B"}` JSON.
 - Rejects: bad prefix, wrong field count, blank `packetId`, blank `sourceNode`, blank `destinationNode`, invalid node ID characters, HELLO source `BROADCAST`, unknown HELLO source, invalid HELLO packet ID, malformed gatewayId JSON, invalid gateway ID, non-numeric `ttl`, non-numeric `hopCount`, `ttl` outside `0..DEFAULT_TTL`, and `hopCount` outside `0..DEFAULT_TTL`.
 - `learnNodeFromHelloPacket()` now repeats the HELLO semantic guards before `upsertNodeEntry()`, preventing `UNKNOWN`, `BROADCAST`, or misspelled neighbors from malformed HELLO payloads.
-- Local build validation: `pio run -e gatewayA_lora -e gatewayB_lora` PASS; `pio run -e nodeA1_lora -e nodeA2_lora` PASS.
+- Local build validation: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora` PASS.
+- Physical validation PASS: corrective firmware commit `9dba0ef` was flashed and tested under RF stress with four active LoRa nodes: `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
+- Physical evidence: corrupt packets logged `[LORA_DROP_CORRUPT] reason=bad_prefix`, `[LORA_DROP_CORRUPT] reason=bad_field_count`, and `[LORA_DROP_CORRUPT] reason=malformed_gatewayId_json`; valid HELLO packets still logged `[LORA_RELAY_PARSE] valid packet_id=HELLO-gatewayB...`, `HELLO-nodeA1...`, and `HELLO-nodeA2...`; node table stayed stable at 4 nodes with no `gateway=UNKNOWN`, no `node=BROADCAST`, and no malformed `gatlwayB`.
 
 Confirmed STEP040B evidence:
 - Gateway A `pup-gateway-a` Tailscale IP: `100.123.79.41`.
@@ -135,7 +137,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: flash corrected STEP044 firmware and physically retest corrupt compact packet rejection while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery and routing.
+- Next incomplete activity for this thread: continue only from the next incomplete workbook task after STEP044 while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery and routing.
 - STEP042C-D remain queued. Do not start delivery tracking or store-and-forward work yet.
 
 Expected outputs:
@@ -153,7 +155,7 @@ Latest build/test result:
 - Gateway Bluetooth cleanup passed: gateway builds boot Bluetooth DISABLED; normal node builds keep Bluetooth enabled.
 - STEP042A A-side physical discovery PASS: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
 - STEP042B 2-node physical messaging PASS: Android Chat delivery validated both directions between `nodeA1` and `nodeA2`.
-- STEP044 local builds PASS: `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
+- STEP044 physical validation PASS after corrective commit `9dba0ef`: corrupt drops logged, valid HELLO parses retained, no ghost neighbors, node table stable at 4 nodes.
 - RPi gateway simulation tests last known passing through failover/recovery baseline.
 - Full 6-node/gateway discovery is not complete: `nodeA3` is not deployed and `gatewayB` is not yet visible in Android discovery.
 
@@ -178,4 +180,4 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-Recommended next model/tool: proceed with local ESP32/RPi hardware validation for STEP044 corrupt packet rejection; Codex for focused log analysis if corrupt packets still create neighbors.
+Recommended next model/tool: continue from the next incomplete workbook task; Codex for focused validation or difficult blocker analysis.

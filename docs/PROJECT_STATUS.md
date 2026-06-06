@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-06
 
-Overall state: STEP043 compact gateway discovery is physically validated. STEP044 strict compact `BT1` corrupt-packet validation failed first physical test and now has a corrective HELLO semantic-validation build awaiting physical retest.
+Overall state: STEP043 compact gateway discovery is physically validated. STEP044 strict compact `BT1` corrupt-packet validation is physically validated PASS / COMPLETE after corrective firmware commit `9dba0ef`.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,9 +17,9 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP044 - Strict compact BT1 LoRa packet validation.
+Workbook current milestone: STEP044 - Strict compact BT1 LoRa packet validation complete; continue only from the next incomplete workbook task.
 
-Latest completed workbook step: STEP042B - Destination Messaging physical validation, limited to `nodeA1 <-> nodeA2`.
+Latest completed workbook step: STEP044 - Strict compact BT1 LoRa packet validation.
 
 Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway Bluetooth-disable cleanup is validated and must not be undone. The current Android mapping change is temporary for 2-node validation because `nodeA3` has not been deployed.
 
@@ -42,7 +42,7 @@ Completed highlights:
 - STEP042A discovery export root cause found and fixed in `esp32-node-platformio/src/main.cpp`; A-side physical discovery validation passed for `nodeA1`, `nodeA2`, and `gatewayA`.
 - STEP042B bidirectional 2-node Android LoRa messaging passed for `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1`.
 - STEP043 PASS: gatewayA/gatewayB discover each other over compact `BT1` HELLO packets; `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
-- STEP044 strict compact packet validation corrective build complete after first physical validation failure exposed malformed HELLO acceptance.
+- STEP044 PASS / COMPLETE: corrective strict compact packet validation was physically validated under RF stress with `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -147,7 +147,7 @@ STEP042B physical validation status:
 - Temporary Android validation fix: `peerNodeForConnectedEsp32()` in `MainActivity.kt` was changed from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` is not deployed.
 
 Current blockers / open issues:
-- STEP044 corrupt compact packet physical validation failed once and requires retest with the corrective firmware.
+- STEP044 corrupt compact packet physical validation PASS after corrective firmware commit `9dba0ef`.
 - `gatewayB` firmware boots and broadcasts `HELLO-gatewayB`, but `gatewayB` does not yet appear in Android discovered nodes.
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
 - Route tab can show `No route` while real LoRa messages are delivered.
@@ -171,7 +171,9 @@ STEP044 - Strict Compact BT1 LoRa Packet Validation:
 - Rejects: non-`BT1|` prefix, wrong field count, blank `packetId`, blank `sourceNode`, blank `destinationNode`, invalid source/destination characters, HELLO source `BROADCAST`, unknown HELLO source, invalid HELLO packet ID, malformed gatewayId JSON, invalid gateway ID, non-numeric `ttl`, non-numeric `hopCount`, `ttl` outside `0..DEFAULT_TTL`, and `hopCount` outside `0..DEFAULT_TTL`.
 - `learnNodeFromHelloPacket()` repeats the HELLO semantic guards before `upsertNodeEntry()`, so invalid HELLO packets cannot create `UNKNOWN`, `BROADCAST`, or misspelled neighbors.
 - Build validation after corrective fix: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora` PASS.
-- Physical retest pending: corrupt compact packets should log `[LORA_DROP_CORRUPT]` and not create bad neighbors; known-good gatewayA/gatewayB/nodeA1/nodeA2 discovery/routing must remain working.
+- Physical validation PASS: corrective firmware commit `9dba0ef` was flashed and tested under RF stress with four active LoRa nodes: `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
+- Evidence: corrupt packets logged `[LORA_DROP_CORRUPT] reason=bad_prefix`, `[LORA_DROP_CORRUPT] reason=bad_field_count`, and `[LORA_DROP_CORRUPT] reason=malformed_gatewayId_json`; valid packets still parsed with `[LORA_RELAY_PARSE] valid packet_id=HELLO-gatewayB...`, `HELLO-nodeA1...`, and `HELLO-nodeA2...`.
+- Result: no ghost neighbors were observed; no `gateway=UNKNOWN`, no `node=BROADCAST`, no malformed names like `gatlwayB`; node table remained stable at 4 nodes: `gatewayA`, `gatewayB`, `nodeA1`, `nodeA2`.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -189,7 +191,7 @@ Future gateway-code requirements:
 - LoRa backup backhaul mode.
 
 Next incomplete task:
-- Physically retest STEP044 corrupt compact packet rejection with the corrective firmware.
+- Continue from the next incomplete workbook task after STEP044.
 - After STEP043 is accepted, continue with gatewayB Android discovery and replacement of the hardcoded Android destination mapping with live discovered-node selection.
 - Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.
 

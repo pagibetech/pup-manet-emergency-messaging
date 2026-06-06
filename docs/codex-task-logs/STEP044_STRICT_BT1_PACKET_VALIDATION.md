@@ -4,7 +4,7 @@ Date: 2026-06-06
 
 Branch: `step-002-003-esp32-simulation`
 
-Status: Corrective fix built / physical corrupt-packet retest pending
+Status: COMPLETE / Physical Validation PASS
 
 ## Context
 
@@ -20,6 +20,13 @@ First physical STEP044 validation failed after commit `93dd506`:
 - Corrupt packet `BT1|HELLO-nodeA1-40000zno4eA1|...` was accepted as valid.
 - The node table gained `[NEIGHBOR_ADD] node=BROADCAST gateway=UNKNOWN`.
 - Corrupt source name `gatlwayB` was accepted and added as `[NEIGHBOR_ADD] node=gatlwayB gateway=B`.
+
+Corrective firmware commit `9dba0ef` was flashed and physically validated under RF stress with four active LoRa nodes:
+
+- `gatewayA`
+- `gatewayB`
+- `nodeA1`
+- `nodeA2`
 
 ## Protocol Decision
 
@@ -74,11 +81,31 @@ Results:
 - `nodeA1_lora`: SUCCESS
 - `nodeA2_lora`: SUCCESS
 
-## Physical Retest Pending
+## Physical Validation Result
 
-Expected:
+Result: PASS / COMPLETE.
 
-- Corrupted compact packets log `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>`.
-- Corrupted packets do not create or update neighbors.
-- Failed cases `HELLO-nodeA1-40000zno4eA1`, `sourceNode=BROADCAST`, and `sourceNode=gatlwayB` are dropped.
-- Known-good gatewayA/gatewayB/nodeA1/nodeA2 discovery and routing remain working.
+Observed corrupt packet rejection logs:
+
+- `[LORA_DROP_CORRUPT] reason=bad_prefix`
+- `[LORA_DROP_CORRUPT] reason=bad_field_count`
+- `[LORA_DROP_CORRUPT] reason=malformed_gatewayId_json`
+
+Observed valid packet parse logs:
+
+- `[LORA_RELAY_PARSE] valid packet_id=HELLO-gatewayB...`
+- `[LORA_RELAY_PARSE] valid packet_id=HELLO-nodeA1...`
+- `[LORA_RELAY_PARSE] valid packet_id=HELLO-nodeA2...`
+
+No ghost neighbors were observed:
+
+- No `gateway=UNKNOWN`.
+- No `node=BROADCAST`.
+- No malformed node names such as `gatlwayB`.
+
+Node table remained stable at 4 nodes:
+
+- `gatewayA`
+- `gatewayB`
+- `nodeA1`
+- `nodeA2`

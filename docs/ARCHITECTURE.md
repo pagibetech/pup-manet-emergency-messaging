@@ -85,6 +85,9 @@ STEP044 strict compact BT1 validation:
 - HELLO learning repeats the semantic guards before neighbor-table insertion, so malformed HELLO packets cannot create `UNKNOWN`, `BROADCAST`, or misspelled neighbors.
 - Android app and Raspberry Pi gateway service are unchanged.
 - Corrective local builds pass for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
+- Physical validation PASS / COMPLETE after corrective firmware commit `9dba0ef` was flashed and tested under RF stress with four active LoRa nodes: `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
+- Evidence: corrupt packets logged `[LORA_DROP_CORRUPT] reason=bad_prefix`, `[LORA_DROP_CORRUPT] reason=bad_field_count`, and `[LORA_DROP_CORRUPT] reason=malformed_gatewayId_json`; valid HELLO packets still logged `[LORA_RELAY_PARSE] valid` for `HELLO-gatewayB...`, `HELLO-nodeA1...`, and `HELLO-nodeA2...`.
+- Result: node table remained stable at 4 nodes (`gatewayA`, `gatewayB`, `nodeA1`, `nodeA2`) with no `gateway=UNKNOWN`, no `node=BROADCAST`, and no malformed names such as `gatlwayB`.
 
 Current Android/topology limitations:
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
@@ -138,9 +141,9 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP044 Strict Compact BT1 LoRa Packet Validation - corrective fix built / physical retest pending.
+- STEP044 Strict Compact BT1 LoRa Packet Validation - PASS / COMPLETE after RF-stress physical validation.
 - STEP043 Fix LoRa HELLO Packet Format - PASS for compact gatewayA/gatewayB discovery and `TEST_FINAL_001`.
 - STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
 - STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.
-- Next validation activity: physically validate corrupt compact packet rejection, then return to gatewayB Android discovery and live discovered-node destination selection.
+- Next validation activity: continue only from the next incomplete workbook task after STEP044.
 - Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.
