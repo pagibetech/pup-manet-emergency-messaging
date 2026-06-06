@@ -80,10 +80,11 @@ STEP044 strict compact BT1 validation:
 - Compact `BT1` remains the current LoRa firmware protocol.
 - Corrupted compact packets are rejected before neighbor learning or routing.
 - Rejection log format: `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>`.
-- Validation rules reject bad prefix, wrong field count, blank required fields, invalid source/destination characters, invalid HELLO gateway IDs, non-numeric `ttl`/`hopCount`, and `ttl`/`hopCount` outside `0..DEFAULT_TTL`.
-- Invalid HELLO gateway IDs no longer create `UNKNOWN` gateway neighbors.
+- First physical validation failed after commit `93dd506`: malformed HELLO packets could still create `node=BROADCAST gateway=UNKNOWN` or misspelled neighbors such as `gatlwayB`.
+- Corrective validation rules reject bad prefix, wrong field count, blank required fields, invalid source/destination characters, HELLO source `BROADCAST`, HELLO source outside known formats (`nodeA1`-`nodeA3`, `nodeB1`-`nodeB3`, `gatewayA`, `gatewayB`), HELLO packet IDs that do not exactly match `HELLO-<sourceNode>-<numeric timestamp>`, malformed gatewayId JSON, invalid gateway IDs, non-numeric `ttl`/`hopCount`, and `ttl`/`hopCount` outside `0..DEFAULT_TTL`.
+- HELLO learning repeats the semantic guards before neighbor-table insertion, so malformed HELLO packets cannot create `UNKNOWN`, `BROADCAST`, or misspelled neighbors.
 - Android app and Raspberry Pi gateway service are unchanged.
-- Local builds pass for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
+- Corrective local builds pass for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
 
 Current Android/topology limitations:
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
@@ -137,7 +138,7 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP044 Strict Compact BT1 LoRa Packet Validation - fix built / physical validation pending.
+- STEP044 Strict Compact BT1 LoRa Packet Validation - corrective fix built / physical retest pending.
 - STEP043 Fix LoRa HELLO Packet Format - PASS for compact gatewayA/gatewayB discovery and `TEST_FINAL_001`.
 - STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
 - STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.

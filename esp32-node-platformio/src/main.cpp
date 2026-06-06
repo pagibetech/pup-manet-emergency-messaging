@@ -850,6 +850,32 @@ bool isValidLoRaNodeId(const String &nodeId) {
   return true;
 }
 
+bool isKnownLoRaNodeId(const String &nodeId) {
+  if (nodeId == "gatewayA" || nodeId == "gatewayB") {
+    return true;
+  }
+
+  return nodeId.length() == 6 &&
+         nodeId.startsWith("node") &&
+         (nodeId.charAt(4) == 'A' || nodeId.charAt(4) == 'B') &&
+         nodeId.charAt(5) >= '1' &&
+         nodeId.charAt(5) <= '3';
+}
+
+bool isDigitsOnly(const String &value) {
+  if (value.length() == 0) {
+    return false;
+  }
+
+  for (int i = 0; i < value.length(); ++i) {
+    if (!isdigit(static_cast<unsigned char>(value.charAt(i)))) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 bool parseStrictInt(const String &value, int &parsed) {
   if (value.length() == 0) {
     return false;
@@ -883,6 +909,92 @@ bool parseStrictInt(const String &value, int &parsed) {
 
 bool isValidGatewayId(const String &gatewayId) {
   return gatewayId == "A" || gatewayId == "B";
+}
+
+void skipJsonWhitespace(const String &value, int &index) {
+  while (index < value.length() && isspace(static_cast<unsigned char>(value.charAt(index)))) {
+    ++index;
+  }
+}
+
+bool consumeExactQuotedJsonString(const String &value, int &index, const char *expected) {
+  if (index >= value.length() || value.charAt(index) != '"') {
+    return false;
+  }
+  ++index;
+
+  for (int i = 0; expected[i] != '\0'; ++i) {
+    if (index >= value.length() || value.charAt(index) != expected[i]) {
+      return false;
+    }
+    ++index;
+  }
+
+  if (index >= value.length() || value.charAt(index) != '"') {
+    return false;
+  }
+  ++index;
+  return true;
+}
+
+bool parseStrictGatewayIdPayload(const String &payload, String &gatewayId) {
+  gatewayId = "";
+  int index = 0;
+
+  skipJsonWhitespace(payload, index);
+  if (index >= payload.length() || payload.charAt(index) != '{') {
+    return false;
+  }
+  ++index;
+
+  skipJsonWhitespace(payload, index);
+  if (!consumeExactQuotedJsonString(payload, index, "gatewayId")) {
+    return false;
+  }
+
+  skipJsonWhitespace(payload, index);
+  if (index >= payload.length() || payload.charAt(index) != ':') {
+    return false;
+  }
+  ++index;
+
+  skipJsonWhitespace(payload, index);
+  if (index >= payload.length() || payload.charAt(index) != '"') {
+    return false;
+  }
+  ++index;
+
+  if (index >= payload.length()) {
+    return false;
+  }
+  const char gatewayChar = payload.charAt(index);
+  ++index;
+
+  if (index >= payload.length() || payload.charAt(index) != '"') {
+    return false;
+  }
+  ++index;
+
+  gatewayId = String(gatewayChar);
+
+  skipJsonWhitespace(payload, index);
+  if (index >= payload.length() || payload.charAt(index) != '}') {
+    return false;
+  }
+  ++index;
+
+  skipJsonWhitespace(payload, index);
+  return index == payload.length();
+}
+
+bool isValidHelloPacketIdForSource(const String &packetId, const String &sourceNode) {
+  const String expectedPrefix = "HELLO-" + sourceNode + "-";
+  if (!packetId.startsWith(expectedPrefix)) {
+    return false;
+  }
+
+  const String timestamp = packetId.substring(expectedPrefix.length());
+  return isDigitsOnly(timestamp);
 }
 
 String serializeLoRaRelayPacket(const ProtocolPacket &packet) {
@@ -983,7 +1095,28 @@ bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet, String &er
     packet.packetId.startsWith("HELLO-") ||
     (packet.destinationNode == "BROADCAST" && packet.payload.indexOf("gatewayId") >= 0);
   if (looksLikeHello) {
-    const String gatewayId = extractJsonString(packet.payload, "gatewayId");
+    if (packet.sourceNode == "BROADCAST") {
+      errorReason = "hello_source_broadcast";
+      return false;
+    }
+    if (!isKnownLoRaNodeId(packet.sourceNode)) {
+      errorReason = "unknown_hello_source";
+      return false;
+    }
+    if (packet.destinationNode != "BROADCAST") {
+      errorReason = "hello_destination_not_broadcast";
+      return false;
+    }
+    if (!isValidHelloPacketIdForSource(packet.packetId, packet.sourceNode)) {
+      errorReason = "invalid_hello_packetId";
+      return false;
+    }
+
+    String gatewayId;
+    if (!parseStrictGatewayIdPayload(packet.payload, gatewayId)) {
+      errorReason = "malformed_gatewayId_json";
+      return false;
+    }
     if (!isValidGatewayId(gatewayId)) {
       errorReason = "invalid_gatewayId";
       return false;
@@ -1002,8 +1135,24 @@ void learnNodeFromHelloPacket(const ProtocolPacket &packet, int rssi, const Stri
   if (packet.sourceNode.length() == 0 || packet.sourceNode == String(SIM_NODE_ID)) {
     return;
   }
+  if (packet.sourceNode == "BROADCAST") {
+    logCorruptLoRaPacket("hello_source_broadcast", packet.packetId);
+    return;
+  }
+  if (!isKnownLoRaNodeId(packet.sourceNode)) {
+    logCorruptLoRaPacket("unknown_hello_source", packet.packetId);
+    return;
+  }
+  if (!isValidHelloPacketIdForSource(packet.packetId, packet.sourceNode)) {
+    logCorruptLoRaPacket("invalid_hello_packetId", packet.packetId);
+    return;
+  }
 
-  String gatewayId = extractJsonString(packet.payload, "gatewayId");
+  String gatewayId;
+  if (!parseStrictGatewayIdPayload(packet.payload, gatewayId)) {
+    logCorruptLoRaPacket("malformed_gatewayId_json", packet.payload);
+    return;
+  }
   if (!isValidGatewayId(gatewayId)) {
     logCorruptLoRaPacket("invalid_gatewayId", packet.payload);
     return;

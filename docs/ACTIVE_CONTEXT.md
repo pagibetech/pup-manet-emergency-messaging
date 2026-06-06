@@ -18,13 +18,13 @@ Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
 Latest completed workbook step: STEP042B - Destination Messaging physical validation, limited to bidirectional 2-node Android LoRa messaging.
 
-Current milestone: STEP044 - Strict compact BT1 LoRa packet validation. Firmware fix is built; physical corrupt-packet rejection validation is pending.
+Current milestone: STEP044 - Strict compact BT1 LoRa packet validation. Initial physical validation failed; stricter HELLO semantic validation is built and physical retest is pending.
 
 Current feature: strict compact `BT1` LoRa RX validation before neighbor learning or routing.
 
 Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix and preserves gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` has a temporary validation mapping change in `peerNodeForConnectedEsp32()` from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` has not been flashed or deployed.
 
-Unresolved issue: corrupted LoRa packets can appear on RF and must be dropped without creating malformed neighbors such as `gateway=UNKNOWN` or corrupted node IDs.
+Unresolved issue: corrupted LoRa packets can appear on RF and must be dropped without creating malformed neighbors such as `gateway=UNKNOWN`, `node=BROADCAST`, or misspelled node IDs.
 
 Current testing state: `gatewayA_lora` restored and running as `gatewayA`; `gatewayB_lora` restored and running as `gatewayB`; `nodeA1_lora` flashed/running as `nodeA1`; `nodeA2_lora` flashed/running as `nodeA2`. Android discovery now shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`. STEP042A is physically validated for this A-side discovery scope.
 
@@ -36,9 +36,11 @@ STEP043 corrected fix: `esp32-node-platformio/src/main.cpp` keeps `sendHelloBroa
 
 STEP043 physical validation: PASS. Gateway A and Gateway B discover each other over compact `BT1` HELLO packets, and `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
 
-STEP044 fix: `esp32-node-platformio/src/main.cpp` now performs strict compact `BT1` validation before packet learning/routing. Invalid compact packets log `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>` and return before `learnNodeFromHelloPacket()`. HELLO packets require valid `gatewayId` `A` or `B`, preventing `UNKNOWN` gateway neighbors from corrupted payloads.
+STEP044 physical validation failed after commit `93dd506`: corrupt `BT1|HELLO-nodeA1-40000zno4eA1|...` was accepted and created `[NEIGHBOR_ADD] node=BROADCAST gateway=UNKNOWN`; corrupt source `gatlwayB` was accepted as `[NEIGHBOR_ADD] node=gatlwayB gateway=B`.
 
-STEP044 local validation: PlatformIO builds PASS for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
+STEP044 corrective fix: `esp32-node-platformio/src/main.cpp` now performs strict compact `BT1` validation before packet learning/routing and adds HELLO semantic validation. HELLO learning rejects sources outside known formats (`nodeA1`-`nodeA3`, `nodeB1`-`nodeB3`, `gatewayA`, `gatewayB`), rejects `sourceNode=BROADCAST`, requires packet ID exactly `HELLO-<sourceNode>-<numeric timestamp>`, and requires strict gateway payload JSON of `{"gatewayId":"A"}` or `{"gatewayId":"B"}`. Invalid compact packets log `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>` and return before `learnNodeFromHelloPacket()`.
+
+STEP044 local validation: PlatformIO builds PASS for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora` after the corrective fix.
 
 Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`, plus reverse `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
 
@@ -100,8 +102,11 @@ STEP044 validation rules added:
 - Reject compact packets with field count other than 10.
 - Reject blank `packetId`, `sourceNode`, or `destinationNode`.
 - Reject invalid `sourceNode` or `destinationNode` characters.
-- Reject HELLO packets unless payload contains `gatewayId` `A` or `B`.
+- Reject HELLO packets whose `sourceNode` is `BROADCAST`.
+- Reject HELLO packets whose `sourceNode` is not a known firmware node/gateway format.
+- Reject HELLO packets whose `packetId` is not exactly `HELLO-<sourceNode>-<numeric timestamp>`.
+- Reject HELLO packets unless payload is strict gateway JSON with `gatewayId` `A` or `B`.
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: flash corrected firmware, verify known-good gatewayA/gatewayB and nodeA1/nodeA2 discovery/routing still works, then inject or observe corrupted compact packets and confirm `[LORA_DROP_CORRUPT]` with no bad neighbor creation.
+Next validation activity: flash corrected STEP044 firmware, verify known-good gatewayA/gatewayB and nodeA1/nodeA2 discovery/routing still works, then replay/observe the failed corrupt cases and confirm `[LORA_DROP_CORRUPT]` with no `BROADCAST`, `UNKNOWN`, or misspelled-neighbor creation.
