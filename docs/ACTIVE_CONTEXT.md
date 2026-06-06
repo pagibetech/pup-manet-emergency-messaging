@@ -18,13 +18,13 @@ Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
 Latest completed workbook step: STEP042B - Destination Messaging physical validation, limited to bidirectional 2-node Android LoRa messaging.
 
-Current milestone: STEP043 - Fix LoRa HELLO Packet Format. Initial JSON-oriented fix failed physical validation; corrected compact `BT1` receiver-side fix is built and physical validation is pending.
+Current milestone: STEP044 - Strict compact BT1 LoRa packet validation. Firmware fix is built; physical corrupt-packet rejection validation is pending.
 
-Current feature: gateway HELLO discovery over LoRa using compact `BT1` relay packets for firmware consistency with the validated nodeA1/nodeA2 route.
+Current feature: strict compact `BT1` LoRa RX validation before neighbor learning or routing.
 
 Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix and preserves gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` has a temporary validation mapping change in `peerNodeForConnectedEsp32()` from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` has not been flashed or deployed.
 
-Unresolved issue: corrected STEP043 firmware must be flashed and physically validated so compact `BT1` HELLO RX logs `[LORA_RELAY_PARSE] valid`, `[DISCOVERY] HELLO from <gateway>`, and `[NEIGHBOR_ADD]` / `[NEIGHBOR_UPDATE]`.
+Unresolved issue: corrupted LoRa packets can appear on RF and must be dropped without creating malformed neighbors such as `gateway=UNKNOWN` or corrupted node IDs.
 
 Current testing state: `gatewayA_lora` restored and running as `gatewayA`; `gatewayB_lora` restored and running as `gatewayB`; `nodeA1_lora` flashed/running as `nodeA1`; `nodeA2_lora` flashed/running as `nodeA2`. Android discovery now shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`. STEP042A is physically validated for this A-side discovery scope.
 
@@ -34,7 +34,11 @@ STEP043 correction result: physical validation after flashing `gatewayA_lora` an
 
 STEP043 corrected fix: `esp32-node-platformio/src/main.cpp` keeps `sendHelloBroadcast()` and all LoRa relay TX on compact `BT1` format. The receiver-side compact parser now logs `[LORA_RELAY_PARSE] valid`, infers `HELLO` from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId`, learns the node through `learnNodeFromHelloPacket()` before duplicate/drop routing, and returns immediately for HELLO so duplicate handling does not block discovery. Discovery logging includes `[HELLO] discovered <nodeId>` and `[DISCOVERY] HELLO from <nodeId> gateway=<gatewayId>`.
 
-STEP043 corrected local validation: PlatformIO builds PASS for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
+STEP043 physical validation: PASS. Gateway A and Gateway B discover each other over compact `BT1` HELLO packets, and `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
+
+STEP044 fix: `esp32-node-platformio/src/main.cpp` now performs strict compact `BT1` validation before packet learning/routing. Invalid compact packets log `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>` and return before `learnNodeFromHelloPacket()`. HELLO packets require valid `gatewayId` `A` or `B`, preventing `UNKNOWN` gateway neighbors from corrupted payloads.
+
+STEP044 local validation: PlatformIO builds PASS for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
 
 Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`, plus reverse `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
 
@@ -78,7 +82,7 @@ Open issues:
 
 Future gateway code must support store-and-forward queue, gateway ACK tracking, heartbeat monitoring, peer online detection, automatic reconnect, gateway relay mode, and LoRa backup backhaul mode.
 
-Recommended model/tool: proceed with local ESP32/Raspberry Pi hardware validation for corrected STEP043 compact HELLO discovery.
+Recommended model/tool: proceed with local ESP32/Raspberry Pi hardware validation for STEP044 corrupt compact packet rejection.
 
 Escalation guidance: do not start STEP042C/D. Do not replace the temporary Android destination mapping until STEP043 gateway HELLO discovery is physically accepted.
 
@@ -91,15 +95,13 @@ Clarified requirements (2026-06-02):
 - STEP042 split into: STEP042A Node Discovery and Reachability; STEP042B Destination Messaging; STEP042C Delivery Tracking; STEP042D Store-and-Forward.
 - Delivery tracking statuses: MESSAGE (sent), DELIVERED (received at destination node), SEEN (read by recipient Android user).
 
-STEP043 corrected physical validation procedure:
-1. Flash `gatewayA_lora` and `gatewayB_lora`.
-2. Monitor both serial consoles at 115200 baud.
-3. Confirm LoRa TX HELLO remains compact: `BT1|HELLO-gatewayA-...|gatewayA|BROADCAST|{"gatewayId":"A"}|...`.
-4. Confirm the receiver logs `[LORA_RX] payload=BT1|HELLO-...`.
-5. Confirm the receiver logs `[LORA_RELAY_PARSE] valid`.
-6. Confirm Gateway B logs `[DISCOVERY] HELLO from gatewayA gateway=A` and `[NEIGHBOR_ADD] node=gatewayA` or `[NEIGHBOR_UPDATE] node=gatewayA`.
-7. Confirm Gateway A logs `[DISCOVERY] HELLO from gatewayB gateway=B` and `[NEIGHBOR_ADD] node=gatewayB` or `[NEIGHBOR_UPDATE] node=gatewayB`.
-8. Run `STATUS` and `NEIGHBORS` on both ESP32s.
-9. Expected: neighbor table lists both gateways.
+STEP044 validation rules added:
+- Reject packets without `BT1|` prefix.
+- Reject compact packets with field count other than 10.
+- Reject blank `packetId`, `sourceNode`, or `destinationNode`.
+- Reject invalid `sourceNode` or `destinationNode` characters.
+- Reject HELLO packets unless payload contains `gatewayId` `A` or `B`.
+- Reject non-numeric `ttl` or `hopCount`.
+- Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: physically validate corrected STEP043 compact HELLO discovery, then return to gatewayB Android discovery and live discovered-node destination selection.
+Next validation activity: flash corrected firmware, verify known-good gatewayA/gatewayB and nodeA1/nodeA2 discovery/routing still works, then inject or observe corrupted compact packets and confirm `[LORA_DROP_CORRUPT]` with no bad neighbor creation.

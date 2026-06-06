@@ -799,6 +799,92 @@ String loRaRelayFieldAt(const String &line, int fieldIndex) {
   return "";
 }
 
+String shortLoRaPayload(String payload) {
+  payload.replace("\r", " ");
+  payload.replace("\n", " ");
+  for (int i = 0; i < payload.length(); ++i) {
+    const char c = payload.charAt(i);
+    if (!isprint(static_cast<unsigned char>(c))) {
+      payload.setCharAt(i, '?');
+    }
+  }
+  if (payload.length() > 120) {
+    return payload.substring(0, 120) + "...";
+  }
+  return payload;
+}
+
+void logCorruptLoRaPacket(const String &reason, const String &line) {
+  Serial.print("[LORA_DROP_CORRUPT] reason=");
+  Serial.print(reason);
+  Serial.print(" payload=");
+  Serial.println(shortLoRaPayload(line));
+}
+
+int loRaRelayFieldCount(const String &line) {
+  if (line.length() == 0) {
+    return 0;
+  }
+
+  int count = 1;
+  for (int i = 0; i < line.length(); ++i) {
+    if (line.charAt(i) == '|') {
+      ++count;
+    }
+  }
+  return count;
+}
+
+bool isValidLoRaNodeId(const String &nodeId) {
+  if (nodeId.length() == 0 || nodeId.length() > 32) {
+    return false;
+  }
+
+  for (int i = 0; i < nodeId.length(); ++i) {
+    const char c = nodeId.charAt(i);
+    if (!isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool parseStrictInt(const String &value, int &parsed) {
+  if (value.length() == 0) {
+    return false;
+  }
+
+  int start = 0;
+  bool negative = false;
+  if (value.charAt(0) == '-') {
+    negative = true;
+    start = 1;
+  }
+  if (start >= value.length()) {
+    return false;
+  }
+
+  long result = 0;
+  for (int i = start; i < value.length(); ++i) {
+    const char c = value.charAt(i);
+    if (!isdigit(static_cast<unsigned char>(c))) {
+      return false;
+    }
+    result = (result * 10) + (c - '0');
+    if (result > 32767L) {
+      return false;
+    }
+  }
+
+  parsed = static_cast<int>(negative ? -result : result);
+  return true;
+}
+
+bool isValidGatewayId(const String &gatewayId) {
+  return gatewayId == "A" || gatewayId == "B";
+}
+
 String serializeLoRaRelayPacket(const ProtocolPacket &packet) {
   String relay = LORA_RELAY_PREFIX;
   relay += "|" + sanitizeLoRaRelayField(packet.packetId);
@@ -813,22 +899,78 @@ String serializeLoRaRelayPacket(const ProtocolPacket &packet) {
   return relay;
 }
 
-bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet) {
+bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet, String &errorReason) {
+  errorReason = "";
+
   if (!line.startsWith(LORA_RELAY_PREFIX + "|")) {
+    errorReason = "bad_prefix";
+    return false;
+  }
+
+  if (loRaRelayFieldCount(line) != 10) {
+    errorReason = "bad_field_count";
+    return false;
+  }
+
+  const String packetId = loRaRelayFieldAt(line, 1);
+  const String sourceNode = loRaRelayFieldAt(line, 2);
+  const String destinationNode = loRaRelayFieldAt(line, 3);
+  const String payload = loRaRelayFieldAt(line, 4);
+  const String ttlField = loRaRelayFieldAt(line, 6);
+  const String hopCountField = loRaRelayFieldAt(line, 7);
+
+  if (packetId.length() == 0) {
+    errorReason = "blank_packetId";
+    return false;
+  }
+  if (sourceNode.length() == 0) {
+    errorReason = "blank_sourceNode";
+    return false;
+  }
+  if (destinationNode.length() == 0) {
+    errorReason = "blank_destinationNode";
+    return false;
+  }
+  if (!isValidLoRaNodeId(sourceNode)) {
+    errorReason = "invalid_sourceNode";
+    return false;
+  }
+  if (!isValidLoRaNodeId(destinationNode)) {
+    errorReason = "invalid_destinationNode";
+    return false;
+  }
+
+  int ttl = 0;
+  if (!parseStrictInt(ttlField, ttl)) {
+    errorReason = "invalid_ttl";
+    return false;
+  }
+  if (ttl < 0 || ttl > DEFAULT_TTL) {
+    errorReason = "ttl_out_of_range";
+    return false;
+  }
+
+  int hopCount = 0;
+  if (!parseStrictInt(hopCountField, hopCount)) {
+    errorReason = "invalid_hopCount";
+    return false;
+  }
+  if (hopCount < 0 || hopCount > DEFAULT_TTL) {
+    errorReason = "hopCount_out_of_range";
     return false;
   }
 
   packet.protocolVersion = PROTOCOL_VERSION;
   packet.packetType = "MESSAGE";
-  packet.packetId = loRaRelayFieldAt(line, 1);
-  packet.sourceNode = loRaRelayFieldAt(line, 2);
-  packet.destinationNode = loRaRelayFieldAt(line, 3);
-  packet.payload = loRaRelayFieldAt(line, 4);
+  packet.packetId = packetId;
+  packet.sourceNode = sourceNode;
+  packet.destinationNode = destinationNode;
+  packet.payload = payload;
   packet.hopPath = packet.sourceNode + ">" + String(SIM_NODE_ID);
   packet.retryCount = 0;
   packet.timestamp = static_cast<unsigned long>(loRaRelayFieldAt(line, 5).toInt());
-  packet.ttl = loRaRelayFieldAt(line, 6).toInt();
-  packet.hopCount = loRaRelayFieldAt(line, 7).toInt();
+  packet.ttl = ttl;
+  packet.hopCount = hopCount;
   packet.previousHop = loRaRelayFieldAt(line, 8);
   String parsedHopPath = loRaRelayFieldAt(line, 9);
   if (parsedHopPath.length() > 0) {
@@ -841,18 +983,16 @@ bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet) {
     packet.packetId.startsWith("HELLO-") ||
     (packet.destinationNode == "BROADCAST" && packet.payload.indexOf("gatewayId") >= 0);
   if (looksLikeHello) {
+    const String gatewayId = extractJsonString(packet.payload, "gatewayId");
+    if (!isValidGatewayId(gatewayId)) {
+      errorReason = "invalid_gatewayId";
+      return false;
+    }
     packet.packetType = "HELLO";
     packet.status = "ALIVE";
   }
 
-  if (packet.ttl == 0 && loRaRelayFieldAt(line, 6).length() == 0) {
-    packet.ttl = DEFAULT_TTL;
-  }
-
-  return packet.packetId.length() > 0 &&
-         packet.sourceNode.length() > 0 &&
-         packet.destinationNode.length() > 0 &&
-         packet.payload.length() > 0;
+  return true;
 }
 
 void learnNodeFromHelloPacket(const ProtocolPacket &packet, int rssi, const String &sourceLabel) {
@@ -864,8 +1004,9 @@ void learnNodeFromHelloPacket(const ProtocolPacket &packet, int rssi, const Stri
   }
 
   String gatewayId = extractJsonString(packet.payload, "gatewayId");
-  if (gatewayId.length() == 0) {
-    gatewayId = "UNKNOWN";
+  if (!isValidGatewayId(gatewayId)) {
+    logCorruptLoRaPacket("invalid_gatewayId", packet.payload);
+    return;
   }
 
   upsertNodeEntry(packet.sourceNode, gatewayId, rssi, true, packet.hopCount);
@@ -997,8 +1138,9 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
 
 void processIncomingLoRaRelayPacket(const String &line, int rssi = -70) {
   ProtocolPacket packet;
-  if (!parseLoRaRelayPacket(line, packet)) {
-    Serial.println("[LORA_PROTOCOL_ERROR] invalid compact relay packet");
+  String errorReason;
+  if (!parseLoRaRelayPacket(line, packet, errorReason)) {
+    logCorruptLoRaPacket(errorReason.length() > 0 ? errorReason : "invalid_compact_packet", line);
     return;
   }
 
@@ -1062,7 +1204,7 @@ void processIncomingLoRaLine(const String &line, int rssi, float snr) {
       processIncomingMessage(line);
     }
   } else {
-    Serial.println("[LORA_ERROR] Expected simulation JSON packet from LoRa peer.");
+    logCorruptLoRaPacket("bad_prefix", line);
   }
 }
 

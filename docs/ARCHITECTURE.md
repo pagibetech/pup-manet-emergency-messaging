@@ -74,7 +74,16 @@ STEP043 LoRa HELLO packet format:
 - Corrected receiver-side fix: compact `BT1` RX now logs `[LORA_RELAY_PARSE] valid`, infers HELLO from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId`, learns the peer through `learnNodeFromHelloPacket()` before duplicate/drop routing, and returns immediately for HELLO.
 - Expected discovery evidence: `[LORA_RX] payload=BT1|HELLO-...`, `[LORA_RELAY_PARSE] valid`, `[DISCOVERY] HELLO from gatewayA gateway=A`, and `[NEIGHBOR_ADD]` / `[NEIGHBOR_UPDATE] node=gatewayA` on Gateway B; equivalent logs for `gatewayB` on Gateway A.
 - Local builds pass for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
-- Physical validation pending: `STATUS` and `NEIGHBORS` should list both gateways.
+- Physical validation PASS: Gateway A and Gateway B discover each other over compact `BT1` HELLO packets, and `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
+
+STEP044 strict compact BT1 validation:
+- Compact `BT1` remains the current LoRa firmware protocol.
+- Corrupted compact packets are rejected before neighbor learning or routing.
+- Rejection log format: `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>`.
+- Validation rules reject bad prefix, wrong field count, blank required fields, invalid source/destination characters, invalid HELLO gateway IDs, non-numeric `ttl`/`hopCount`, and `ttl`/`hopCount` outside `0..DEFAULT_TTL`.
+- Invalid HELLO gateway IDs no longer create `UNKNOWN` gateway neighbors.
+- Android app and Raspberry Pi gateway service are unchanged.
+- Local builds pass for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
 
 Current Android/topology limitations:
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
@@ -128,8 +137,9 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP043 Fix LoRa HELLO Packet Format - corrected compact `BT1` receiver fix built / physical validation pending.
+- STEP044 Strict Compact BT1 LoRa Packet Validation - fix built / physical validation pending.
+- STEP043 Fix LoRa HELLO Packet Format - PASS for compact gatewayA/gatewayB discovery and `TEST_FINAL_001`.
 - STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
 - STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.
-- Next validation activity: physically validate corrected compact HELLO reciprocal gateway discovery, then return to gatewayB Android discovery and live discovered-node destination selection.
+- Next validation activity: physically validate corrupt compact packet rejection, then return to gatewayB Android discovery and live discovered-node destination selection.
 - Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.

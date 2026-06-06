@@ -4,7 +4,7 @@ Date: 2026-06-05 / corrected 2026-06-06
 
 Branch: `step-002-003-esp32-simulation`
 
-Status: Initial JSON-oriented fix physically failed; corrected compact `BT1` receiver-side fix built / physical validation pending
+Status: PASS after compact `BT1` receiver-side correction
 
 ## Initial Finding
 
@@ -70,13 +70,10 @@ Corrected 2026-06-06 results:
 - `nodeA1_lora`: SUCCESS
 - `nodeA2_lora`: SUCCESS
 
-## Physical Validation Pending
+## Physical Validation Result
 
-Expected physical validation output:
+Result:
 
-- Gateway B log shows `[LORA_RX] payload=BT1|HELLO-...`.
-- Gateway B log shows `[LORA_RELAY_PARSE] valid`.
-- Gateway B log shows `[DISCOVERY] HELLO from gatewayA gateway=A`.
-- Gateway B log shows `[NEIGHBOR_ADD] node=gatewayA` or `[NEIGHBOR_UPDATE] node=gatewayA`.
-- Gateway A log shows the equivalent sequence for `gatewayB`.
-- `STATUS` and `NEIGHBORS` on both ESP32 gateways list both gateway nodes.
+- Gateway A and Gateway B discover each other over compact `BT1` HELLO packets.
+- `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
+- Remaining follow-up: STEP044 strict compact packet validation for corrupt LoRa payloads.
