@@ -1,8 +1,8 @@
 # Project Status
 
-Last updated: 2026-06-05
+Last updated: 2026-06-06
 
-Overall state: STEP043 LoRa HELLO packet-format fix is built. STEP042A remains physically validated for A-side discovery only, and STEP042B remains physically validated for bidirectional 2-node Android LoRa messaging only.
+Overall state: initial STEP043 JSON-oriented fix failed physical validation. Corrected STEP043 compact `BT1` receiver-side fix is built. STEP042A remains physically validated for A-side discovery only, and STEP042B remains physically validated for bidirectional 2-node Android LoRa messaging only.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,7 +17,7 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP043 - Fix LoRa HELLO Packet Format.
+Workbook current milestone: STEP043 - Fix LoRa HELLO Packet Format, corrected compact `BT1` implementation pending physical validation.
 
 Latest completed workbook step: STEP042B - Destination Messaging physical validation, limited to `nodeA1 <-> nodeA2`.
 
@@ -41,7 +41,7 @@ Completed highlights:
 - Gateway Bluetooth cleanup passed: `gatewayA_lora` and `gatewayB_lora` boot with Bluetooth DISABLED; gateway ESP32 devices do not appear for Android pairing.
 - STEP042A discovery export root cause found and fixed in `esp32-node-platformio/src/main.cpp`; A-side physical discovery validation passed for `nodeA1`, `nodeA2`, and `gatewayA`.
 - STEP042B bidirectional 2-node Android LoRa messaging passed for `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1`.
-- STEP043 LoRa HELLO packet-format fix built: gateway HELLO packets now transmit over LoRa as BT-MANET protocol JSON instead of compact `BT1|...`.
+- STEP043 correction built: final LoRa protocol remains compact `BT1`; compact HELLO RX is parsed, logged, and learned before duplicate/drop routing.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -146,7 +146,7 @@ STEP042B physical validation status:
 - Temporary Android validation fix: `peerNodeForConnectedEsp32()` in `MainActivity.kt` was changed from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` is not deployed.
 
 Current blockers / open issues:
-- STEP043 physical reciprocal gateway discovery validation is pending.
+- STEP043 corrected compact HELLO physical reciprocal gateway discovery validation is pending.
 - `gatewayB` firmware boots and broadcasts `HELLO-gatewayB`, but `gatewayB` does not yet appear in Android discovered nodes.
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
 - Route tab can show `No route` while real LoRa messages are delivered.
@@ -155,12 +155,12 @@ Current blockers / open issues:
 - GatewayB repeated reset/garbage serial output needs investigation.
 
 STEP043 - LoRa HELLO Packet Format:
-- Validation finding: Gateway A transmitted `BT1|HELLO-gatewayA-...|gatewayA|BROADCAST|{"gatewayId":"A"}` and Gateway B received RF payload, proving LoRa communication is working.
-- Root cause: HELLO advertisements were transmitted in compact relay format while the LoRa protocol parser path expects full BT-MANET JSON.
-- Expected parser format: JSON with `protocolVersion`, `packetType`, `packetId`, `sourceNode`, `destinationNode`, `payload`, `hopPath`, `hopCount`, `ttl`, `previousHop`, `retryCount`, `timestamp`, `status`, and `checksum`.
-- Fix in `esp32-node-platformio/src/main.cpp`: `sendHelloBroadcast()` now sends `serializeProtocolPacket(packet)` over LoRa; relayed HELLO packets also remain JSON; non-HELLO relay messages still use existing compact relay format; discovery logs include `[HELLO] discovered <nodeId>`.
+- Initial validation finding: Gateway A transmitted `BT1|HELLO-gatewayA-...|gatewayA|BROADCAST|{"gatewayId":"A"}|...` and Gateway B received RF payload, proving LoRa communication is working.
+- Initial JSON-oriented STEP043 fix failed physical validation because the actual flashed gateway path still emitted compact HELLO frames.
+- Protocol decision: keep compact `BT1` LoRa relay packets because nodeA1/nodeA2 routing already works with compact packets.
+- Corrected fix in `esp32-node-platformio/src/main.cpp`: `sendHelloBroadcast()` and all LoRa relay TX remain compact `BT1`; compact RX now logs `[LORA_RELAY_PARSE] valid`; `parseLoRaRelayPacket()` infers HELLO from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId`; `processIncomingLoRaRelayPacket()` learns HELLO before duplicate/drop routing and returns immediately for HELLO; discovery logs include `[DISCOVERY] HELLO from <nodeId> gateway=<gatewayId>`.
 - Build validation: `pio run -e gatewayA_lora -e gatewayB_lora` PASS; `pio run -e nodeA1_lora -e nodeA2_lora` PASS.
-- Physical validation pending: Gateway B should log `[HELLO] discovered gatewayA`; Gateway A should log `[HELLO] discovered gatewayB`; `STATUS` / `NEIGHBORS` should list both gateways.
+- Physical validation pending: receiver logs `[LORA_RX] payload=BT1|HELLO-...`, `[LORA_RELAY_PARSE] valid`, `[DISCOVERY] HELLO from gatewayA gateway=A` or `gatewayB gateway=B`, and `[NEIGHBOR_ADD]` / `[NEIGHBOR_UPDATE]`; `STATUS` / `NEIGHBORS` should list both gateways.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -178,7 +178,7 @@ Future gateway-code requirements:
 - LoRa backup backhaul mode.
 
 Next incomplete task:
-- Physically validate STEP043 reciprocal gateway HELLO discovery.
+- Physically validate corrected STEP043 compact HELLO reciprocal gateway discovery.
 - After STEP043 is accepted, continue with gatewayB Android discovery and replacement of the hardcoded Android destination mapping with live discovered-node selection.
 - Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.
 

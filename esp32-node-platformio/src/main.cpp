@@ -981,9 +981,7 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
   }
   Serial.println();
 
-  const String relayLine = relayPacket.packetType == "HELLO"
-    ? serializeProtocolPacket(relayPacket)
-    : serializeLoRaRelayPacket(relayPacket);
+  const String relayLine = serializeLoRaRelayPacket(relayPacket);
   sendLoRaLine(relayLine);
   Serial.print("[LORA_RELAY] packet_id=");
   Serial.print(packet.packetId);
@@ -1004,7 +1002,24 @@ void processIncomingLoRaRelayPacket(const String &line, int rssi = -70) {
     return;
   }
 
+  Serial.print("[LORA_RELAY_PARSE] valid packet_id=");
+  Serial.print(packet.packetId);
+  Serial.print(" type=");
+  Serial.print(packet.packetType);
+  Serial.print(" source=");
+  Serial.print(packet.sourceNode);
+  Serial.print(" dest=");
+  Serial.print(packet.destinationNode);
+  Serial.print(" hopCount=");
+  Serial.print(packet.hopCount);
+  Serial.print(" ttl=");
+  Serial.println(packet.ttl);
+
   learnNodeFromHelloPacket(packet, rssi, "lora_relay");
+  if (packet.packetType == "HELLO") {
+    return;
+  }
+
   routeLoRaProtocolPacket(packet, "lora");
 }
 
@@ -1017,6 +1032,10 @@ void processIncomingLoRaProtocolPacket(const String &line, int rssi = -70) {
   }
 
   learnNodeFromHelloPacket(result.packet, rssi, "lora_json");
+  if (result.packet.packetType == "HELLO") {
+    return;
+  }
+
   routeLoRaProtocolPacket(result.packet, "lora");
 }
 
@@ -1898,8 +1917,8 @@ void sendHelloBroadcast() {
   );
   packet.ttl = DEFAULT_TTL;
 
-  const String jsonLine = serializeProtocolPacket(packet);
-  sendLoRaLine(jsonLine);
+  const String relayLine = serializeLoRaRelayPacket(packet);
+  sendLoRaLine(relayLine);
 
   Serial.print("[HELLO] broadcast gateway=");
   Serial.println(GATEWAY_ID);
