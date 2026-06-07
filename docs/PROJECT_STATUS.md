@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-07
 
-Overall state: STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046B Bridge ACK Reliability Improvement is the next workbook-approved task for scope confirmation; production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+Overall state: STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046B-A Bridge ACK Requirements Definition is complete as documentation/workbook planning; production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,7 +17,7 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP046B - Bridge ACK Reliability Improvement current / pending scope confirmation.
+Workbook current milestone: STEP046B - Bridge ACK Reliability Improvement requirements defined / implementation pending.
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
@@ -47,6 +47,7 @@ Completed highlights:
 - STEP045B PASS / COMPLETE: Android real-network cleanup physically validated. UI and Chat now prioritize live discovered node IDs, and Chat send uses selected live destination instead of the temporary hardcoded peer mapping.
 - STEP046A PASS / COMPLETE: controlled multi-hop lab mode physically validated with manual firmware built using `TEST_FORCE_GATEWAY_ROUTE=1`, then production default restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 - STEP047 PASS / COMPLETE: Bluetooth phone-to-node access verified; `NODE_LIST` verified; `PhoneA -> nodeA2` verified; `nodeA2 -> PhoneA` verified; gateway disappearance detection verified; gateway-loss messaging verified.
+- STEP046B-A COMPLETE: Bridge ACK requirements defined without source changes. User-facing Bridge ACK means final destination-node delivery ACK; forwarding gateway and hop ACKs are diagnostics only.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -213,6 +214,15 @@ STEP047 - Bluetooth Transport Layer:
 - Build validation PASS: Android `:app:assembleDebug`; ESP32 `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
 - Physical validation PASS: Bluetooth phone-to-node access verified; `NODE_LIST` verified; `PhoneA -> nodeA2` verified; `nodeA2 -> PhoneA` verified; gateway disappearance detection verified; gateway-loss messaging verified.
 
+STEP046B-A - Bridge ACK Requirements Definition:
+- Problem: Bridge ACK display/reliability is inconsistent (`Bridge ACK: No response` or raw JSON) while message delivery can still succeed.
+- Bridge ACK definition: user-facing confirmation that a phone-originated message sent through the local ESP32 bridge was acknowledged by the final destination node.
+- ACK source decision: destination node ACK is authoritative; forwarding gateway ACK and hop-by-hop ACK are diagnostics only.
+- Safest design: two-tier ACK model. `DELIVERY` ACK drives the Chat/Bridge ACK display; `FORWARD` and `HOP` ACKs update diagnostics only.
+- ACK packet requirement: include `packetType=ACK`, `packetId=ACK-<ackFor>-<ackSource>-<timestamp>`, `ackFor=<originalMessagePacketId>`, `ackType`, `ackStatus`, `originNode`, `finalDestinationNode`, `ackSource`, and route/hop metadata.
+- Timeout/retry rule: Android waits up to 12 seconds for a matching destination `DELIVERY` ACK, retries ACK read/parsing during that window, and does not automatically retransmit the original MESSAGE in STEP046B unless explicitly approved later.
+- UI rule: show `Pending`, `Delivered to <nodeId>`, `Delivery ACK pending`, `Unknown`, or explicit correlated failure. Do not show raw JSON as the primary Bridge ACK and do not treat timeout as proof of delivery failure.
+
 Firmware status:
 - STEP038 ESP32 firmware is not final.
 - STEP038 is now Stable STEP038 baseline firmware.
@@ -228,7 +238,7 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-- STEP046B Bridge ACK Reliability Improvement is now the next workbook-approved task. Acceptance criteria remain TBD; confirm scope before implementation. Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
+- STEP046B implementation is next after requirements acceptance. Preserve routing core and do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket

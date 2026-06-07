@@ -6,7 +6,7 @@ Current milestone: STEP046B - Bridge ACK Reliability Improvement. Current / Pend
 
 Latest physically completed milestone: STEP047 - Bluetooth Transport Layer.
 
-Unfinished task: define STEP046B Bridge ACK Reliability Improvement scope and acceptance criteria before implementation.
+Unfinished task: implement STEP046B Bridge ACK Reliability Improvement only after accepting the STEP046B-A requirements. No implementation has started.
 
 Pending validations:
 - STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
@@ -22,6 +22,7 @@ Pending validations:
 - STEP045B Android Real-Network Cleanup is physically validated PASS: Android UI and Chat now use live discovered node IDs and selected live destination state.
 - STEP046A Controlled Multi-Hop Lab Mode is physically validated PASS / COMPLETE. Production source default is restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 - STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE. Bluetooth is scoped to Android phone-to-local ESP32 access only; LoRa remains the MANET backbone.
+- STEP046B-A Bridge ACK Requirements Definition is complete as planning only. No source code, Android logic, ESP32 firmware, Raspberry Pi gateway service, or routing logic was modified.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -35,6 +36,7 @@ Clarified requirements recorded 2026-06-02 (no source changes yet):
 Blockers:
 - STEP044 first physical validation failed once: corrupt `HELLO-nodeA1-40000zno4eA1` created `node=BROADCAST gateway=UNKNOWN`, and corrupt source `gatlwayB` created `node=gatlwayB gateway=B`. Corrective firmware commit `9dba0ef` fixed this and passed physical validation.
 - GatewayB repeated reset/garbage serial output needs investigation.
+- Bridge ACK display/reliability is inconsistent: Android may show `Bridge ACK: No response` or raw JSON even when message delivery succeeds. Treat this as ACK interpretation/display reliability, not proven LoRa delivery failure.
 
 Architecture change:
 - Old backhaul removed: `WiFi Router A <-> WiFi Router B simulated satellite link`.
@@ -155,6 +157,16 @@ STEP047 Bluetooth Transport Layer:
 - Build validation PASS: Android `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`; ESP32 `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
 - Physical validation PASS: Bluetooth phone-to-node access verified; `NODE_LIST` verified; `PhoneA -> nodeA2` verified; `nodeA2 -> PhoneA` verified; gateway disappearance detection verified; gateway-loss messaging verified.
 
+STEP046B-A Bridge ACK Requirements Definition:
+- Bridge ACK means final destination-node delivery acknowledgment for the original message, not Bluetooth write success, local ESP32 acceptance, gateway forwarding, or hop acceptance.
+- Authoritative ACK source: destination node.
+- Diagnostic-only ACK sources: forwarding gateway ACK and hop-by-hop ACK.
+- Recommended design: two-tier ACK model. `DELIVERY` ACK drives user-facing Chat/Bridge ACK state; `FORWARD` and `HOP` ACKs update diagnostics only.
+- ACK packet must include `ackFor` matching the original message packet ID, `ackType`, `ackStatus`, `originNode`, `finalDestinationNode`, `ackSource`, and route/hop metadata.
+- Android display waits up to 12 seconds for a matching destination delivery ACK; it shows `Pending`, `Delivered to <nodeId>`, `Delivery ACK pending`, `Unknown`, or a correlated explicit failure. Raw JSON must not be the primary user-facing Bridge ACK display.
+- STEP046B should not automatically retransmit the original MESSAGE unless explicitly approved later.
+- Acceptance criteria are recorded in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`.
+
 Confirmed STEP040B evidence:
 - Gateway A `pup-gateway-a` Tailscale IP: `100.123.79.41`.
 - Gateway B `pup-gateway-b` Tailscale IP: `100.79.214.18`.
@@ -180,7 +192,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: STEP046B Bridge ACK Reliability Improvement scope confirmation while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, and routing.
+- Next incomplete activity for this thread: STEP046B implementation only after requirements acceptance, preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, STEP047 Bluetooth phone-node access, and routing core.
 - STEP042C-D remain queued. Do not start delivery tracking or store-and-forward work yet.
 
 Expected outputs:
