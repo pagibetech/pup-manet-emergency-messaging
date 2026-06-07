@@ -16,11 +16,11 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
-Latest completed workbook step: STEP045A - Mesh-Wide Presence Propagation.
+Latest completed workbook step: STEP045B - Android Real-Network Cleanup.
 
-Current milestone: STEP045A - Mesh-Wide Presence Propagation. Physical Android validation PASS / COMPLETE after firmware was flashed to `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
+Current milestone: STEP045B - Android Real-Network Cleanup. Physical Android hardware validation PASS / COMPLETE.
 
-Current feature: mesh-wide valid compact `BT1` HELLO presence propagation while preserving strict STEP044 corrupt-packet rejection.
+Current feature: Android UI and Chat destination selection now use live discovered node IDs from `discoveredNodes` when NODE_LIST is available.
 
 Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix and preserves gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` has a temporary validation mapping change in `peerNodeForConnectedEsp32()` from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` has not been flashed or deployed.
 
@@ -53,6 +53,12 @@ STEP045A firmware fix: `esp32-node-platformio/src/main.cpp` now forwards only va
 STEP045A build validation: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora` PASS.
 
 STEP045A physical validation: PASS. Firmware was flashed to `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`. Android Nodes screen now shows Gateway A group with `nodeA1 ONLINE`, `gatewayA ONLINE`, and `nodeA2 ONLINE`, plus Gateway B group with `gatewayB ONLINE`.
+
+STEP045B Android cleanup: `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` now prioritizes real discovered nodes over simulation-era labels. Chat destination selection is driven by live `discoveredNodes`, excludes the local connected ESP32 node, and uses the selected discovered node instead of the temporary hardcoded `peerNodeForConnectedEsp32()` mapping. Fallback peer selection remains only when no live NODE_LIST exists and is labeled as fallback.
+
+STEP045B UI cleanup: Android display labels no longer present `Node Alpha`, `Node Bravo`, `Node Charlie`, `Node Delta`, `Gateway Node`, `SimulationTransport`, `ESP32 Transport Preparation`, or simulation placeholder text as current real-network state. The Route tab shows live LoRa route information when real discovered nodes exist instead of misleading simulated `No route`.
+
+STEP045B validation: local build PASS with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`; physical hardware validation PASS.
 
 Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`, plus reverse `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
 
@@ -88,16 +94,13 @@ STEP042A physical acceptance procedure:
 
 Open issues:
 - This is a 2-node validation only; `nodeA3` has not been flashed or validated.
-- Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
-- Route tab can show `No route` even while real LoRa messages are delivered.
-- Discovered node list works, but send destination is still not fully driven by live discovered nodes.
 - GatewayB repeated reset/garbage serial output needs investigation.
 
 Future gateway code must support store-and-forward queue, gateway ACK tracking, heartbeat monitoring, peer online detection, automatic reconnect, gateway relay mode, and LoRa backup backhaul mode.
 
-Recommended model/tool: proceed with STEP045B Android Real-Network Cleanup; use Codex for focused Android cleanup only after studying workbook and continuity files.
+Recommended model/tool: continue from the next workbook-approved task after STEP045B; use Codex for focused implementation/validation only after studying workbook and continuity files.
 
-Escalation guidance: do not start STEP042C/D. Do not change delivery tracking or store-and-forward until STEP045B Android real-network cleanup is complete.
+Escalation guidance: do not start STEP042C/D unless the workbook/user explicitly routes there next.
 
 Clarified requirements (2026-06-02):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -120,4 +123,4 @@ STEP044 validation rules validated:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: STEP045B Android Real-Network Cleanup. Replace temporary hardcoded destination mapping with live discovered-node selection and clean simulated labels/route display without changing compact BT1 firmware behavior.
+Next validation activity: continue from the next incomplete workbook task after STEP045B without regressing compact BT1 firmware behavior, STEP044 corrupt-packet rejection, STEP045A mesh-wide presence propagation, or STEP045B live Android destination selection.

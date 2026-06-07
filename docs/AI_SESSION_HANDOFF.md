@@ -2,11 +2,11 @@
 
 Last updated: 2026-06-07
 
-Current milestone: STEP045A - Mesh-Wide Presence Propagation. Physical Android validation PASS / COMPLETE.
+Current milestone: STEP045B - Android Real-Network Cleanup. Physical Android hardware validation PASS / COMPLETE.
 
-Latest completed milestone: STEP045A - Mesh-Wide Presence Propagation.
+Latest completed milestone: STEP045B - Android Real-Network Cleanup.
 
-Unfinished task: continue with STEP045B Android Real-Network Cleanup.
+Unfinished task: continue only from the next incomplete workbook task after STEP045B.
 
 Pending validations:
 - STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
@@ -19,6 +19,7 @@ Pending validations:
 - STEP043 is physically validated: Gateway A and Gateway B discover each other and `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
 - STEP044 strict corrupt-packet rejection is physically validated PASS after corrective firmware commit `9dba0ef`.
 - STEP045A mesh-wide presence propagation is physically validated PASS: Android Nodes now shows `nodeA1 ONLINE`, `gatewayA ONLINE`, `nodeA2 ONLINE`, and `gatewayB ONLINE`.
+- STEP045B Android Real-Network Cleanup is physically validated PASS: Android UI and Chat now use live discovered node IDs and selected live destination state.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -31,9 +32,6 @@ Clarified requirements recorded 2026-06-02 (no source changes yet):
 
 Blockers:
 - STEP044 first physical validation failed once: corrupt `HELLO-nodeA1-40000zno4eA1` created `node=BROADCAST gateway=UNKNOWN`, and corrupt source `gatlwayB` created `node=gatlwayB gateway=B`. Corrective firmware commit `9dba0ef` fixed this and passed physical validation.
-- Android send destination is still not fully driven by live discovered nodes; `MainActivity.kt` currently uses a temporary validation mapping from `nodeA2` to `nodeA1` because `nodeA3` is not deployed.
-- Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
-- Route tab can show `No route` even while real LoRa messages are delivered.
 - GatewayB repeated reset/garbage serial output needs investigation.
 
 Architecture change:
@@ -119,6 +117,16 @@ STEP045A mesh-wide presence propagation:
 - Local build validation PASS: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
 - Physical Android validation PASS after flashing `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`: Gateway A group shows `nodeA1 ONLINE`, `gatewayA ONLINE`, and `nodeA2 ONLINE`; Gateway B group shows `gatewayB ONLINE`.
 
+STEP045B Android Real-Network Cleanup:
+- Android-only change in `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt`.
+- Added selected live destination state sourced from `discoveredNodes`; local connected node is excluded.
+- Chat send uses the selected discovered node instead of the temporary hardcoded `peerNodeForConnectedEsp32()` peer mapping.
+- Safe fallback remains only when `discoveredNodes` is empty and is labeled as fallback.
+- Nodes and Route UI prioritize live discovered node IDs; simulation-era labels are removed or marked as fallback/lab state.
+- Route tab shows live LoRa route status when real discovered nodes exist instead of misleading simulated `No route`.
+- Local build PASS with Android Studio JBR: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
+- Physical Android hardware validation PASS.
+
 Confirmed STEP040B evidence:
 - Gateway A `pup-gateway-a` Tailscale IP: `100.123.79.41`.
 - Gateway B `pup-gateway-b` Tailscale IP: `100.79.214.18`.
@@ -144,7 +152,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: STEP045B Android Real-Network Cleanup while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery and routing.
+- Next incomplete activity for this thread: continue only from the next workbook task after STEP045B while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, and routing.
 - STEP042C-D remain queued. Do not start delivery tracking or store-and-forward work yet.
 
 Expected outputs:
@@ -164,6 +172,7 @@ Latest build/test result:
 - STEP042B 2-node physical messaging PASS: Android Chat delivery validated both directions between `nodeA1` and `nodeA2`.
 - STEP044 physical validation PASS after corrective commit `9dba0ef`: corrupt drops logged, valid HELLO parses retained, no ghost neighbors, node table stable at 4 nodes.
 - STEP045A physical validation PASS: Android discovery now includes `gatewayB ONLINE` via mesh-wide HELLO propagation.
+- STEP045B physical validation PASS: Android real-network cleanup accepted on hardware.
 - RPi gateway simulation tests last known passing through failover/recovery baseline.
 - Full 6-node discovery is not complete: `nodeA3` is not deployed.
 
@@ -188,4 +197,4 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-Recommended next model/tool: STEP045B Android Real-Network Cleanup with Codex after inspecting workbook and continuity files.
+Recommended next model/tool: continue from the next workbook-approved task with Codex after inspecting workbook and continuity files.

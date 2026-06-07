@@ -126,7 +126,7 @@ enum class BluetoothLifecycleState(val label: String) {
 }
 
 enum class TransportOption(val label: String) {
-    Simulation("Simulation"),
+    Simulation("Simulation fallback"),
     BluetoothPlaceholder("Bluetooth Placeholder"),
     WiFiPlaceholder("WiFi Placeholder")
 }
@@ -165,7 +165,7 @@ enum class ValidationStatus(val label: String) {
 }
 
 enum class HardwareMode(val label: String) {
-    Simulation("Simulation Mode"),
+    Simulation("Simulation fallback"),
     HardwareDisabled("Hardware Mode: Disabled")
 }
 
@@ -203,7 +203,7 @@ data class Esp32BridgeConfig(
     val deviceName: String = "ESP32-MANET-01",
     val connectionType: Esp32ConnectionType = Esp32ConnectionType.Bluetooth,
     val packetFormatVersion: String = "MANET-PACKET-v1",
-    val connectionStatus: String = "Simulation placeholder only",
+    val connectionStatus: String = "Not connected",
     val lastHandshakeTime: String = "Never",
     val handshakeStatus: String = "Not started"
 )
@@ -213,7 +213,7 @@ data class BluetoothDeviceState(
     val discoveredDevices: List<String> = emptyList(),
     val selectedDevice: String? = null,
     val pairedDevice: String? = null,
-    val signalPlaceholder: String = "Simulated -62 dBm"
+    val signalPlaceholder: String = "No live RSSI"
 )
 
 data class BluetoothPacketBridge(
@@ -449,17 +449,17 @@ data class NetworkSimulationUpdate(
 )
 
 private val simNodes = listOf(
-    SimNode("Node Alpha", -58, 11.0, 0, "Near gateway", true, true, false, true),
-    SimNode("Node Bravo", -64, 9.2, 1, "One relay", true, true, true, true),
-    SimNode("Node Charlie", -71, 7.5, 2, "Two relays", true, false, true, true),
-    SimNode("Node Delta", -78, 5.8, 3, "Edge relay", true, false, true, true),
-    SimNode("Gateway Node", -48, 17.4, 0, "Gateway", true, true, true, true)
+    SimNode("nodeA1", -58, 11.0, 0, "Gateway A local", true, true, false, true),
+    SimNode("nodeA2", -64, 9.2, 1, "Gateway A peer", true, true, true, true),
+    SimNode("nodeA3", -71, 7.5, 2, "Gateway A pending", true, false, true, true),
+    SimNode("gatewayA", -48, 17.4, 0, "Gateway A", true, true, true, true),
+    SimNode("gatewayB", -72, 7.2, 2, "Gateway B", true, false, true, true)
 )
 
 private val fakeEsp32Nodes = listOf(
-    "ESP32-MANET-01",
-    "ESP32-MANET-02",
-    "ESP32-MANET-03"
+    "PUP-MANET-nodeA1",
+    "PUP-MANET-nodeA2",
+    "PUP-MANET-nodeA3"
 )
 
 data class DiscoveredNode(
@@ -542,7 +542,7 @@ private val validationLabels = listOf(
     "Packet log updates",
     "Event log updates",
     "Transport bridge status updates",
-    "Bluetooth placeholder pairing works",
+    "Bluetooth fallback pairing check",
     "No battery level appears",
     "Simulation speed control works",
     "Network toggles work"
@@ -588,7 +588,7 @@ private open class BaseTransport(
 }
 
 private class SimulationTransport : BaseTransport(
-    implementationName = "SimulationTransport",
+    implementationName = "Simulation fallback transport",
     connectedLabel = TransportConnectionState.Connected.label
 )
 
@@ -665,7 +665,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
         runCatching {
             activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
             activeSocket.outputStream.flush()
-            Log.d("MANET_BT", "[ANDROID_SEND_SOCKET] name=$name address=$address localBridgeNode=${localEsp32NodeId(name)} destinationNode=${peerNodeForConnectedEsp32(name)}")
+            Log.d("MANET_BT", "[ANDROID_SEND_SOCKET] name=$name address=$address localBridgeNode=${localEsp32NodeId(name)} bytes=${line.length}")
             line
         }.onFailure { disconnect() }
     }
@@ -737,7 +737,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
             drainAvailableLines(activeSocket)
             activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
             activeSocket.outputStream.flush()
-            Log.d("MANET_BT", "[ANDROID_SEND_SOCKET] name=$name address=$address localBridgeNode=${localEsp32NodeId(name)} destinationNode=${peerNodeForConnectedEsp32(name)}")
+            Log.d("MANET_BT", "[ANDROID_SEND_SOCKET] name=$name address=$address localBridgeNode=${localEsp32NodeId(name)} bytes=${line.length}")
 
             val deadline = System.currentTimeMillis() + timeoutMs
             val input = activeSocket.inputStream
@@ -1000,7 +1000,7 @@ private class AdaptiveRoutingEngine {
         val selectedRoute = selectedCandidate?.route ?: RouteLabel.None
         val preferredCandidate = allCandidates.firstOrNull { it.route == preferred }
         val failoverReason = when {
-            selectedRoute == RouteLabel.None -> "No route candidate is available across the simulated MANET path."
+            selectedRoute == RouteLabel.None -> "No fallback route candidate is available."
             selectedRoute == preferred -> "Preferred route selected with the strongest available score."
             preferredCandidate?.available == false -> "Failover from ${preferred.label}: ${preferredCandidate.reason}"
             else -> "Adaptive scoring selected ${selectedRoute.label} over ${preferred.label}."
@@ -1029,7 +1029,7 @@ private class AdaptiveRoutingEngine {
         val averageRssi = path.map { it.rssi }.average().toInt()
         val averageSnr = path.map { it.snr }.average()
         val healthyNodes = path.count { nodeHealth(it, networkState) == "Healthy" }
-        val gatewayAvailable = path.any { it.name == "Gateway Node" && nodeHasAnyAvailableRoute(it, networkState) } ||
+        val gatewayAvailable = path.any { it.name.startsWith("gateway", ignoreCase = true) && nodeHasAnyAvailableRoute(it, networkState) } ||
             targetNode.gatewayProximity == "Gateway"
         val score = if (routeAvailable) {
             val hopScore = ((6 - hopCount).coerceAtLeast(0)) * 25
@@ -1112,6 +1112,7 @@ fun MessengerApp() {
     var demoLoRaMessage by remember { mutableStateOf("Emergency message from Phone A") }
     var autoReceivedPacketIds by remember { mutableStateOf(setOf<String>()) }
     var discoveredNodes by remember { mutableStateOf(listOf<DiscoveredNode>()) }
+    var selectedLiveDestinationId by remember { mutableStateOf<String?>(null) }
     var nodeListStatus by remember { mutableStateOf("Not requested") }
     var validationItems by remember { mutableStateOf(defaultValidationItems()) }
     var activeTransport by remember {
@@ -1158,6 +1159,25 @@ fun MessengerApp() {
         targetNode = targetNode,
         decision = previewDecision
     )
+    val localLiveNodeId = localEsp32NodeId(realBluetoothSocketState.connectedDevice)
+    val liveDestinations = selectableLiveDestinations(discoveredNodes, localLiveNodeId)
+    val selectedLiveDestination = liveDestinations.firstOrNull { it.nodeId == selectedLiveDestinationId }
+        ?: liveDestinations.firstOrNull()
+    val fallbackDestinationNode = fallbackPeerNodeForConnectedEsp32(realBluetoothSocketState.connectedDevice)
+    val activeChatDestinationNode = selectedLiveDestination?.nodeId
+        ?: if (discoveredNodes.isEmpty()) fallbackDestinationNode else ""
+    val liveDestinationLabel = when {
+        selectedLiveDestination != null -> "Destination: ${selectedLiveDestination.nodeId} via Gateway ${selectedLiveDestination.gatewayId}"
+        discoveredNodes.isEmpty() -> "Fallback destination: $fallbackDestinationNode until Refresh Nodes returns live nodes"
+        else -> "No selectable live destination for $localLiveNodeId"
+    }
+
+    LaunchedEffect(discoveredNodes, localLiveNodeId) {
+        val nextDestinations = selectableLiveDestinations(discoveredNodes, localLiveNodeId)
+        if (nextDestinations.none { it.nodeId == selectedLiveDestinationId }) {
+            selectedLiveDestinationId = nextDestinations.firstOrNull()?.nodeId
+        }
+    }
 
     LaunchedEffect(simulationSpeed) {
         while (true) {
@@ -1288,6 +1308,8 @@ fun MessengerApp() {
                 MessageComposer(
                     draftMessage = draftMessage,
                     onDraftChange = { draftMessage = it },
+                    sendEnabled = !realBluetoothSocketState.connected || activeChatDestinationNode.isNotBlank(),
+                    destinationLabel = liveDestinationLabel,
                     onSend = {
                         val trimmedMessage = draftMessage.trim()
                         if (trimmedMessage.isNotEmpty()) {
@@ -1314,100 +1336,114 @@ fun MessengerApp() {
                                 val actualSocketDevice = realBluetoothSocketState.connectedDevice ?: "unknown"
                                 val actualSocketAddress = realBluetoothSocketState.connectedDeviceAddress ?: "unknown"
                                 val localBridgeNode = localEsp32NodeId(actualSocketDevice)
-                                val destinationNode = peerNodeForConnectedEsp32(actualSocketDevice)
-                                val btPacket = createBluetoothProtocolPacket(
-                                    packetType = BluetoothProtocolPacketType.Message,
-                                    payload = "MODE=LORA;TEXT=${sanitizeDemoMessageText(trimmedMessage)}",
-                                    destinationNode = destinationNode,
-                                    localBridgeNode = localBridgeNode,
-                                    status = "QUEUED_FOR_LORA"
-                                )
-                                val line = compactSerializedPacketText(btPacket)
-                                val bridgePacket = LoraManetPacket(
-                                    packetId = btPacket.packetId,
-                                    sourceNodeId = localBridgeNode,
-                                    destinationNodeId = destinationNode,
-                                    selectedTransport = RouteLabel.Lora.label,
-                                    payloadText = trimmedMessage,
-                                    timestamp = System.currentTimeMillis() / 1000L,
-                                    hopPath = listOf("ANDROID_APP", localBridgeNode, destinationNode),
-                                    hopCount = 2,
-                                    rssi = 0,
-                                    snr = 0.0,
-                                    gatewayStatus = "live",
-                                    satelliteStatus = "n/a",
-                                    deliveryStatus = MessageStatus.Relaying.label,
-                                    queuedAt = System.currentTimeMillis() / 1000L
-                                )
-                                messages.add(
-                                    ChatMessage(
-                                        id = messageId,
-                                        text = trimmedMessage,
-                                        sourceNode = localNode.name,
-                                        targetNode = targetNode.name,
-                                        route = RouteLabel.Lora,
-                                        status = MessageStatus.Relaying,
-                                        metrics = SimMetrics(0, 0.0, 0, "Live", "n/a"),
-                                        path = listOf(localNode.name, destinationNode),
-                                        note = "Live bridge to $actualSocketDevice ($actualSocketAddress) -> LoRa -> $destinationNode",
-                                        sentAt = currentTimeLabel(),
-                                        progressStep = 0,
-                                        routeQuality = "Live",
-                                        delayMs = 0L,
-                                        packet = bridgePacket,
-                                        retryCount = 0,
-                                        deliveryProgress = "Sending over LoRa bridge..."
+                                val destinationNode = activeChatDestinationNode
+                                if (destinationNode.isBlank()) {
+                                    realBluetoothSocketState = realBluetoothSocketState.copy(
+                                        liveTestStatus = "Select a live destination",
+                                        lastError = "Refresh Nodes returned no selectable destination"
                                     )
-                                )
-                                draftMessage = ""
-                                packetLog.add(0, bridgePacket)
-                                if (packetLog.size > 8) {
-                                    packetLog.removeAt(packetLog.lastIndex)
-                                }
-                                queueScope.launch {
-                                    val result = androidBluetoothSocketClient.sendLineAndWaitForResponse(line, 7000L)
-                                    val exchangeIndex = messages.indexOfFirst { it.id == messageId }
-                                    if (exchangeIndex >= 0) {
-                                        result.fold(
-                                            onSuccess = { exchange ->
-                                                val response = exchange.second
-                                                val forwarded = response?.contains("FORWARDED_OVER_LORA") == true
-                                                val finalPacket = messages[exchangeIndex].packet.copy(
-                                                    deliveryStatus = if (forwarded) MessageStatus.Delivered.label else MessageStatus.Failed.label,
-                                                    selectedTransport = RouteLabel.Lora.label
-                                                )
-                                                messages[exchangeIndex] = messages[exchangeIndex].copy(
-                                                    status = if (forwarded) MessageStatus.Delivered else MessageStatus.Failed,
-                                                    packet = finalPacket,
-                                                    deliveryProgress = if (forwarded) "Forwarded over LoRa" else "Bridge ACK: ${response ?: "No response"}",
-                                                    note = if (forwarded) "Live bridge forwarded to LoRa" else "Live bridge did not confirm LoRa forwarding"
-                                                )
-                                                bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(btPacket.packetId)
-                                                if (forwarded) {
-                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_ACK")
-                                                }
-                                                updatePacketLog(packetLog, finalPacket)
-                                                eventLog.add(0, "Live bridge ${if (forwarded) "forwarded" else "failed"} ${btPacket.packetId}")
-                                                while (eventLog.size > 10) {
-                                                    eventLog.removeAt(eventLog.lastIndex)
-                                                }
-                                            },
-                                            onFailure = { error ->
-                                                val failedPacket = messages[exchangeIndex].packet.copy(
-                                                    deliveryStatus = MessageStatus.Failed.label
-                                                )
-                                                messages[exchangeIndex] = messages[exchangeIndex].copy(
-                                                    status = MessageStatus.Failed,
-                                                    packet = failedPacket,
-                                                    deliveryProgress = "Bridge send failed: ${error.message ?: "Unknown error"}"
-                                                )
-                                                updatePacketLog(packetLog, failedPacket)
-                                                eventLog.add(0, "Live bridge send failed for ${btPacket.packetId}")
-                                                while (eventLog.size > 10) {
-                                                    eventLog.removeAt(eventLog.lastIndex)
-                                                }
-                                            }
+                                    eventLog.add(0, "Live send blocked: no selectable destination")
+                                    while (eventLog.size > 10) {
+                                        eventLog.removeAt(eventLog.lastIndex)
+                                    }
+                                } else {
+                                    val destinationMode = if (selectedLiveDestination != null) "live discovered node" else "fallback"
+                                    val btPacket = createBluetoothProtocolPacket(
+                                        packetType = BluetoothProtocolPacketType.Message,
+                                        payload = "MODE=LORA;TEXT=${sanitizeDemoMessageText(trimmedMessage)}",
+                                        destinationNode = destinationNode,
+                                        localBridgeNode = localBridgeNode,
+                                        status = "QUEUED_FOR_LORA"
+                                    )
+                                    val line = compactSerializedPacketText(btPacket)
+                                    val livePath = liveRoutePath(localBridgeNode, selectedLiveDestination, discoveredNodes)
+                                        .let { path -> if (path.size > 1) path else listOf(localBridgeNode, destinationNode) }
+                                    val bridgePacket = LoraManetPacket(
+                                        packetId = btPacket.packetId,
+                                        sourceNodeId = localBridgeNode,
+                                        destinationNodeId = destinationNode,
+                                        selectedTransport = RouteLabel.Lora.label,
+                                        payloadText = trimmedMessage,
+                                        timestamp = System.currentTimeMillis() / 1000L,
+                                        hopPath = listOf("ANDROID_APP") + livePath,
+                                        hopCount = livePath.size,
+                                        rssi = 0,
+                                        snr = 0.0,
+                                        gatewayStatus = selectedLiveDestination?.let { "Gateway ${it.gatewayId}" } ?: "fallback",
+                                        satelliteStatus = "n/a",
+                                        deliveryStatus = MessageStatus.Relaying.label,
+                                        queuedAt = System.currentTimeMillis() / 1000L
+                                    )
+                                    messages.add(
+                                        ChatMessage(
+                                            id = messageId,
+                                            text = trimmedMessage,
+                                            sourceNode = localBridgeNode,
+                                            targetNode = destinationNode,
+                                            route = RouteLabel.Lora,
+                                            status = MessageStatus.Relaying,
+                                            metrics = SimMetrics(0, 0.0, livePath.size.coerceAtLeast(1), "Live", "n/a"),
+                                            path = livePath,
+                                            note = "Live bridge to $actualSocketDevice ($actualSocketAddress) -> LoRa -> $destinationNode ($destinationMode)",
+                                            sentAt = currentTimeLabel(),
+                                            progressStep = 0,
+                                            routeQuality = "Live",
+                                            delayMs = 0L,
+                                            packet = bridgePacket,
+                                            retryCount = 0,
+                                            deliveryProgress = "Sending over LoRa bridge..."
                                         )
+                                    )
+                                    draftMessage = ""
+                                    packetLog.add(0, bridgePacket)
+                                    if (packetLog.size > 8) {
+                                        packetLog.removeAt(packetLog.lastIndex)
+                                    }
+                                    queueScope.launch {
+                                        val result = androidBluetoothSocketClient.sendLineAndWaitForResponse(line, 7000L)
+                                        val exchangeIndex = messages.indexOfFirst { it.id == messageId }
+                                        if (exchangeIndex >= 0) {
+                                            result.fold(
+                                                onSuccess = { exchange ->
+                                                    val response = exchange.second
+                                                    val forwarded = response?.contains("FORWARDED_OVER_LORA") == true
+                                                    val finalPacket = messages[exchangeIndex].packet.copy(
+                                                        deliveryStatus = if (forwarded) MessageStatus.Delivered.label else MessageStatus.Failed.label,
+                                                        selectedTransport = RouteLabel.Lora.label
+                                                    )
+                                                    messages[exchangeIndex] = messages[exchangeIndex].copy(
+                                                        status = if (forwarded) MessageStatus.Delivered else MessageStatus.Failed,
+                                                        packet = finalPacket,
+                                                        deliveryProgress = if (forwarded) "Forwarded over LoRa" else "Bridge ACK: ${response ?: "No response"}",
+                                                        note = if (forwarded) "Live bridge forwarded to $destinationNode" else "Live bridge did not confirm LoRa forwarding"
+                                                    )
+                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(btPacket.packetId)
+                                                    if (forwarded) {
+                                                        bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_ACK")
+                                                    }
+                                                    updatePacketLog(packetLog, finalPacket)
+                                                    eventLog.add(0, "Live bridge ${if (forwarded) "forwarded" else "failed"} ${btPacket.packetId} to $destinationNode")
+                                                    while (eventLog.size > 10) {
+                                                        eventLog.removeAt(eventLog.lastIndex)
+                                                    }
+                                                },
+                                                onFailure = { error ->
+                                                    val failedPacket = messages[exchangeIndex].packet.copy(
+                                                        deliveryStatus = MessageStatus.Failed.label
+                                                    )
+                                                    messages[exchangeIndex] = messages[exchangeIndex].copy(
+                                                        status = MessageStatus.Failed,
+                                                        packet = failedPacket,
+                                                        deliveryProgress = "Bridge send failed: ${error.message ?: "Unknown error"}"
+                                                    )
+                                                    updatePacketLog(packetLog, failedPacket)
+                                                    eventLog.add(0, "Live bridge send failed for ${btPacket.packetId}")
+                                                    while (eventLog.size > 10) {
+                                                        eventLog.removeAt(eventLog.lastIndex)
+                                                    }
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             } else {
@@ -1642,7 +1678,21 @@ fun MessengerApp() {
                 when (selectedTab) {
                     AppTab.Messaging -> {
                         item { AppHeader() }
-                        item { CurrentRouteSummary(routingDecision = adaptiveRoutingDecision) }
+                        item {
+                            if (discoveredNodes.isNotEmpty()) {
+                                LiveRouteSummaryPanel(
+                                    localNodeId = localLiveNodeId,
+                                    destination = selectedLiveDestination,
+                                    destinationLabel = liveDestinationLabel,
+                                    discoveredNodes = discoveredNodes
+                                )
+                            } else {
+                                CurrentRouteSummary(
+                                    routingDecision = adaptiveRoutingDecision,
+                                    fallbackOnly = true
+                                )
+                            }
+                        }
                         if (messages.isEmpty()) {
                             item { EmptyMessageState() }
                         } else {
@@ -1659,38 +1709,12 @@ fun MessengerApp() {
                             )
                         }
                         item {
-                            NodeSelector(
-                                nodes = simulatedNodes,
-                                localNode = localNode,
-                                targetNode = targetNode,
-                                onLocalNodeSelected = { selected ->
-                                    localNode = selected
-                                    if (targetNode.name == selected.name) {
-                                        targetNode = simulatedNodes.first { it.name != selected.name }
-                                    }
-                                },
-                                onTargetNodeSelected = { targetNode = it }
-                            )
-                        }
-                        item {
-                            NodeSummaryPanel(
-                                localNode = localNode,
-                                targetNode = targetNode,
-                                networkState = routedNetworkState
-                            )
-                        }
-                        item {
-                            TopologyOverviewPanel(
-                                localNode = localNode,
-                                targetNode = targetNode,
-                                networkState = routedNetworkState,
-                                nodes = simulatedNodes
-                            )
-                        }
-                        item {
                             DiscoveredNodesPanel(
                                 discoveredNodes = discoveredNodes,
                                 nodeListStatus = nodeListStatus,
+                                localNodeId = localLiveNodeId,
+                                selectedDestinationId = selectedLiveDestination?.nodeId,
+                                onDestinationSelected = { selectedLiveDestinationId = it },
                                 onRefresh = {
                                     if (realBluetoothSocketState.connected) {
                                         queueScope.launch {
@@ -1708,69 +1732,126 @@ fun MessengerApp() {
                                 }
                             )
                         }
+                        if (discoveredNodes.isEmpty()) {
+                            item { SimulationFallbackNotice() }
+                            item {
+                                NodeSelector(
+                                    nodes = simulatedNodes,
+                                    localNode = localNode,
+                                    targetNode = targetNode,
+                                    onLocalNodeSelected = { selected ->
+                                        localNode = selected
+                                        if (targetNode.name == selected.name) {
+                                            targetNode = simulatedNodes.first { it.name != selected.name }
+                                        }
+                                    },
+                                    onTargetNodeSelected = { targetNode = it }
+                                )
+                            }
+                            item {
+                                NodeSummaryPanel(
+                                    localNode = localNode,
+                                    targetNode = targetNode,
+                                    networkState = routedNetworkState
+                                )
+                            }
+                            item {
+                                TopologyOverviewPanel(
+                                    localNode = localNode,
+                                    targetNode = targetNode,
+                                    networkState = routedNetworkState,
+                                    nodes = simulatedNodes
+                                )
+                            }
+                        }
                     }
                     AppTab.Routing -> {
-                        item { RoutingDecisionPanel(routingDecision = adaptiveRoutingDecision) }
-                        item {
-                            TransportBridgePanel(
-                                selectedTransport = selectedTransport,
-                                transportStatus = transportStatus,
-                                onTransportSelected = { option ->
-                                    activeTransport.disconnect()
-                                    val nextTransport = transportFor(option)
-                                    selectedTransport = option
-                                    activeTransport = nextTransport
-                                    transportStatus = nextTransport.connect()
-                                }
-                            )
-                        }
-                        item {
-                            Esp32TransportPreparationPanel(
-                                hardwareMode = hardwareMode,
-                                esp32BridgeConfig = esp32BridgeConfig,
-                                packetPreview = outgoingPacketPreview,
-                                bluetoothState = bluetoothState,
-                                onHardwareModeSelected = { selectedMode ->
-                                    hardwareMode = if (selectedMode == HardwareMode.Simulation) {
-                                        HardwareMode.Simulation
-                                    } else {
-                                        HardwareMode.HardwareDisabled
+                        if (discoveredNodes.isNotEmpty()) {
+                            item {
+                                LiveRoutePanel(
+                                    localNodeId = localLiveNodeId,
+                                    destination = selectedLiveDestination,
+                                    discoveredNodes = discoveredNodes,
+                                    nodeListStatus = nodeListStatus,
+                                    connectedDevice = realBluetoothSocketState.connectedDevice
+                                )
+                            }
+                            item {
+                                BluetoothProtocolPreviewPanel(
+                                    outgoingPacket = createBluetoothProtocolPacket(
+                                        packetType = BluetoothProtocolPacketType.Message,
+                                        payload = "MODE=LORA;TEXT=<message text>",
+                                        destinationNode = activeChatDestinationNode.ifBlank { "SELECT_DESTINATION" },
+                                        localBridgeNode = localLiveNodeId,
+                                        status = if (selectedLiveDestination != null) "QUEUED_FOR_LORA" else "WAITING_FOR_DESTINATION"
+                                    ),
+                                    incomingPacket = sampleIncomingAckPacket(outgoingPacketPreview)
+                                )
+                            }
+                        } else {
+                            item { SimulationFallbackNotice() }
+                            item { RoutingDecisionPanel(routingDecision = adaptiveRoutingDecision) }
+                            item {
+                                TransportBridgePanel(
+                                    selectedTransport = selectedTransport,
+                                    transportStatus = transportStatus,
+                                    onTransportSelected = { option ->
+                                        activeTransport.disconnect()
+                                        val nextTransport = transportFor(option)
+                                        selectedTransport = option
+                                        activeTransport = nextTransport
+                                        transportStatus = nextTransport.connect()
                                     }
-                                },
-                                onBridgeConfigChanged = { esp32BridgeConfig = it },
-                                onSendHello = {
-                                    esp32BridgeConfig = esp32BridgeConfig.copy(
-                                        connectionStatus = "Waiting for ESP32_ACK (simulated)",
-                                        handshakeStatus = "HELLO sent"
-                                    )
-                                    eventLog.add(0, "ESP32 HELLO sent in placeholder mode.")
-                                    while (eventLog.size > 10) {
-                                        eventLog.removeAt(eventLog.lastIndex)
-                                    }
-                                    queueScope.launch {
-                                        delay(650L)
+                                )
+                            }
+                            item {
+                                Esp32TransportPreparationPanel(
+                                    hardwareMode = hardwareMode,
+                                    esp32BridgeConfig = esp32BridgeConfig,
+                                    packetPreview = outgoingPacketPreview,
+                                    bluetoothState = bluetoothState,
+                                    onHardwareModeSelected = { selectedMode ->
+                                        hardwareMode = if (selectedMode == HardwareMode.Simulation) {
+                                            HardwareMode.Simulation
+                                        } else {
+                                            HardwareMode.HardwareDisabled
+                                        }
+                                    },
+                                    onBridgeConfigChanged = { esp32BridgeConfig = it },
+                                    onSendHello = {
                                         esp32BridgeConfig = esp32BridgeConfig.copy(
-                                            connectionStatus = "ESP32_ACK received (simulated)",
-                                            lastHandshakeTime = currentTimeLabel(),
-                                            handshakeStatus = "ESP32_ACK received"
+                                            connectionStatus = "Waiting for ESP32_ACK in fallback lab",
+                                            handshakeStatus = "HELLO sent"
                                         )
-                                        eventLog.add(0, "ESP32_ACK received from simulated bridge.")
+                                        eventLog.add(0, "ESP32 HELLO sent in fallback lab.")
                                         while (eventLog.size > 10) {
                                             eventLog.removeAt(eventLog.lastIndex)
                                         }
+                                        queueScope.launch {
+                                            delay(650L)
+                                            esp32BridgeConfig = esp32BridgeConfig.copy(
+                                                connectionStatus = "ESP32_ACK received in fallback lab",
+                                                lastHandshakeTime = currentTimeLabel(),
+                                                handshakeStatus = "ESP32_ACK received"
+                                            )
+                                            eventLog.add(0, "ESP32_ACK received from fallback lab bridge.")
+                                            while (eventLog.size > 10) {
+                                                eventLog.removeAt(eventLog.lastIndex)
+                                            }
+                                        }
                                     }
-                                }
-                            )
-                        }
-                        item {
-                            BluetoothProtocolPreviewPanel(
-                                outgoingPacket = protocolPacketFromManetPacket(
-                                    packet = outgoingPacketPreview,
-                                    packetType = BluetoothProtocolPacketType.Message,
-                                    retryCount = messages.firstOrNull { it.packet.packetId == outgoingPacketPreview.packetId }?.retryCount ?: 0
-                                ),
-                                incomingPacket = sampleIncomingAckPacket(outgoingPacketPreview)
-                            )
+                                )
+                            }
+                            item {
+                                BluetoothProtocolPreviewPanel(
+                                    outgoingPacket = protocolPacketFromManetPacket(
+                                        packet = outgoingPacketPreview,
+                                        packetType = BluetoothProtocolPacketType.Message,
+                                        retryCount = messages.firstOrNull { it.packet.packetId == outgoingPacketPreview.packetId }?.retryCount ?: 0
+                                    ),
+                                    incomingPacket = sampleIncomingAckPacket(outgoingPacketPreview)
+                                )
+                            }
                         }
                     }
                     AppTab.Simulation -> {
@@ -1993,58 +2074,66 @@ fun MessengerApp() {
                                     val actualSocketDevice = realBluetoothSocketState.connectedDevice ?: "unknown"
                                     val actualSocketAddress = realBluetoothSocketState.connectedDeviceAddress ?: "unknown"
                                     val localBridgeNode = localEsp32NodeId(actualSocketDevice)
-                                    val destinationNode = peerNodeForConnectedEsp32(actualSocketDevice)
+                                    val destinationNode = activeChatDestinationNode
                                     val demoText = sanitizeDemoMessageText(demoLoRaMessage)
-                                    val packet = createBluetoothProtocolPacket(
-                                        packetType = BluetoothProtocolPacketType.Message,
-                                        payload = "MODE=LORA;TEXT=$demoText",
-                                        destinationNode = destinationNode,
-                                        localBridgeNode = localBridgeNode,
-                                        status = "QUEUED_FOR_LORA"
-                                    )
-                                    val line = compactSerializedPacketText(packet)
-
-                                    realBluetoothSocketState = realBluetoothSocketState.copy(
-                                        liveTestStatus = "Sending \"$demoText\" via $actualSocketDevice ($actualSocketAddress) -> $destinationNode",
-                                        lastDemoMessage = demoText,
-                                        lastError = "None"
-                                    )
-
-                                    queueScope.launch {
-                                        val result = androidBluetoothSocketClient.sendLineAndWaitForResponse(line, 5000L)
-                                        realBluetoothSocketState = result.fold(
-                                            onSuccess = { exchange ->
-                                                val response = exchange.second
-                                                val forwarded = response?.contains("FORWARDED_OVER_LORA") == true
-                                                bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(packet.packetId)
-                                                if (forwarded) {
-                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_ACK")
-                                                }
-                                                realBluetoothSocketState.copy(
-                                                    liveTestStatus = if (forwarded) {
-                                                        "Sent to $destinationNode: $demoText"
-                                                    } else {
-                                                        "LoRa message sent; check ESP32 logs"
-                                                    },
-                                                    lastSentLine = exchange.first,
-                                                    lastReceivedLine = response ?: "No response before timeout",
-                                                    lastError = if (forwarded) {
-                                                        "None"
-                                                    } else {
-                                                        "Expected FORWARDED_OVER_LORA ACK"
-                                                    }
-                                                )
-                                            },
-                                            onFailure = { error ->
-                                                realBluetoothSocketState.copy(
-                                                    connectedDevice = null,
-                                                    socketStatus = "Disconnected - reconnect ESP32",
-                                                    liveTestStatus = "LoRa message failed",
-                                                    lastSentLine = line,
-                                                    lastError = error.message ?: "Unknown LoRa message error"
-                                                )
-                                            }
+                                    if (destinationNode.isBlank()) {
+                                        realBluetoothSocketState = realBluetoothSocketState.copy(
+                                            liveTestStatus = "Select a live destination",
+                                            lastDemoMessage = demoText,
+                                            lastError = "Refresh Nodes returned no selectable destination"
                                         )
+                                    } else {
+                                        val packet = createBluetoothProtocolPacket(
+                                            packetType = BluetoothProtocolPacketType.Message,
+                                            payload = "MODE=LORA;TEXT=$demoText",
+                                            destinationNode = destinationNode,
+                                            localBridgeNode = localBridgeNode,
+                                            status = "QUEUED_FOR_LORA"
+                                        )
+                                        val line = compactSerializedPacketText(packet)
+
+                                        realBluetoothSocketState = realBluetoothSocketState.copy(
+                                            liveTestStatus = "Sending \"$demoText\" via $actualSocketDevice ($actualSocketAddress) -> $destinationNode",
+                                            lastDemoMessage = demoText,
+                                            lastError = "None"
+                                        )
+
+                                        queueScope.launch {
+                                            val result = androidBluetoothSocketClient.sendLineAndWaitForResponse(line, 5000L)
+                                            realBluetoothSocketState = result.fold(
+                                                onSuccess = { exchange ->
+                                                    val response = exchange.second
+                                                    val forwarded = response?.contains("FORWARDED_OVER_LORA") == true
+                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(packet.packetId)
+                                                    if (forwarded) {
+                                                        bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_ACK")
+                                                    }
+                                                    realBluetoothSocketState.copy(
+                                                        liveTestStatus = if (forwarded) {
+                                                            "Sent to $destinationNode: $demoText"
+                                                        } else {
+                                                            "LoRa message sent; check ESP32 logs"
+                                                        },
+                                                        lastSentLine = exchange.first,
+                                                        lastReceivedLine = response ?: "No response before timeout",
+                                                        lastError = if (forwarded) {
+                                                            "None"
+                                                        } else {
+                                                            "Expected FORWARDED_OVER_LORA ACK"
+                                                        }
+                                                    )
+                                                },
+                                                onFailure = { error ->
+                                                    realBluetoothSocketState.copy(
+                                                        connectedDevice = null,
+                                                        socketStatus = "Disconnected - reconnect ESP32",
+                                                        liveTestStatus = "LoRa message failed",
+                                                        lastSentLine = line,
+                                                        lastError = error.message ?: "Unknown LoRa message error"
+                                                    )
+                                                }
+                                            )
+                                        }
                                     }
                                 },
                                 onReadIncomingPacket = {
@@ -2204,7 +2293,7 @@ fun MessengerApp() {
                                         delay(450L)
                                         bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("ESP32_ACK")
                                         esp32BridgeConfig = esp32BridgeConfig.copy(
-                                            connectionStatus = "ESP32_ACK received over simulated Bluetooth layer",
+                                            connectionStatus = "ESP32_ACK received over fallback Bluetooth layer",
                                             lastHandshakeTime = currentTimeLabel(),
                                             handshakeStatus = "ESP32_ACK received"
                                         )
@@ -2374,7 +2463,7 @@ private fun AppHeader() {
         )
         Text(
             modifier = Modifier.fillMaxWidth(),
-            text = "ADAPTIVE FAILOVER via Simulated LEO Satcom-Mobile Ad Hoc Network",
+            text = "ADAPTIVE FAILOVER via LoRa Mobile Ad Hoc Network",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
             textAlign = TextAlign.Center
@@ -2529,9 +2618,14 @@ private fun NodeSummaryRow(
 private fun DiscoveredNodesPanel(
     discoveredNodes: List<DiscoveredNode>,
     nodeListStatus: String,
+    localNodeId: String,
+    selectedDestinationId: String?,
+    onDestinationSelected: (String) -> Unit,
     onRefresh: () -> Unit
 ) {
-    val grouped = discoveredNodes.groupBy { it.gatewayId }
+    val normalizedNodes = normalizedDiscoveredNodes(discoveredNodes)
+    val grouped = normalizedNodes.groupBy { it.gatewayId }
+    val destinations = selectableLiveDestinations(discoveredNodes, localNodeId)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2552,9 +2646,10 @@ private fun DiscoveredNodesPanel(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        if (discoveredNodes.isEmpty()) {
+        StatusRow(label = "Connected local node", value = localNodeId)
+        if (normalizedNodes.isEmpty()) {
             Text(
-                text = "No nodes discovered yet. Connect to an ESP32 and request a node list.",
+                text = "No live nodes discovered yet. Connect to an ESP32 and request a node list; Chat will use the labeled fallback destination until live nodes arrive.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2571,6 +2666,33 @@ private fun DiscoveredNodesPanel(
                         text = "${node.nodeId} — ${if (node.online) "ONLINE" else "OFFLINE"}",
                         style = MaterialTheme.typography.bodyMedium
                     )
+                }
+            }
+            Text(
+                text = "Chat Destination",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (destinations.isEmpty()) {
+                Text(
+                    text = "No selectable destination. The local connected node is excluded.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                destinations.chunked(2).forEach { rowNodes ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        rowNodes.forEach { node ->
+                            FilterChip(
+                                selected = selectedDestinationId == node.nodeId,
+                                onClick = { onDestinationSelected(node.nodeId) },
+                                label = { Text("${node.nodeId} / Gateway ${node.gatewayId}") }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2609,14 +2731,14 @@ private fun TopologyOverviewPanel(
         )
         StatusRow(label = "Connected nodes", value = "${nodes.size - offlineNodes.size}/${nodes.size}")
         StatusRow(label = "Offline nodes", value = if (offlineNodes.isEmpty()) "None" else offlineNodes.joinToString { it.name })
-        StatusRow(label = "Gateway node", value = "Gateway Node")
+        StatusRow(label = "Gateway nodes", value = nodes.filter { it.name.startsWith("gateway", ignoreCase = true) }.joinToString { it.name })
         Text(
             text = "Path: ${path.joinToString(" -> ") { it.name }}",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = nodes.joinToString(" | ") { "${it.name.removePrefix("Node ")}: ${nodeHealth(it, networkState)}" },
+            text = nodes.joinToString(" | ") { "${it.name}: ${nodeHealth(it, networkState)}" },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -3045,7 +3167,7 @@ private fun BluetoothPermissionPanel(
             Text("Request Permissions")
         }
         Text(
-            text = "Step 019 only prepares Android Bluetooth permission access. Socket connection remains reserved for Step 020.",
+            text = "Bluetooth permissions support the current SPP connection and live NODE_LIST refresh flow.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -3074,7 +3196,7 @@ private fun BluetoothDiagnosticsPanel(
             fontWeight = FontWeight.SemiBold
         )
         StatusRow(label = "Current paired ESP32", value = bluetoothDeviceState.pairedDevice ?: "None")
-        StatusRow(label = "Signal placeholder", value = bluetoothDeviceState.signalPlaceholder)
+        StatusRow(label = "Signal", value = bluetoothDeviceState.signalPlaceholder)
         StatusRow(label = "Packets sent", value = bluetoothPacketBridge.packetsSent.toString())
         StatusRow(label = "Packets received", value = bluetoothPacketBridge.packetsReceived.toString())
         StatusRow(label = "Last outbound", value = bluetoothPacketBridge.lastOutboundPacket)
@@ -3216,7 +3338,10 @@ private fun MetricsPanel(
 }
 
 @Composable
-private fun CurrentRouteSummary(routingDecision: RoutingDecision) {
+private fun CurrentRouteSummary(
+    routingDecision: RoutingDecision,
+    fallbackOnly: Boolean = false
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -3234,7 +3359,7 @@ private fun CurrentRouteSummary(routingDecision: RoutingDecision) {
         ) {
             Text(
                 modifier = Modifier.weight(1f),
-                text = "Current Route",
+                text = if (fallbackOnly) "Fallback Route" else "Current Route",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
@@ -3248,7 +3373,131 @@ private fun CurrentRouteSummary(routingDecision: RoutingDecision) {
             )
         }
         Text(
-            text = routingDecision.failoverReason,
+            text = if (fallbackOnly) {
+                "Fallback simulation state only. Connect to an ESP32 and refresh live nodes for real routing."
+            } else {
+                routingDecision.failoverReason
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SimulationFallbackNotice() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = "Simulation Fallback",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            text = "These controls are shown only until a live NODE_LIST is loaded from the connected ESP32.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun LiveRouteSummaryPanel(
+    localNodeId: String,
+    destination: DiscoveredNode?,
+    destinationLabel: String,
+    discoveredNodes: List<DiscoveredNode>
+) {
+    val path = liveRoutePath(localNodeId, destination, discoveredNodes)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = "Live Route",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                modifier = Modifier.weight(1f),
+                text = RouteLabel.Lora.label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.End,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Text(
+            text = destinationLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "Path: ${path.joinToString(" -> ")}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun LiveRoutePanel(
+    localNodeId: String,
+    destination: DiscoveredNode?,
+    discoveredNodes: List<DiscoveredNode>,
+    nodeListStatus: String,
+    connectedDevice: String?
+) {
+    val onlineNodes = normalizedDiscoveredNodes(discoveredNodes).filter { it.online }
+    val path = liveRoutePath(localNodeId, destination, discoveredNodes)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Live Network Route",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        StatusRow(label = "Connected ESP32", value = connectedDevice ?: "Not connected")
+        StatusRow(label = "Local node", value = localNodeId)
+        StatusRow(label = "Destination", value = destination?.nodeId ?: "Select a live destination")
+        StatusRow(label = "Route", value = if (destination == null) "Waiting for destination" else RouteLabel.Lora.label)
+        StatusRow(label = "Node list", value = nodeListStatus)
+        StatusRow(label = "Online nodes", value = onlineNodes.joinToString { "${it.nodeId}/${it.gatewayId}" })
+        Text(
+            text = "Path: ${path.joinToString(" -> ")}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "Real routing is driven by the ESP32 NODE_LIST and LoRa bridge. Simulation scoring is hidden while live nodes are present.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -3513,12 +3762,12 @@ private fun Esp32TransportPreparationPanel(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
-            text = "ESP32 Transport Preparation",
+            text = "Fallback Transport Lab",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
         Text(
-            text = "Hardware transport is prepared as a disabled placeholder. No Bluetooth or WiFi transport APIs are active.",
+            text = "Fallback transport lab is separate from the current live Bluetooth SPP and LoRa workflow.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -4006,7 +4255,7 @@ private fun EmptyMessageState() {
                 shape = RoundedCornerShape(8.dp)
             )
             .padding(12.dp),
-        text = "No local simulation messages yet.",
+        text = "No messages yet.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center
@@ -4017,30 +4266,45 @@ private fun EmptyMessageState() {
 private fun MessageComposer(
     draftMessage: String,
     onDraftChange: (String) -> Unit,
+    sendEnabled: Boolean,
+    destinationLabel: String,
     onSend: () -> Unit
 ) {
     Surface(
         tonalElevation = 3.dp,
         color = MaterialTheme.colorScheme.background
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            OutlinedTextField(
-                modifier = Modifier.weight(1f),
-                value = draftMessage,
-                onValueChange = onDraftChange,
-                placeholder = { Text("Type message") },
-                singleLine = true
+            Text(
+                text = destinationLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = onSend) {
-                Text("Send")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    modifier = Modifier.weight(1f),
+                    value = draftMessage,
+                    onValueChange = onDraftChange,
+                    placeholder = { Text("Type message") },
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    enabled = sendEnabled,
+                    onClick = onSend
+                ) {
+                    Text("Send")
+                }
             }
         }
     }
@@ -4249,6 +4513,71 @@ private fun parseNodeListPayload(payload: String): List<DiscoveredNode> {
     return result
 }
 
+private fun normalizedDiscoveredNodes(discoveredNodes: List<DiscoveredNode>): List<DiscoveredNode> {
+    return discoveredNodes
+        .filter { it.nodeId.isNotBlank() && it.gatewayId.isNotBlank() }
+        .distinctBy { it.nodeId }
+        .sortedWith(
+            compareBy<DiscoveredNode> { gatewaySortKey(it.gatewayId) }
+                .thenBy { nodeSortKey(it.nodeId) }
+                .thenBy { it.nodeId }
+        )
+}
+
+private fun selectableLiveDestinations(
+    discoveredNodes: List<DiscoveredNode>,
+    localNodeId: String
+): List<DiscoveredNode> {
+    return normalizedDiscoveredNodes(discoveredNodes)
+        .filter { it.online && it.nodeId != localNodeId }
+}
+
+private fun gatewaySortKey(gatewayId: String): Int {
+    return when (gatewayId.uppercase(Locale.US)) {
+        "A" -> 0
+        "B" -> 1
+        else -> 2
+    }
+}
+
+private fun nodeSortKey(nodeId: String): Int {
+    return when {
+        nodeId.startsWith("node", ignoreCase = true) -> 0
+        nodeId.startsWith("gateway", ignoreCase = true) -> 1
+        else -> 2
+    }
+}
+
+private fun gatewayNodeId(gatewayId: String, discoveredNodes: List<DiscoveredNode>): String {
+    val gatewayNode = discoveredNodes.firstOrNull {
+        it.gatewayId.equals(gatewayId, ignoreCase = true) &&
+            it.nodeId.startsWith("gateway", ignoreCase = true)
+    }
+    return gatewayNode?.nodeId ?: "gateway${gatewayId.uppercase(Locale.US)}"
+}
+
+private fun liveRoutePath(
+    localNodeId: String,
+    destinationNode: DiscoveredNode?,
+    discoveredNodes: List<DiscoveredNode>
+): List<String> {
+    if (destinationNode == null) {
+        return listOf(localNodeId)
+    }
+
+    val localGateway = discoveredNodes.firstOrNull { it.nodeId == localNodeId }?.gatewayId
+    return if (localGateway == null || localGateway == destinationNode.gatewayId) {
+        listOf(localNodeId, destinationNode.nodeId).distinct()
+    } else {
+        listOf(
+            localNodeId,
+            gatewayNodeId(localGateway, discoveredNodes),
+            gatewayNodeId(destinationNode.gatewayId, discoveredNodes),
+            destinationNode.nodeId
+        ).distinct()
+    }
+}
+
 private fun localEsp32NodeId(connectedDevice: String?): String {
     return when {
         connectedDevice.isNullOrBlank() -> "nodeA1"
@@ -4262,7 +4591,7 @@ private fun localEsp32NodeId(connectedDevice: String?): String {
     }
 }
 
-private fun peerNodeForConnectedEsp32(connectedDevice: String?): String {
+private fun fallbackPeerNodeForConnectedEsp32(connectedDevice: String?): String {
     return when (localEsp32NodeId(connectedDevice)) {
         "nodeA1" -> "nodeA2"
         "nodeA2" -> "nodeA1"
@@ -4461,7 +4790,7 @@ private fun runBasicValidation(
         } else {
             ValidationStatus.Fail
         },
-        "Bluetooth placeholder pairing works" to if (bluetoothState.pairingStatus == PairingStatus.Paired) {
+        "Bluetooth fallback pairing check" to if (bluetoothState.pairingStatus == PairingStatus.Paired) {
             ValidationStatus.Pass
         } else {
             ValidationStatus.NotTested
@@ -4766,7 +5095,7 @@ private fun maybeMoveNode(
     if (nodes.size < 4 || Random.nextInt(100) >= 5 * volatility) {
         return nodes
     }
-    val movableIndexes = nodes.indices.filter { nodes[it].name != "Gateway Node" }
+    val movableIndexes = nodes.indices.filter { !nodes[it].name.startsWith("gateway", ignoreCase = true) }
     val firstIndex = movableIndexes.random()
     val secondIndex = movableIndexes.filter { it != firstIndex }.random()
     val reordered = nodes.toMutableList()

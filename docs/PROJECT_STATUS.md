@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-07
 
-Overall state: STEP045A mesh-wide presence propagation is physically validated PASS / COMPLETE. STEP044 strict compact `BT1` corrupt-packet validation remains physically validated and preserved.
+Overall state: STEP045B Android Real-Network Cleanup is physically validated PASS / COMPLETE. STEP045A mesh-wide presence propagation and STEP044 strict compact `BT1` corrupt-packet validation remain preserved.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,9 +17,9 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP045A - Mesh-Wide Presence Propagation complete; next task is STEP045B Android Real-Network Cleanup.
+Workbook current milestone: STEP045B - Android Real-Network Cleanup complete; continue only from the next incomplete workbook task.
 
-Latest completed workbook step: STEP045A - Mesh-Wide Presence Propagation.
+Latest completed workbook step: STEP045B - Android Real-Network Cleanup.
 
 Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway Bluetooth-disable cleanup is validated and must not be undone. The current Android mapping change is temporary for 2-node validation because `nodeA3` has not been deployed.
 
@@ -44,6 +44,7 @@ Completed highlights:
 - STEP043 PASS: gatewayA/gatewayB discover each other over compact `BT1` HELLO packets; `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
 - STEP044 PASS / COMPLETE: corrective strict compact packet validation was physically validated under RF stress with `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
 - STEP045A PASS / COMPLETE: mesh-wide HELLO presence propagation fixed Android discovery for `gatewayB` while preserving compact `BT1` and STEP044 corrupt-packet rejection.
+- STEP045B PASS / COMPLETE: Android real-network cleanup physically validated. UI and Chat now prioritize live discovered node IDs, and Chat send uses selected live destination instead of the temporary hardcoded peer mapping.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -149,9 +150,6 @@ STEP042B physical validation status:
 
 Current blockers / open issues:
 - STEP044 corrupt compact packet physical validation PASS after corrective firmware commit `9dba0ef`.
-- Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
-- Route tab can show `No route` while real LoRa messages are delivered.
-- Discovered node list works, but send destination is still not fully driven by live discovered nodes.
 - `nodeA3` has not been flashed or validated.
 - GatewayB repeated reset/garbage serial output needs investigation.
 
@@ -181,6 +179,16 @@ STEP045A - Mesh-Wide Presence Propagation:
 - Build validation PASS: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
 - Physical Android validation PASS after flashing `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`: Android Nodes shows `nodeA1 ONLINE`, `gatewayA ONLINE`, `nodeA2 ONLINE`, and `gatewayB ONLINE`.
 
+STEP045B - Android Real-Network Cleanup:
+- Android-only change in `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt`.
+- Replaced simulation-era current-state labels with real discovered node IDs when `discoveredNodes` is available.
+- Added selected live destination state sourced from `discoveredNodes`; local connected ESP32 node is excluded from selectable destinations.
+- Chat send now uses the selected discovered node instead of `peerNodeForConnectedEsp32()` hardcoded mapping.
+- Safe fallback destination remains only when `discoveredNodes` is empty and is clearly labeled as fallback.
+- Route tab now shows a live LoRa route summary when real discovered nodes exist instead of misleading simulated `No route`.
+- Local build PASS: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
+- Physical Android hardware validation PASS.
+
 Firmware status:
 - STEP038 ESP32 firmware is not final.
 - STEP038 is now Stable STEP038 baseline firmware.
@@ -197,9 +205,8 @@ Future gateway-code requirements:
 - LoRa backup backhaul mode.
 
 Next incomplete task:
-- STEP045B Android Real-Network Cleanup.
-- Replace the temporary hardcoded Android destination mapping with live discovered-node selection and clean simulated labels/route display.
-- Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.
+- Continue from the next incomplete workbook task after STEP045B.
+- Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket
