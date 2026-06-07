@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-07
 
-Overall state: STEP047 Bluetooth Transport Layer is implemented and build-validated with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046A Controlled Multi-Hop Lab Mode remains the latest physically validated milestone, and production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+Overall state: STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046B Bridge ACK Reliability Improvement is the next workbook-approved task for scope confirmation; production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,9 +17,9 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP047 - Bluetooth Transport Layer implementation/build validation PASS; physical validation pending.
+Workbook current milestone: STEP046B - Bridge ACK Reliability Improvement current / pending scope confirmation.
 
-Latest physically completed workbook step: STEP046A - Controlled Multi-Hop Lab Mode.
+Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
 Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway Bluetooth-disable cleanup is validated and must not be undone. Android live discovered-node destination selection is validated; `nodeA3` has not been deployed.
 
@@ -46,7 +46,7 @@ Completed highlights:
 - STEP045A PASS / COMPLETE: mesh-wide HELLO presence propagation fixed Android discovery for `gatewayB` while preserving compact `BT1` and STEP044 corrupt-packet rejection.
 - STEP045B PASS / COMPLETE: Android real-network cleanup physically validated. UI and Chat now prioritize live discovered node IDs, and Chat send uses selected live destination instead of the temporary hardcoded peer mapping.
 - STEP046A PASS / COMPLETE: controlled multi-hop lab mode physically validated with manual firmware built using `TEST_FORCE_GATEWAY_ROUTE=1`, then production default restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
-- STEP047 implementation/build validation PASS: Bluetooth is documented and surfaced as Android phone-to-node access only; LoRa remains the MANET backbone and no routing-core changes were made.
+- STEP047 PASS / COMPLETE: Bluetooth phone-to-node access verified; `NODE_LIST` verified; `PhoneA -> nodeA2` verified; `nodeA2 -> PhoneA` verified; gateway disappearance detection verified; gateway-loss messaging verified.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -211,7 +211,7 @@ STEP047 - Bluetooth Transport Layer:
 - Android updates in `MainActivity.kt`: simulation-era Bluetooth transport wording now labels Bluetooth SPP as the phone-to-node access layer; readiness/checklist/route notes no longer imply Bluetooth carries MANET node-to-node traffic.
 - ESP32 updates in `src/main.cpp`: `BT_STATUS`, invalid protocol errors, startup logs, and status payload metadata identify Bluetooth as `PHONE_NODE_ACCESS`.
 - Build validation PASS: Android `:app:assembleDebug`; ESP32 `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
-- Physical validation pending: pair Android with a normal node ESP32, confirm Chat/NODE_LIST behavior remains unchanged, and verify `BT_STATUS` reports phone-node access with LoRa as the MANET backbone.
+- Physical validation PASS: Bluetooth phone-to-node access verified; `NODE_LIST` verified; `PhoneA -> nodeA2` verified; `nodeA2 -> PhoneA` verified; gateway disappearance detection verified; gateway-loss messaging verified.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -228,8 +228,7 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-- STEP047 physical validation remains the next activity. Do not start STEP046B ACK reliability, STEP042C Delivery Tracking, or STEP042D Store-and-Forward until STEP047 is accepted or the workbook/user reroutes the task.
-- Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
+- STEP046B Bridge ACK Reliability Improvement is now the next workbook-approved task. Acceptance criteria remain TBD; confirm scope before implementation. Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket

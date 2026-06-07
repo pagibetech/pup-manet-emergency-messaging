@@ -55,7 +55,8 @@ STEP047 Bluetooth access-layer policy:
 - Bluetooth must not be added as a node-to-node MANET transport.
 - LoRa remains the MANET backbone between ESP32 nodes.
 - The phone is only a client/controller connected to one local node.
-- STEP047 implementation/build validation updated Android UI diagnostics and ESP32 Bluetooth status output to reflect this boundary. Physical validation is pending.
+- STEP047 implementation/build validation updated Android UI diagnostics and ESP32 Bluetooth status output to reflect this boundary.
+- STEP047 physical validation PASS: Bluetooth phone-to-node access verified; `NODE_LIST` verified; `PhoneA -> nodeA2` verified; `nodeA2 -> PhoneA` verified; gateway disappearance detection verified; gateway-loss messaging verified.
 
 STEP042A discovery export fix:
 - Root cause: compact LoRa relay HELLO packets such as `HELLO-nodeA1` and `HELLO-nodeA2` were parsed as `MESSAGE` unconditionally, then routed, relayed, or duplicate-dropped before node table insertion.
@@ -168,7 +169,8 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP047 Bluetooth Transport Layer - implementation/build validation PASS; physical validation pending.
+- STEP046B Bridge ACK Reliability Improvement - current / pending scope confirmation.
+- STEP047 Bluetooth Transport Layer - PASS / COMPLETE after physical validation.
 - STEP046A Controlled Multi-Hop Lab Mode - PASS / COMPLETE after physical forced-route validation; production default restored.
 - STEP045B Android Real-Network Cleanup - PASS / COMPLETE after physical Android validation.
 - STEP045A Mesh-Wide Presence Propagation - PASS / COMPLETE after physical Android validation.

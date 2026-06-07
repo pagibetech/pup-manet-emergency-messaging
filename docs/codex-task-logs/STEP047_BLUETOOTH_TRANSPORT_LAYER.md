@@ -2,7 +2,7 @@
 
 Date: 2026-06-07
 
-Status: Implementation / build validation PASS; physical validation pending
+Status: COMPLETE / Physical Validation PASS
 
 ## Scope
 
@@ -23,18 +23,15 @@ Bluetooth is not a node-to-node MANET transport. LoRa remains the MANET backbone
 - Android build: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug` - PASS.
 - ESP32 build: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora` - PASS.
 
-## Pending Physical Validation
+## Physical Validation
 
-1. Pair Android Phone A with a normal node ESP32 such as `PUP-MANET-nodeA1`.
-2. Confirm Chat and NODE_LIST behavior remain unchanged.
-3. Send `BT_STATUS` or inspect serial output on a node build.
-4. Expected ESP32 status includes:
-   - `access=Android phone <-> local ESP32 node`
-   - `transport=Classic Bluetooth SPP phone-node access`
-   - `manet_backbone=LoRa`
-   - `node_to_node_bluetooth=DISABLED`
-5. Confirm gateway builds still keep Bluetooth disabled.
+- Bluetooth phone-to-node access verified.
+- `NODE_LIST` verified.
+- `PhoneA -> nodeA2` verified.
+- `nodeA2 -> PhoneA` verified.
+- Gateway disappearance detection verified.
+- Gateway-loss messaging verified.
 
 ## Notes
 
-STEP047 does not start STEP046B ACK reliability, STEP042C delivery tracking, or STEP042D store-and-forward.
+STEP047 is closed. Next workbook-approved task is STEP046B Bridge ACK Reliability Improvement. STEP046B acceptance criteria remain to be confirmed before implementation; do not modify routing core.

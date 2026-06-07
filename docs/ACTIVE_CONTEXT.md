@@ -16,11 +16,11 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
-Latest physically completed workbook step: STEP046A - Controlled Multi-Hop Lab Mode.
+Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
-Current milestone: STEP047 - Bluetooth Transport Layer. Implementation/build validation PASS; physical validation pending.
+Current milestone: STEP046B - Bridge ACK Reliability Improvement. Current / Pending Scope Confirmation; no implementation started.
 
-Current feature: STEP047 clarifies Bluetooth as the Android phone-to-local ESP32 access layer only. Bluetooth must not be added as a node-to-node MANET transport; LoRa remains the MANET backbone.
+Current feature: STEP047 is physically validated and closed. Bluetooth is Android phone-to-local ESP32 access only; Bluetooth is not a node-to-node MANET transport; LoRa remains the MANET backbone.
 
 Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP044 strict BT1 validation, STEP045A HELLO propagation, STEP046A lab-mode forced routing overlay, and STEP047 Bluetooth access-layer status diagnostics while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B and STEP047 phone-to-node Bluetooth access-layer UI wording.
 
@@ -73,6 +73,8 @@ STEP047 architecture clarification: Bluetooth is Android Phone <-> local ESP32 n
 STEP047 implementation: Android UI/diagnostic wording now describes Bluetooth SPP as a phone-to-node access layer, not a MANET transport. ESP32 `BT_STATUS`, invalid-protocol error text, and Bluetooth service startup logs now report the same role and expose `bluetoothRole=PHONE_NODE_ACCESS` in status payloads.
 
 STEP047 build validation: PASS. Android build command: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`. ESP32 build command: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
+
+STEP047 physical validation: PASS / COMPLETE. Bluetooth phone-to-node access verified; `NODE_LIST` verified; `PhoneA -> nodeA2` verified; `nodeA2 -> PhoneA` verified; gateway disappearance detection verified; gateway-loss messaging verified.
 
 Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`, plus reverse `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
 
@@ -137,4 +139,4 @@ STEP044 validation rules validated:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: physically validate STEP047 on hardware by pairing Android with a normal node ESP32, confirming Chat/NODE_LIST behavior remains unchanged, and checking `BT_STATUS` reports phone-node access with LoRa as the MANET backbone.
+Next workbook-approved task: STEP046B - Bridge ACK Reliability Improvement. Acceptance criteria are still TBD; confirm scope before implementation and do not modify routing core.
