@@ -16,13 +16,13 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
-Latest physically completed workbook step: STEP045B - Android Real-Network Cleanup.
+Latest physically completed workbook step: STEP046A - Controlled Multi-Hop Lab Mode.
 
-Current milestone: STEP046A - Controlled Multi-Hop Lab Mode. Firmware implementation approved and local build validation PASS; physical lab-mode validation is pending.
+Current milestone: STEP046A - Controlled Multi-Hop Lab Mode. Physical validation PASS / COMPLETE; production default restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 
-Current feature: ESP32 firmware now includes a compile-time lab overlay, `TEST_FORCE_GATEWAY_ROUTE`, default `0`, to force nodeA1/nodeA2 traffic through gatewayA/gatewayB for controlled multi-hop validation on a short-range indoor bench.
+Current feature: ESP32 firmware includes a compile-time lab overlay, `TEST_FORCE_GATEWAY_ROUTE`, default `0`, to force nodeA1/nodeA2 traffic through gatewayA/gatewayB for controlled multi-hop validation on a short-range indoor bench.
 
-Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix and preserves gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` has a temporary validation mapping change in `peerNodeForConnectedEsp32()` from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` has not been flashed or deployed.
+Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP044 strict BT1 validation, STEP045A HELLO propagation, and STEP046A lab-mode forced routing overlay while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B.
 
 Resolved issue: corrupted compact `BT1` LoRa packets are now rejected before neighbor learning and no longer create malformed neighbors such as `gateway=UNKNOWN`, `node=BROADCAST`, or misspelled node IDs.
 
@@ -60,9 +60,13 @@ STEP045B UI cleanup: Android display labels no longer present `Node Alpha`, `Nod
 
 STEP045B validation: local build PASS with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`; physical hardware validation PASS.
 
-STEP046A implementation: approved after local firmware build validation. `esp32-node-platformio/src/main.cpp` adds `TEST_FORCE_GATEWAY_ROUTE`, defaulting to production-safe `0`. When enabled for lab builds, only `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1` `MESSAGE` traffic is forced through `nodeA1 -> gatewayA -> gatewayB -> nodeA2` and reverse. Direct overheard forced-route packets are ignored before duplicate-cache insertion so the valid gateway-relayed copy can still be delivered. Existing compact `BT1`, TTL, hopCount, duplicate suppression, relay behavior, loop prevention, and STEP044 strict corrupt-packet validation remain preserved.
+STEP046A implementation: `esp32-node-platformio/src/main.cpp` adds `TEST_FORCE_GATEWAY_ROUTE`, defaulting to production-safe `0`. When enabled for lab builds, only `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1` `MESSAGE` traffic is forced through `nodeA1 -> gatewayA -> gatewayB -> nodeA2` and reverse. Direct overheard forced-route packets are ignored before duplicate-cache insertion so the valid gateway-relayed copy can still be delivered. Existing compact `BT1`, TTL, hopCount, duplicate suppression, relay behavior, loop prevention, and STEP044 strict corrupt-packet validation remain preserved.
 
-STEP046A build validation: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora` PASS. `git diff --check` PASS.
+STEP046A physical validation: PASS / COMPLETE. Manual test firmware was flashed with `TEST_FORCE_GATEWAY_ROUTE=1`. A -> B forced route delivered on `nodeA1 -> gatewayA -> gatewayB -> nodeA2`. B -> A forced route delivered on `nodeA2 -> gatewayB -> gatewayA -> nodeA1`.
+
+STEP046A gatewayA-off test: node count became 3, `gatewayA` disappeared from NODE_LIST, and `nodeA1`/`nodeA2` still delivered messages directly. This proves node discovery expiry and direct fallback/survivability, but not full alternate gateway reroute.
+
+STEP046A production restore: source default is restored to `#define TEST_FORCE_GATEWAY_ROUTE 0`. Production-mode build validation PASS: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`. `git diff --check` PASS.
 
 Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`, plus reverse `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
 
@@ -102,7 +106,7 @@ Open issues:
 
 Future gateway code must support store-and-forward queue, gateway ACK tracking, heartbeat monitoring, peer online detection, automatic reconnect, gateway relay mode, and LoRa backup backhaul mode.
 
-Recommended model/tool: continue STEP046A physical lab-mode validation with Codex/local PlatformIO hardware bench only after studying workbook and continuity files.
+Recommended model/tool: continue from the next workbook-approved task with Codex/local tools only after studying workbook and continuity files.
 
 Escalation guidance: do not start STEP042C/D unless the workbook/user explicitly routes there next.
 
@@ -127,4 +131,4 @@ STEP044 validation rules validated:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: flash lab-mode firmware compiled with `TEST_FORCE_GATEWAY_ROUTE=1` to `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`; confirm boot banner says `Test force gateway route: ENABLED`; send Android Chat messages both directions; expect route/log evidence for `nodeA1 -> gatewayA -> gatewayB -> nodeA2` and `nodeA2 -> gatewayB -> gatewayA -> nodeA1`.
+Next validation activity: choose the next workbook-approved task after STEP046A. If adaptive reroute is desired, plan it explicitly as a new step; gatewayA-off STEP046A evidence only proves expiry/direct fallback, not alternate gateway reroute.

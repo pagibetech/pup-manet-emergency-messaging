@@ -5,7 +5,7 @@ Last updated: 2026-06-07
 Purpose: PUP MANET emergency messaging prototype with Android phones connected to ESP32 nodes, LoRa node-to-node transport, Raspberry Pi 3B local gateways, primary internet/Tailscale gateway backhaul, long-range LoRa gateway backup backhaul, and validated ESP32-to-Raspberry Pi USB serial bridge.
 
 Boundaries:
-- `esp32-node-platformio/`: ESP32 PlatformIO firmware, Bluetooth SPP service for normal MANET nodes, gateway Bluetooth-disabled LoRa builds, packet parser, `[GW_JSON]` serial bridge parsing, STEP042A HELLO/node table discovery export fix, STEP045A mesh-wide HELLO propagation, and controlled SX1278 LoRa live-test environments.
+- `esp32-node-platformio/`: ESP32 PlatformIO firmware, Bluetooth SPP service for normal MANET nodes, gateway Bluetooth-disabled LoRa builds, packet parser, `[GW_JSON]` serial bridge parsing, STEP042A HELLO/node table discovery export fix, STEP045A mesh-wide HELLO propagation, STEP046A controlled multi-hop lab mode, and controlled SX1278 LoRa live-test environments.
 - `android-chat-app/`: Kotlin Jetpack Compose Android app, simulation-first UI, Bluetooth permission/readiness flow, Classic Bluetooth SPP socket layer, and Step 023 Android-to-LoRa demo controls.
 - `raspberry-pi-gateway/`: Python gateway TCP relay service with Tailscale VPN backhaul, USB serial bridge to ESP32 via `[GW_JSON]` protocol, LoRa SPI abstraction baseline, failover, buffering, recovery.
 - `docs/`: workbook, operational memory, diagrams, test procedures, and Codex task logs.
@@ -94,11 +94,26 @@ STEP045A mesh-wide presence propagation:
 - A bounded HELLO relay cache prevents infinite HELLO loops; forwarding decisions log `[HELLO_RELAY]`.
 - Physical Android validation PASS after flashing `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`: Gateway A group shows `nodeA1 ONLINE`, `gatewayA ONLINE`, and `nodeA2 ONLINE`; Gateway B group shows `gatewayB ONLINE`.
 
-Current Android/topology limitations:
-- Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
-- Route tab can show `No route` even while real LoRa messages are delivered.
-- Discovered node list works, but send destination is still not fully driven by live discovered nodes.
-- GatewayB repeated reset/garbage serial output needs investigation.
+STEP045B Android real-network cleanup:
+- Android UI and Chat prioritize live discovered node IDs from NODE_LIST.
+- Chat destination selection is driven by `discoveredNodes`; the local connected node is excluded.
+- Route tab shows live LoRa route information when real discovered nodes exist.
+- Physical Android hardware validation PASS.
+
+STEP046A controlled multi-hop lab mode:
+- ESP32 firmware includes compile-time flag `TEST_FORCE_GATEWAY_ROUTE`, default `0`.
+- Production default is restored to `#define TEST_FORCE_GATEWAY_ROUTE 0`.
+- When manually enabled for lab builds, nodeA1/nodeA2 messages are forced through gateway paths so indoor short-range tests can validate multi-hop behavior even when all SX1278 radios can hear each other directly.
+- Physical validation PASS with manual test firmware using `TEST_FORCE_GATEWAY_ROUTE=1`.
+- A -> B forced route delivered through `nodeA1 -> gatewayA -> gatewayB -> nodeA2`.
+- B -> A forced route delivered through `nodeA2 -> gatewayB -> gatewayA -> nodeA1`.
+- GatewayA-off test: node count became 3, `gatewayA` disappeared from NODE_LIST, and `nodeA1`/`nodeA2` still delivered messages directly. This proves node discovery expiry and direct fallback/survivability, but not full alternate gateway reroute.
+- Production-mode build validation PASS for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
+
+Current topology limitations:
+- `nodeA3` has not been flashed or deployed.
+- GatewayB repeated reset/garbage serial output needs investigation if it recurs.
+- Full alternate gateway reroute is not yet implemented or validated.
 
 Architecture change:
 - The previous `WiFi Router A <-> WiFi Router B simulated satellite link` is removed.
@@ -138,7 +153,7 @@ Future gateway code should support:
 Firmware status:
 - STEP038 ESP32 firmware is not final.
 - It is now considered Stable STEP038 baseline firmware with STEP041 serial bridge additions.
-- Existing routing logic remains valid: TTL, hopCount, duplicate suppression, Bluetooth bridge, LoRa forwarding, gateway Bluetooth-disable behavior, and STEP042A HELLO/node table discovery export fix.
+- Existing routing logic remains valid: TTL, hopCount, duplicate suppression, Bluetooth bridge, LoRa forwarding, gateway Bluetooth-disable behavior, STEP042A HELLO/node table discovery export fix, STEP044 strict compact packet validation, STEP045A presence propagation, and STEP046A production-safe lab overlay default.
 - ESP32 firmware supports both NODE mode and GATEWAY mode via `[GW_JSON]` prefix parsing in `processSerialLine()`.
 
 Simulation-first rule:
@@ -146,10 +161,12 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
+- STEP046A Controlled Multi-Hop Lab Mode - PASS / COMPLETE after physical forced-route validation; production default restored.
+- STEP045B Android Real-Network Cleanup - PASS / COMPLETE after physical Android validation.
 - STEP045A Mesh-Wide Presence Propagation - PASS / COMPLETE after physical Android validation.
 - STEP044 Strict Compact BT1 LoRa Packet Validation - PASS / COMPLETE after RF-stress physical validation.
 - STEP043 Fix LoRa HELLO Packet Format - PASS for compact gatewayA/gatewayB discovery and `TEST_FINAL_001`.
 - STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
 - STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.
-- Next validation activity: STEP045B Android Real-Network Cleanup.
+- Next validation activity: continue from the next workbook-approved task after STEP046A.
 - Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.

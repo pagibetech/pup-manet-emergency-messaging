@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-07
 
-Overall state: STEP046A Controlled Multi-Hop Lab Mode firmware implementation is approved and local build validation PASS. STEP045B Android Real-Network Cleanup remains the latest physically validated PASS / COMPLETE milestone. STEP045A mesh-wide presence propagation and STEP044 strict compact `BT1` corrupt-packet validation remain preserved.
+Overall state: STEP046A Controlled Multi-Hop Lab Mode is physically validated PASS / COMPLETE, and production firmware mode is restored to `TEST_FORCE_GATEWAY_ROUTE=0`. STEP045A mesh-wide presence propagation, STEP045B Android cleanup, and STEP044 strict compact `BT1` corrupt-packet validation remain preserved.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,11 +17,11 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP046A - Controlled Multi-Hop Lab Mode implementation/build validation complete; physical lab-mode validation pending.
+Workbook current milestone: STEP046A - Controlled Multi-Hop Lab Mode physical validation PASS / COMPLETE.
 
-Latest physically completed workbook step: STEP045B - Android Real-Network Cleanup.
+Latest physically completed workbook step: STEP046A - Controlled Multi-Hop Lab Mode.
 
-Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway Bluetooth-disable cleanup is validated and must not be undone. The current Android mapping change is temporary for 2-node validation because `nodeA3` has not been deployed.
+Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway Bluetooth-disable cleanup is validated and must not be undone. Android live discovered-node destination selection is validated; `nodeA3` has not been deployed.
 
 Completed highlights:
 - ESP32 simulation and multi-node simulation baseline.
@@ -45,7 +45,7 @@ Completed highlights:
 - STEP044 PASS / COMPLETE: corrective strict compact packet validation was physically validated under RF stress with `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
 - STEP045A PASS / COMPLETE: mesh-wide HELLO presence propagation fixed Android discovery for `gatewayB` while preserving compact `BT1` and STEP044 corrupt-packet rejection.
 - STEP045B PASS / COMPLETE: Android real-network cleanup physically validated. UI and Chat now prioritize live discovered node IDs, and Chat send uses selected live destination instead of the temporary hardcoded peer mapping.
-- STEP046A implementation approved / build PASS: controlled multi-hop lab mode added to ESP32 firmware with `TEST_FORCE_GATEWAY_ROUTE` defaulting to `0`. When enabled for lab builds, nodeA1/nodeA2 Chat traffic is forced through gatewayA/gatewayB so short-range bench tests can validate the intended gateway path.
+- STEP046A PASS / COMPLETE: controlled multi-hop lab mode physically validated with manual firmware built using `TEST_FORCE_GATEWAY_ROUTE=1`, then production default restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -196,9 +196,12 @@ STEP046A - Controlled Multi-Hop Lab Mode:
 - When enabled, `nodeA1 -> nodeA2` messages are forced through `nodeA1 -> gatewayA -> gatewayB -> nodeA2`; reverse messages are forced through `nodeA2 -> gatewayB -> gatewayA -> nodeA1`.
 - Direct overheard forced-route packets are ignored before duplicate-cache insertion, preserving delivery of the valid gateway-relayed copy.
 - Added `[FORCED_ROUTE]` and `[FORWARD]` logs plus boot/status visibility for `test_force_gateway_route`.
-- Local build validation PASS: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
+- Physical validation PASS: A -> B delivered through `nodeA1 -> gatewayA -> gatewayB -> nodeA2`.
+- Physical validation PASS: B -> A delivered through `nodeA2 -> gatewayB -> gatewayA -> nodeA1`.
+- Additional gatewayA-off test: node count became 3, `gatewayA` disappeared from NODE_LIST, and `nodeA1`/`nodeA2` still delivered messages directly. This proves node discovery expiry and direct fallback/survivability, but not full alternate gateway reroute.
+- Production default restored to `#define TEST_FORCE_GATEWAY_ROUTE 0`.
+- Production-mode build validation PASS: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
 - `git diff --check` PASS.
-- Physical lab-mode validation remains pending.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -216,7 +219,7 @@ Future gateway-code requirements:
 - LoRa backup backhaul mode.
 
 Next incomplete task:
-- STEP046A physical lab-mode validation: flash firmware built with `TEST_FORCE_GATEWAY_ROUTE=1` to `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`; confirm forced path logs and Android route/path evidence.
+- Continue from the next workbook-approved task after STEP046A. If adaptive alternate gateway reroute is desired, define it as a new explicit step because STEP046A gatewayA-off evidence only proves expiry/direct fallback.
 - Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
 
 Troubleshooting notes resolved before STEP 035 pass:

@@ -47,7 +47,7 @@ Add an ESP32 firmware lab mode that can force controlled multi-hop forwarding on
 
 ## Validation
 
-Commands run:
+Initial implementation commands run:
 
 ```bash
 pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora
@@ -64,7 +64,26 @@ Result:
 
 ## Physical Validation Status
 
-Pending. Next lab validation must build/flash firmware with `TEST_FORCE_GATEWAY_ROUTE=1`, confirm the boot banner says `Test force gateway route: ENABLED`, and verify Android Chat messages follow the forced gateway paths in both directions.
+PASS / COMPLETE.
+
+Manual test firmware was flashed with `TEST_FORCE_GATEWAY_ROUTE=1`.
+
+Validated results:
+
+- A -> B forced route delivered: `nodeA1 -> gatewayA -> gatewayB -> nodeA2`.
+- B -> A forced route delivered: `nodeA2 -> gatewayB -> gatewayA -> nodeA1`.
+- GatewayA-off test: node count became 3, `gatewayA` disappeared from NODE_LIST, and `nodeA1`/`nodeA2` still delivered messages directly.
+
+GatewayA-off interpretation:
+
+- This proves node discovery expiry.
+- This proves direct fallback/survivability for nearby nodeA1/nodeA2 radios.
+- This does not prove full alternate gateway reroute.
+
+Production restore:
+
+- Source default restored to `#define TEST_FORCE_GATEWAY_ROUTE 0`.
+- Production-mode build validation passed for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`.
 
 ## Expected Lab Logs
 
@@ -104,4 +123,4 @@ to=nodeA1
 
 ## Next Step
 
-Run STEP046A physical lab-mode validation on `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
+Continue from the next workbook-approved task after STEP046A. If adaptive alternate gateway reroute is desired, define it explicitly as a new step.
