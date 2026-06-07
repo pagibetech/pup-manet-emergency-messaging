@@ -2,11 +2,11 @@
 
 Last updated: 2026-06-07
 
-Current milestone: STEP045B - Android Real-Network Cleanup. Physical Android hardware validation PASS / COMPLETE.
+Current milestone: STEP046A - Controlled Multi-Hop Lab Mode. Firmware implementation approved and local build validation PASS; physical lab-mode validation pending.
 
-Latest completed milestone: STEP045B - Android Real-Network Cleanup.
+Latest physically completed milestone: STEP045B - Android Real-Network Cleanup.
 
-Unfinished task: continue only from the next incomplete workbook task after STEP045B.
+Unfinished task: complete STEP046A physical lab-mode validation.
 
 Pending validations:
 - STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
@@ -20,6 +20,7 @@ Pending validations:
 - STEP044 strict corrupt-packet rejection is physically validated PASS after corrective firmware commit `9dba0ef`.
 - STEP045A mesh-wide presence propagation is physically validated PASS: Android Nodes now shows `nodeA1 ONLINE`, `gatewayA ONLINE`, `nodeA2 ONLINE`, and `gatewayB ONLINE`.
 - STEP045B Android Real-Network Cleanup is physically validated PASS: Android UI and Chat now use live discovered node IDs and selected live destination state.
+- STEP046A Controlled Multi-Hop Lab Mode is implemented and build validated. Physical lab-mode validation is pending.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -127,6 +128,18 @@ STEP045B Android Real-Network Cleanup:
 - Local build PASS with Android Studio JBR: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
 - Physical Android hardware validation PASS.
 
+STEP046A Controlled Multi-Hop Lab Mode:
+- ESP32-only change in `esp32-node-platformio/src/main.cpp`.
+- Added compile-time flag `TEST_FORCE_GATEWAY_ROUTE`, default `0`, preserving current production firmware behavior when disabled.
+- When enabled, only `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1` `MESSAGE` traffic is path-gated through the gateways.
+- Forced paths: `nodeA1 -> gatewayA -> gatewayB -> nodeA2` and `nodeA2 -> gatewayB -> gatewayA -> nodeA1`.
+- Direct overheard forced-route packets are ignored before duplicate-cache insertion so gateway-relayed copies can still be delivered.
+- Preserves compact `BT1`, TTL, hopCount, duplicate suppression, relay cache, loop prevention, and STEP044 validation.
+- Added `[FORCED_ROUTE]`, `[FORWARD]`, and boot/status visibility for `test_force_gateway_route`.
+- Build validation PASS: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
+- `git diff --check` PASS.
+- Next validation: compile/flash lab firmware with `TEST_FORCE_GATEWAY_ROUTE=1`, confirm boot banner enabled, send Android Chat both directions, and confirm route/log evidence for the forced gateway paths.
+
 Confirmed STEP040B evidence:
 - Gateway A `pup-gateway-a` Tailscale IP: `100.123.79.41`.
 - Gateway B `pup-gateway-b` Tailscale IP: `100.79.214.18`.
@@ -152,7 +165,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: continue only from the next workbook task after STEP045B while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, and routing.
+- Next incomplete activity for this thread: STEP046A physical lab-mode validation while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, and routing.
 - STEP042C-D remain queued. Do not start delivery tracking or store-and-forward work yet.
 
 Expected outputs:

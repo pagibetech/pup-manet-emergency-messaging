@@ -16,11 +16,11 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
-Latest completed workbook step: STEP045B - Android Real-Network Cleanup.
+Latest physically completed workbook step: STEP045B - Android Real-Network Cleanup.
 
-Current milestone: STEP045B - Android Real-Network Cleanup. Physical Android hardware validation PASS / COMPLETE.
+Current milestone: STEP046A - Controlled Multi-Hop Lab Mode. Firmware implementation approved and local build validation PASS; physical lab-mode validation is pending.
 
-Current feature: Android UI and Chat destination selection now use live discovered node IDs from `discoveredNodes` when NODE_LIST is available.
+Current feature: ESP32 firmware now includes a compile-time lab overlay, `TEST_FORCE_GATEWAY_ROUTE`, default `0`, to force nodeA1/nodeA2 traffic through gatewayA/gatewayB for controlled multi-hop validation on a short-range indoor bench.
 
 Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix and preserves gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` has a temporary validation mapping change in `peerNodeForConnectedEsp32()` from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` has not been flashed or deployed.
 
@@ -60,6 +60,10 @@ STEP045B UI cleanup: Android display labels no longer present `Node Alpha`, `Nod
 
 STEP045B validation: local build PASS with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`; physical hardware validation PASS.
 
+STEP046A implementation: approved after local firmware build validation. `esp32-node-platformio/src/main.cpp` adds `TEST_FORCE_GATEWAY_ROUTE`, defaulting to production-safe `0`. When enabled for lab builds, only `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1` `MESSAGE` traffic is forced through `nodeA1 -> gatewayA -> gatewayB -> nodeA2` and reverse. Direct overheard forced-route packets are ignored before duplicate-cache insertion so the valid gateway-relayed copy can still be delivered. Existing compact `BT1`, TTL, hopCount, duplicate suppression, relay behavior, loop prevention, and STEP044 strict corrupt-packet validation remain preserved.
+
+STEP046A build validation: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora` PASS. `git diff --check` PASS.
+
 Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`, plus reverse `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
 
 Confirmed gateway serial bridge flow: `Gateway B TCP TX -> Tailscale VPN -> Gateway A TCP RX -> SERIAL_TX -> ESP32 USB serial -> GATEWAY_SERIAL_PARSE -> ROUTE_DECISION -> LORA_TX`.
@@ -98,7 +102,7 @@ Open issues:
 
 Future gateway code must support store-and-forward queue, gateway ACK tracking, heartbeat monitoring, peer online detection, automatic reconnect, gateway relay mode, and LoRa backup backhaul mode.
 
-Recommended model/tool: continue from the next workbook-approved task after STEP045B; use Codex for focused implementation/validation only after studying workbook and continuity files.
+Recommended model/tool: continue STEP046A physical lab-mode validation with Codex/local PlatformIO hardware bench only after studying workbook and continuity files.
 
 Escalation guidance: do not start STEP042C/D unless the workbook/user explicitly routes there next.
 
@@ -123,4 +127,4 @@ STEP044 validation rules validated:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: continue from the next incomplete workbook task after STEP045B without regressing compact BT1 firmware behavior, STEP044 corrupt-packet rejection, STEP045A mesh-wide presence propagation, or STEP045B live Android destination selection.
+Next validation activity: flash lab-mode firmware compiled with `TEST_FORCE_GATEWAY_ROUTE=1` to `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`; confirm boot banner says `Test force gateway route: ENABLED`; send Android Chat messages both directions; expect route/log evidence for `nodeA1 -> gatewayA -> gatewayB -> nodeA2` and `nodeA2 -> gatewayB -> gatewayA -> nodeA1`.

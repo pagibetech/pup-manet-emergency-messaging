@@ -24,6 +24,10 @@
 #define GATEWAY_ID "A"
 #endif
 
+#ifndef TEST_FORCE_GATEWAY_ROUTE
+#define TEST_FORCE_GATEWAY_ROUTE 0
+#endif
+
 #ifndef LORA_SS_PIN
 #define LORA_SS_PIN 5
 #endif
@@ -124,6 +128,13 @@ struct PacketParseResult {
   bool valid;
   String errorReason;
   ProtocolPacket packet;
+};
+
+enum class ForcedRouteAction {
+  NotForced,
+  Ignore,
+  Relay,
+  Deliver
 };
 
 constexpr int DEFAULT_TTL = 5;
@@ -792,6 +803,138 @@ bool protocolPacketTargetsLocalNode(const ProtocolPacket &packet) {
          packet.destinationNode == "ANDROID_APP";
 }
 
+bool testForceGatewayRouteEnabled() {
+  return TEST_FORCE_GATEWAY_ROUTE == 1;
+}
+
+bool isForcedGatewayRoutePair(const String &sourceNode, const String &destinationNode) {
+  return (sourceNode == "nodeA1" && destinationNode == "nodeA2") ||
+         (sourceNode == "nodeA2" && destinationNode == "nodeA1");
+}
+
+bool shouldForceOriginatingGatewayRoute(const String &sourceNode, const String &destinationNode) {
+  return testForceGatewayRouteEnabled() &&
+         isForcedGatewayRoutePair(sourceNode, destinationNode);
+}
+
+String forcedRouteNodeAt(const ProtocolPacket &packet, int index) {
+  if (packet.sourceNode == "nodeA1" && packet.destinationNode == "nodeA2") {
+    switch (index) {
+      case 0: return "nodeA1";
+      case 1: return "gatewayA";
+      case 2: return "gatewayB";
+      case 3: return "nodeA2";
+      default: return "";
+    }
+  }
+  if (packet.sourceNode == "nodeA2" && packet.destinationNode == "nodeA1") {
+    switch (index) {
+      case 0: return "nodeA2";
+      case 1: return "gatewayB";
+      case 2: return "gatewayA";
+      case 3: return "nodeA1";
+      default: return "";
+    }
+  }
+  return "";
+}
+
+int forcedRouteIndexOf(const ProtocolPacket &packet, const String &nodeId) {
+  for (int i = 0; i < 4; ++i) {
+    if (forcedRouteNodeAt(packet, i) == nodeId) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+String forcedOriginGatewayFor(const String &sourceNode, const String &destinationNode) {
+  if (sourceNode == "nodeA1" && destinationNode == "nodeA2") {
+    return "gatewayA";
+  }
+  if (sourceNode == "nodeA2" && destinationNode == "nodeA1") {
+    return "gatewayB";
+  }
+  return "";
+}
+
+String appendHopIfMissing(const String &hopPath, const String &nodeId) {
+  if (nodeId.length() == 0) {
+    return hopPath;
+  }
+  if (hopPath.length() == 0) {
+    return nodeId;
+  }
+  const String suffix = String(">") + nodeId;
+  if (hopPath == nodeId || hopPath.endsWith(suffix)) {
+    return hopPath;
+  }
+  return hopPath + ">" + nodeId;
+}
+
+void logForcedRoute(const String &sourceNode, const String &destinationNode, const String &viaNode) {
+  Serial.println("[FORCED_ROUTE]");
+  Serial.print("source=");
+  Serial.println(sourceNode);
+  Serial.print("dest=");
+  Serial.println(destinationNode);
+  Serial.print("via=");
+  Serial.println(viaNode);
+}
+
+void logForcedRouteIgnore(const ProtocolPacket &packet, const String &reason) {
+  Serial.print("[FORCED_ROUTE] ignore reason=");
+  Serial.print(reason);
+  Serial.print(" current=");
+  Serial.print(SIM_NODE_ID);
+  Serial.print(" source=");
+  Serial.print(packet.sourceNode);
+  Serial.print(" dest=");
+  Serial.print(packet.destinationNode);
+  Serial.print(" previousHop=");
+  Serial.println(packet.previousHop);
+}
+
+void logForcedForward(const String &fromNode, const String &toNode) {
+  Serial.println("[FORWARD]");
+  Serial.print("from=");
+  Serial.println(fromNode);
+  Serial.print("to=");
+  Serial.println(toNode);
+}
+
+ForcedRouteAction forcedRouteActionForCurrentNode(const ProtocolPacket &packet) {
+  if (!testForceGatewayRouteEnabled() ||
+      packet.packetType != "MESSAGE" ||
+      !isForcedGatewayRoutePair(packet.sourceNode, packet.destinationNode)) {
+    return ForcedRouteAction::NotForced;
+  }
+
+  const int currentIndex = forcedRouteIndexOf(packet, String(SIM_NODE_ID));
+  if (currentIndex <= 0) {
+    return ForcedRouteAction::Ignore;
+  }
+
+  const String expectedPreviousHop = forcedRouteNodeAt(packet, currentIndex - 1);
+  if (packet.previousHop != expectedPreviousHop) {
+    return ForcedRouteAction::Ignore;
+  }
+
+  if (String(SIM_NODE_ID) == packet.destinationNode) {
+    return ForcedRouteAction::Deliver;
+  }
+
+  return ForcedRouteAction::Relay;
+}
+
+String forcedRouteNextHopForCurrentNode(const ProtocolPacket &packet) {
+  const int currentIndex = forcedRouteIndexOf(packet, String(SIM_NODE_ID));
+  if (currentIndex < 0 || currentIndex >= 3) {
+    return "";
+  }
+  return forcedRouteNodeAt(packet, currentIndex + 1);
+}
+
 String sanitizeLoRaRelayField(String value) {
   value.replace("|", "/");
   value.replace("\r", " ");
@@ -1214,6 +1357,12 @@ void deliverToBluetooth(const ProtocolPacket &packet) {
 }
 
 void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceLabel) {
+  const ForcedRouteAction forcedRouteAction = forcedRouteActionForCurrentNode(packet);
+  if (forcedRouteAction == ForcedRouteAction::Ignore) {
+    logForcedRouteIgnore(packet, "unexpected_path");
+    return;
+  }
+
   if (hasSeenMessage(packet.packetId)) {
     Serial.print("[DUPLICATE_DROP] packet_id=");
     Serial.print(packet.packetId);
@@ -1238,6 +1387,11 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
   }
 
   if (protocolPacketTargetsLocalNode(packet)) {
+    ProtocolPacket deliveryPacket = packet;
+    if (forcedRouteAction == ForcedRouteAction::Deliver) {
+      deliveryPacket.hopPath = appendHopIfMissing(deliveryPacket.hopPath, String(SIM_NODE_ID));
+    }
+
     Serial.print("[ROUTE_DECISION] deliver_local packet_id=");
     Serial.print(packet.packetId);
     Serial.print(" source=");
@@ -1250,10 +1404,10 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
     if (sourceLabel == "lora") {
       Serial.print(GW_JSON_PREFIX);
       Serial.print(" ");
-      Serial.println(serializeProtocolPacket(packet));
+      Serial.println(serializeProtocolPacket(deliveryPacket));
     }
 
-    deliverToBluetooth(packet);
+    deliverToBluetooth(deliveryPacket);
     return;
   }
 
@@ -1287,6 +1441,13 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
     Serial.print(" test_packet=true");
   }
   Serial.println();
+
+  if (forcedRouteAction == ForcedRouteAction::Relay) {
+    const String nextHop = forcedRouteNextHopForCurrentNode(packet);
+    if (nextHop.length() > 0) {
+      logForcedForward(String(SIM_NODE_ID), nextHop);
+    }
+  }
 
   const String relayLine = serializeLoRaRelayPacket(relayPacket);
   sendLoRaLine(relayLine);
@@ -1701,10 +1862,28 @@ void processIncomingBluetoothProtocolPacket(const String &line) {
 
     if (shouldForwardToLoRa) {
       ProtocolPacket relayPacket = result.packet;
+      const bool forceGatewayRoute =
+        shouldForceOriginatingGatewayRoute(String(SIM_NODE_ID), relayPacket.destinationNode);
+
+      if (forceGatewayRoute) {
+        relayPacket.sourceNode = String(SIM_NODE_ID);
+      }
+
       relayPacket.hopCount = 0;
       relayPacket.ttl = DEFAULT_TTL;
       relayPacket.previousHop = String(SIM_NODE_ID);
-      relayPacket.hopPath = String(SIM_NODE_ID) + ">" + result.packet.destinationNode;
+      relayPacket.hopPath = forceGatewayRoute
+        ? String(SIM_NODE_ID)
+        : String(SIM_NODE_ID) + ">" + result.packet.destinationNode;
+
+      if (forceGatewayRoute) {
+        logForcedRoute(
+          relayPacket.sourceNode,
+          relayPacket.destinationNode,
+          forcedOriginGatewayFor(relayPacket.sourceNode, relayPacket.destinationNode)
+        );
+      }
+
       forwardedToLoRa = sendLoRaLine(serializeLoRaRelayPacket(relayPacket));
     }
 
@@ -2095,6 +2274,8 @@ void printStatus() {
   Serial.println(outboundCounter);
   Serial.print("  node_table_count=");
   Serial.println(nodeTableCount);
+  Serial.print("  test_force_gateway_route=");
+  Serial.println(testForceGatewayRouteEnabled() ? "ENABLED" : "DISABLED");
 }
 
 void setOfflineCommand(const String &line) {
@@ -2299,6 +2480,8 @@ void printStartupBanner() {
   Serial.println(DEFAULT_DEST_ID);
   Serial.print("Bluetooth: ");
   Serial.println(ENABLE_BLUETOOTH ? "ENABLED" : "DISABLED");
+  Serial.print("Test force gateway route: ");
+  Serial.println(testForceGatewayRouteEnabled() ? "ENABLED" : "DISABLED");
   Serial.println("Simulation only: Serial input/output represents MANET packets.");
   Serial.println("Commands: SEND <DEST> <MESSAGE>, STATUS, NEIGHBORS, OFFLINE, ONLINE");
   Serial.println("Optional node state commands: OFFLINE <NODE_ID>, ONLINE <NODE_ID>");
