@@ -70,6 +70,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ph.edu.pup.manetmessenger.ui.theme.PUPMANETMessengerTheme
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -93,9 +94,11 @@ enum class RouteLabel(val label: String) {
 
 enum class MessageStatus(val label: String) {
     Queued("Queued"),
+    Pending("Pending"),
     Routing("Routing"),
     Relaying("Relaying"),
     Delivered("Delivered"),
+    Unknown("Unknown"),
     Failed("Failed"),
     Retrying("Retrying")
 }
@@ -182,6 +185,22 @@ enum class BluetoothProtocolPacketType(val wireName: String) {
     RouteReply("ROUTE_REPLY"),
     Status("STATUS"),
     Error("ERROR")
+}
+
+enum class BridgeAckKind(val wireName: String) {
+    Delivery("DELIVERY"),
+    Forward("FORWARD"),
+    Hop("HOP"),
+    Unknown("UNKNOWN")
+}
+
+enum class BridgeAckStatus(val wireName: String) {
+    Delivered("DELIVERED"),
+    Forwarded("FORWARDED"),
+    Accepted("ACCEPTED"),
+    Duplicate("DUPLICATE"),
+    Failed("FAILED"),
+    Unknown("UNKNOWN")
 }
 
 data class NetworkState(
@@ -292,6 +311,24 @@ data class BluetoothProtocolPacket(
     val timestamp: Long,
     val status: String,
     val checksumPlaceholder: String = CHECKSUM_PLACEHOLDER
+)
+
+data class BridgeAckInfo(
+    val ackFor: String,
+    val ackType: BridgeAckKind,
+    val ackStatus: BridgeAckStatus,
+    val ackSource: String,
+    val finalDestinationNode: String,
+    val originNode: String,
+    val reason: String,
+    val route: List<String>
+)
+
+data class BridgeAckExchange(
+    val sentLine: String,
+    val deliveryAck: BluetoothProtocolPacket?,
+    val diagnosticAcks: List<BluetoothProtocolPacket>,
+    val ignoredLines: List<String>
 )
 
 data class ProtocolValidationStatus(
@@ -751,6 +788,63 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
         }.onFailure { disconnect() }
     }
 
+    @SuppressLint("MissingPermission")
+    suspend fun sendLineAndWaitForDeliveryAck(
+        line: String,
+        ackFor: String,
+        timeoutMs: Long = 12000L
+    ): Result<BridgeAckExchange> = withContext(Dispatchers.IO) {
+        val activeSocket = socket
+            ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
+
+        val actualDevice = activeSocket.remoteDevice
+        val name = actualDevice.name ?: "unknown"
+        val address = actualDevice.address ?: "unknown"
+
+        runCatching {
+            val diagnosticAcks = mutableListOf<BluetoothProtocolPacket>()
+            val ignoredLines = mutableListOf<String>()
+
+            drainAvailableLines(activeSocket)
+            activeSocket.outputStream.write((line + "\n").toByteArray(Charsets.UTF_8))
+            activeSocket.outputStream.flush()
+            Log.d("MANET_BT", "[ANDROID_SEND_SOCKET] name=$name address=$address localBridgeNode=${localEsp32NodeId(name)} bytes=${line.length}")
+
+            val deadline = System.currentTimeMillis() + timeoutMs
+            val input = activeSocket.inputStream
+            while (System.currentTimeMillis() < deadline) {
+                if (input.available() > 0) {
+                    val responseLine = readLineBlocking(activeSocket)
+                    val responsePacket = deserializeBluetoothProtocolPacket(responseLine)
+                    val ackInfo = responsePacket?.let { parseBridgeAckInfo(it) }
+
+                    if (responsePacket?.packetType == BluetoothProtocolPacketType.Ack && ackInfo?.ackFor == ackFor) {
+                        if (ackInfo.ackType == BridgeAckKind.Delivery) {
+                            return@runCatching BridgeAckExchange(
+                                sentLine = line,
+                                deliveryAck = responsePacket,
+                                diagnosticAcks = diagnosticAcks,
+                                ignoredLines = ignoredLines
+                            )
+                        }
+                        diagnosticAcks.add(responsePacket)
+                        Log.d("MANET_BT", "[BRIDGE_ACK_DIAG] ackFor=$ackFor type=${ackInfo.ackType.wireName} status=${ackInfo.ackStatus.wireName}")
+                    } else {
+                        ignoredLines.add(responseLine)
+                    }
+                }
+                Thread.sleep(100L)
+            }
+
+            BridgeAckExchange(
+                sentLine = line,
+                deliveryAck = null,
+                diagnosticAcks = diagnosticAcks,
+                ignoredLines = ignoredLines
+            )
+        }.onFailure { disconnect() }
+    }
+
     fun disconnect() {
         runCatching { socket?.close() }
         socket = null
@@ -960,6 +1054,7 @@ private class MessageQueueManager(
         return QueueStats(
             queuedCount = messages.count {
                 it.status == MessageStatus.Queued ||
+                    it.status == MessageStatus.Pending ||
                     it.status == MessageStatus.Routing ||
                     it.status == MessageStatus.Relaying ||
                     it.status == MessageStatus.Retrying
@@ -1113,6 +1208,7 @@ fun MessengerApp() {
     var autoReceivedPacketIds by remember { mutableStateOf(setOf<String>()) }
     var discoveredNodes by remember { mutableStateOf(listOf<DiscoveredNode>()) }
     var selectedLiveDestinationId by remember { mutableStateOf<String?>(null) }
+    var pendingBridgeAckMessageIds by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var nodeListStatus by remember { mutableStateOf("Not requested") }
     var validationItems by remember { mutableStateOf(defaultValidationItems()) }
     var activeTransport by remember {
@@ -1127,6 +1223,61 @@ fun MessengerApp() {
     val routingEngine = remember { AdaptiveRoutingEngine() }
     val bluetoothTransportManager = remember { BluetoothTransportManager() }
     val androidBluetoothSocketClient = remember { AndroidBluetoothSocketClient(context.applicationContext) }
+    fun applyDeliveryAckToMessage(ackPacket: BluetoothProtocolPacket): Boolean {
+        val ackInfo = parseBridgeAckInfo(ackPacket) ?: return false
+        if (ackInfo.ackType != BridgeAckKind.Delivery) {
+            eventLog.add(0, "[BRIDGE_ACK_DIAG] ackFor=${ackInfo.ackFor} type=${ackInfo.ackType.wireName} status=${ackInfo.ackStatus.wireName}")
+            while (eventLog.size > 10) {
+                eventLog.removeAt(eventLog.lastIndex)
+            }
+            return false
+        }
+
+        val messageId = pendingBridgeAckMessageIds[ackInfo.ackFor]
+        val messageIndex = if (messageId != null) {
+            messages.indexOfFirst { it.id == messageId }
+        } else {
+            messages.indexOfFirst { it.packet.packetId == ackInfo.ackFor }
+        }
+        if (messageIndex < 0) {
+            return false
+        }
+
+        val finalStatus = when (ackInfo.ackStatus) {
+            BridgeAckStatus.Delivered -> MessageStatus.Delivered
+            BridgeAckStatus.Failed -> MessageStatus.Failed
+            else -> MessageStatus.Unknown
+        }
+        val progress = when (ackInfo.ackStatus) {
+            BridgeAckStatus.Delivered -> "Bridge ACK: Delivered to ${ackInfo.ackSource}"
+            BridgeAckStatus.Failed -> "Bridge ACK: Failed - ${ackInfo.reason.ifBlank { "destination reported failure" }}"
+            else -> "Bridge ACK: Unknown"
+        }
+        val finalPacket = messages[messageIndex].packet.copy(
+            deliveryStatus = finalStatus.label,
+            selectedTransport = RouteLabel.Lora.label,
+            deliveredAt = if (finalStatus == MessageStatus.Delivered) {
+                System.currentTimeMillis() / 1000L
+            } else {
+                messages[messageIndex].packet.deliveredAt
+            }
+        )
+
+        messages[messageIndex] = messages[messageIndex].copy(
+            status = finalStatus,
+            packet = finalPacket,
+            deliveryProgress = progress,
+            note = "Destination delivery ACK matched ${ackInfo.ackFor}"
+        )
+        updatePacketLog(packetLog, finalPacket)
+        pendingBridgeAckMessageIds = pendingBridgeAckMessageIds - ackInfo.ackFor
+        bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("DELIVERY_ACK")
+        eventLog.add(0, "[BRIDGE_ACK] ${finalStatus.label} ackFor=${ackInfo.ackFor} source=${ackInfo.ackSource}")
+        while (eventLog.size > 10) {
+            eventLog.removeAt(eventLog.lastIndex)
+        }
+        return true
+    }
     val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { grantResults ->
@@ -1231,6 +1382,16 @@ fun MessengerApp() {
                                     lastError = "None"
                                 )
                                 bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("NODE_LIST")
+                            }
+                        }
+                        if (line.contains("\"packetType\":\"ACK\"")) {
+                            val ackPacket = deserializeBluetoothProtocolPacket(line)
+                            if (ackPacket != null) {
+                                applyDeliveryAckToMessage(ackPacket)
+                                realBluetoothSocketState = realBluetoothSocketState.copy(
+                                    lastReceivedLine = "Bridge ACK received",
+                                    lastError = "None"
+                                )
                             }
                         }
                         if (line.contains("\"packetType\":\"MESSAGE\"")) {
@@ -1371,7 +1532,7 @@ fun MessengerApp() {
                                         snr = 0.0,
                                         gatewayStatus = selectedLiveDestination?.let { "Gateway ${it.gatewayId}" } ?: "fallback",
                                         satelliteStatus = "n/a",
-                                        deliveryStatus = MessageStatus.Relaying.label,
+                                        deliveryStatus = MessageStatus.Pending.label,
                                         queuedAt = System.currentTimeMillis() / 1000L
                                     )
                                     messages.add(
@@ -1381,7 +1542,7 @@ fun MessengerApp() {
                                             sourceNode = localBridgeNode,
                                             targetNode = destinationNode,
                                             route = RouteLabel.Lora,
-                                            status = MessageStatus.Relaying,
+                                            status = MessageStatus.Pending,
                                             metrics = SimMetrics(0, 0.0, livePath.size.coerceAtLeast(1), "Live", "n/a"),
                                             path = livePath,
                                             note = "Live bridge to $actualSocketDevice ($actualSocketAddress) -> LoRa -> $destinationNode ($destinationMode)",
@@ -1391,7 +1552,7 @@ fun MessengerApp() {
                                             delayMs = 0L,
                                             packet = bridgePacket,
                                             retryCount = 0,
-                                            deliveryProgress = "Sending over LoRa bridge..."
+                                            deliveryProgress = "Bridge ACK: Pending"
                                         )
                                     )
                                     draftMessage = ""
@@ -1399,35 +1560,47 @@ fun MessengerApp() {
                                     if (packetLog.size > 8) {
                                         packetLog.removeAt(packetLog.lastIndex)
                                     }
+                                    pendingBridgeAckMessageIds = pendingBridgeAckMessageIds + (btPacket.packetId to messageId)
                                     queueScope.launch {
-                                        val result = androidBluetoothSocketClient.sendLineAndWaitForResponse(line, 7000L)
+                                        val result = androidBluetoothSocketClient.sendLineAndWaitForDeliveryAck(line, btPacket.packetId, 12000L)
                                         val exchangeIndex = messages.indexOfFirst { it.id == messageId }
                                         if (exchangeIndex >= 0) {
                                             result.fold(
                                                 onSuccess = { exchange ->
-                                                    val response = exchange.second
-                                                    val forwarded = response?.contains("FORWARDED_OVER_LORA") == true
-                                                    val finalPacket = messages[exchangeIndex].packet.copy(
-                                                        deliveryStatus = if (forwarded) MessageStatus.Delivered.label else MessageStatus.Failed.label,
-                                                        selectedTransport = RouteLabel.Lora.label
-                                                    )
-                                                    messages[exchangeIndex] = messages[exchangeIndex].copy(
-                                                        status = if (forwarded) MessageStatus.Delivered else MessageStatus.Failed,
-                                                        packet = finalPacket,
-                                                        deliveryProgress = if (forwarded) "Forwarded over LoRa" else "Bridge ACK: ${response ?: "No response"}",
-                                                        note = if (forwarded) "Live bridge forwarded to $destinationNode" else "Live bridge did not confirm LoRa forwarding"
-                                                    )
-                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(btPacket.packetId)
-                                                    if (forwarded) {
-                                                        bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("LORA_ACK")
+                                                    val handledDeliveryAck = exchange.deliveryAck?.let { applyDeliveryAckToMessage(it) } == true
+                                                    val diagnosticSummary = if (exchange.diagnosticAcks.isNotEmpty()) {
+                                                        " | diagnostic ACKs=${exchange.diagnosticAcks.size}"
+                                                    } else {
+                                                        ""
                                                     }
-                                                    updatePacketLog(packetLog, finalPacket)
-                                                    eventLog.add(0, "Live bridge ${if (forwarded) "forwarded" else "failed"} ${btPacket.packetId} to $destinationNode")
+                                                    bluetoothPacketBridge = bluetoothPacketBridge.recordOutbound(btPacket.packetId)
+                                                    if (exchange.diagnosticAcks.isNotEmpty()) {
+                                                        bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("ACK_DIAGNOSTIC")
+                                                    }
+                                                    if (!handledDeliveryAck) {
+                                                        val currentIndex = messages.indexOfFirst { it.id == messageId }
+                                                        if (currentIndex >= 0 && messages[currentIndex].status == MessageStatus.Pending) {
+                                                            val unknownPacket = messages[currentIndex].packet.copy(
+                                                                deliveryStatus = MessageStatus.Unknown.label,
+                                                                selectedTransport = RouteLabel.Lora.label
+                                                            )
+                                                            messages[currentIndex] = messages[currentIndex].copy(
+                                                                status = MessageStatus.Unknown,
+                                                                packet = unknownPacket,
+                                                                deliveryProgress = "Bridge ACK: Unknown",
+                                                                note = "Destination delivery ACK pending or unknown$diagnosticSummary"
+                                                            )
+                                                            updatePacketLog(packetLog, unknownPacket)
+                                                        }
+                                                        pendingBridgeAckMessageIds = pendingBridgeAckMessageIds - btPacket.packetId
+                                                    }
+                                                    eventLog.add(0, "[BRIDGE_ACK_WAIT] ackFor=${btPacket.packetId} handled=$handledDeliveryAck diagnostics=${exchange.diagnosticAcks.size}")
                                                     while (eventLog.size > 10) {
                                                         eventLog.removeAt(eventLog.lastIndex)
                                                     }
                                                 },
                                                 onFailure = { error ->
+                                                    pendingBridgeAckMessageIds = pendingBridgeAckMessageIds - btPacket.packetId
                                                     val failedPacket = messages[exchangeIndex].packet.copy(
                                                         deliveryStatus = MessageStatus.Failed.label
                                                     )
@@ -4653,75 +4826,158 @@ private fun sampleIncomingAckPacket(packet: LoraManetPacket): BluetoothProtocolP
     return BluetoothProtocolPacket(
         packetType = BluetoothProtocolPacketType.Ack,
         packetId = "ACK-${packet.packetId}",
-        sourceNode = "ESP32_BRIDGE",
+        sourceNode = packet.destinationNodeId,
         destinationNode = packet.sourceNodeId,
-        payload = "RECEIVED ${packet.packetId}",
-        hopPath = listOf("ESP32_BRIDGE", packet.sourceNodeId),
+        payload = "{\"ackVersion\":1,\"ackType\":\"DELIVERY\",\"ackFor\":\"${packet.packetId}\",\"ackStatus\":\"DELIVERED\",\"originNode\":\"${packet.sourceNodeId}\",\"finalDestinationNode\":\"${packet.destinationNodeId}\",\"ackSource\":\"${packet.destinationNodeId}\",\"reason\":\"\",\"route\":[\"${packet.sourceNodeId}\",\"${packet.destinationNodeId}\"]}",
+        hopPath = listOf(packet.destinationNodeId, packet.sourceNodeId),
         retryCount = 0,
         timestamp = System.currentTimeMillis() / 1000L,
-        status = "RECEIVED/ACK"
+        status = "DELIVERED"
     )
 }
 
 private fun serializeBluetoothProtocolPacket(packet: BluetoothProtocolPacket): String {
     return """
         {
-          "protocolVersion": "${packet.protocolVersion}",
-          "packetType": "${packet.packetType.wireName}",
-          "packetId": "${packet.packetId}",
-          "sourceNode": "${packet.sourceNode}",
-          "destinationNode": "${packet.destinationNode}",
-          "payload": "${packet.payload}",
-          "hopPath": "${packet.hopPath.joinToString(">")}",
+          "protocolVersion": "${jsonEscape(packet.protocolVersion)}",
+          "packetType": "${jsonEscape(packet.packetType.wireName)}",
+          "packetId": "${jsonEscape(packet.packetId)}",
+          "sourceNode": "${jsonEscape(packet.sourceNode)}",
+          "destinationNode": "${jsonEscape(packet.destinationNode)}",
+          "payload": "${jsonEscape(packet.payload)}",
+          "hopPath": "${jsonEscape(packet.hopPath.joinToString(">"))}",
           "retryCount": "${packet.retryCount}",
           "timestamp": "${packet.timestamp}",
-          "status": "${packet.status}",
-          "checksum": "${packet.checksumPlaceholder}"
+          "status": "${jsonEscape(packet.status)}",
+          "checksum": "${jsonEscape(packet.checksumPlaceholder)}"
         }
     """.trimIndent()
 }
 
 private fun compactSerializedPacketText(packet: BluetoothProtocolPacket): String {
     return "{" +
-        "\"protocolVersion\":\"${packet.protocolVersion}\"," +
-        "\"packetType\":\"${packet.packetType.wireName}\"," +
-        "\"packetId\":\"${packet.packetId}\"," +
-        "\"sourceNode\":\"${packet.sourceNode}\"," +
-        "\"destinationNode\":\"${packet.destinationNode}\"," +
-        "\"payload\":\"${packet.payload}\"," +
-        "\"hopPath\":\"${packet.hopPath.joinToString(">")}\"," +
+        "\"protocolVersion\":\"${jsonEscape(packet.protocolVersion)}\"," +
+        "\"packetType\":\"${jsonEscape(packet.packetType.wireName)}\"," +
+        "\"packetId\":\"${jsonEscape(packet.packetId)}\"," +
+        "\"sourceNode\":\"${jsonEscape(packet.sourceNode)}\"," +
+        "\"destinationNode\":\"${jsonEscape(packet.destinationNode)}\"," +
+        "\"payload\":\"${jsonEscape(packet.payload)}\"," +
+        "\"hopPath\":\"${jsonEscape(packet.hopPath.joinToString(">"))}\"," +
         "\"retryCount\":\"${packet.retryCount}\"," +
         "\"timestamp\":\"${packet.timestamp}\"," +
-        "\"status\":\"${packet.status}\"," +
-        "\"checksum\":\"${packet.checksumPlaceholder}\"" +
+        "\"status\":\"${jsonEscape(packet.status)}\"," +
+        "\"checksum\":\"${jsonEscape(packet.checksumPlaceholder)}\"" +
         "}"
 }
 
+private fun jsonEscape(value: String): String {
+    return value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+}
+
 private fun deserializeBluetoothProtocolPacket(rawPacket: String): BluetoothProtocolPacket? {
-    fun valueFor(key: String): String? {
-        return Regex("\"$key\"\\s*:\\s*\"([^\"]*)\"")
-            .find(rawPacket)
-            ?.groupValues
-            ?.getOrNull(1)
-    }
+    val json = runCatching { JSONObject(rawPacket) }.getOrNull() ?: return null
 
     val packetType = BluetoothProtocolPacketType.entries.firstOrNull {
-        it.wireName == valueFor("packetType")
+        it.wireName == json.optString("packetType")
     } ?: return null
 
     return BluetoothProtocolPacket(
-        protocolVersion = valueFor("protocolVersion") ?: return null,
+        protocolVersion = json.optString("protocolVersion").takeIf { it.isNotBlank() } ?: return null,
         packetType = packetType,
-        packetId = valueFor("packetId") ?: return null,
-        sourceNode = valueFor("sourceNode") ?: return null,
-        destinationNode = valueFor("destinationNode") ?: return null,
-        payload = valueFor("payload") ?: "",
-        hopPath = valueFor("hopPath")?.split(">")?.filter { it.isNotBlank() } ?: emptyList(),
-        retryCount = valueFor("retryCount")?.toIntOrNull() ?: 0,
-        timestamp = valueFor("timestamp")?.toLongOrNull() ?: 0L,
-        status = valueFor("status") ?: return null,
-        checksumPlaceholder = valueFor("checksum") ?: CHECKSUM_PLACEHOLDER
+        packetId = json.optString("packetId").takeIf { it.isNotBlank() } ?: return null,
+        sourceNode = json.optString("sourceNode").takeIf { it.isNotBlank() } ?: return null,
+        destinationNode = json.optString("destinationNode").takeIf { it.isNotBlank() } ?: return null,
+        payload = json.optString("payload"),
+        hopPath = json.optString("hopPath").split(">").filter { it.isNotBlank() },
+        retryCount = json.optString("retryCount").toIntOrNull() ?: json.optInt("retryCount", 0),
+        timestamp = json.optString("timestamp").toLongOrNull() ?: json.optLong("timestamp", 0L),
+        status = json.optString("status").takeIf { it.isNotBlank() } ?: return null,
+        checksumPlaceholder = json.optString("checksum", CHECKSUM_PLACEHOLDER)
     )
+}
+
+private fun parseBridgeAckInfo(packet: BluetoothProtocolPacket): BridgeAckInfo? {
+    if (packet.packetType != BluetoothProtocolPacketType.Ack) {
+        return null
+    }
+
+    val values = bridgeAckPayloadValues(packet.payload)
+    val ackFor = values["ackFor"]
+        ?: values["accepted"]
+        ?: packet.packetId.removePrefix("ACK-").takeIf { it != packet.packetId }
+        ?: return null
+    val ackTypeText = values["ackType"] ?: inferredAckType(packet.status, values)
+    val ackStatusText = values["ackStatus"] ?: inferredAckStatus(packet.status, values)
+
+    val ackType = BridgeAckKind.entries.firstOrNull { it.wireName == ackTypeText.uppercase(Locale.US) }
+        ?: BridgeAckKind.Unknown
+    val ackStatus = BridgeAckStatus.entries.firstOrNull { it.wireName == ackStatusText.uppercase(Locale.US) }
+        ?: BridgeAckStatus.Unknown
+
+    return BridgeAckInfo(
+        ackFor = ackFor,
+        ackType = ackType,
+        ackStatus = ackStatus,
+        ackSource = values["ackSource"] ?: packet.sourceNode,
+        finalDestinationNode = values["finalDestinationNode"] ?: packet.sourceNode,
+        originNode = values["originNode"] ?: packet.destinationNode,
+        reason = values["reason"].orEmpty(),
+        route = values["route"]?.split(">")
+            ?.filter { it.isNotBlank() }
+            ?: packet.hopPath
+    )
+}
+
+private fun bridgeAckPayloadValues(payload: String): Map<String, String> {
+    val trimmed = payload.trim()
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+        val json = runCatching { JSONObject(trimmed) }.getOrNull()
+        if (json != null) {
+            return json.keys().asSequence().associateWith { key ->
+                val value = json.opt(key)
+                when (value) {
+                    is org.json.JSONArray -> (0 until value.length())
+                        .joinToString(">") { index -> value.optString(index) }
+                    else -> value?.toString().orEmpty()
+                }
+            }
+        }
+    }
+
+    return trimmed.split(";")
+        .mapNotNull { token ->
+            val separator = token.indexOf("=")
+            if (separator <= 0) {
+                null
+            } else {
+                token.substring(0, separator).trim() to token.substring(separator + 1).trim()
+            }
+        }
+        .toMap()
+}
+
+private fun inferredAckType(status: String, values: Map<String, String>): String {
+    return when {
+        values["forwarding"]?.contains("FORWARDED", ignoreCase = true) == true -> BridgeAckKind.Forward.wireName
+        status.contains("FORWARDED", ignoreCase = true) -> BridgeAckKind.Forward.wireName
+        status.contains("DELIVERED", ignoreCase = true) -> BridgeAckKind.Delivery.wireName
+        else -> BridgeAckKind.Unknown.wireName
+    }
+}
+
+private fun inferredAckStatus(status: String, values: Map<String, String>): String {
+    return when {
+        values["forwarding"]?.contains("FORWARDED", ignoreCase = true) == true -> BridgeAckStatus.Forwarded.wireName
+        status.contains("FORWARDED", ignoreCase = true) -> BridgeAckStatus.Forwarded.wireName
+        status.contains("DELIVERED", ignoreCase = true) -> BridgeAckStatus.Delivered.wireName
+        status.contains("FAILED", ignoreCase = true) -> BridgeAckStatus.Failed.wireName
+        status.contains("ACCEPTED", ignoreCase = true) -> BridgeAckStatus.Accepted.wireName
+        else -> BridgeAckStatus.Unknown.wireName
+    }
 }
 
 private fun validateBluetoothProtocolPacket(packet: BluetoothProtocolPacket): ProtocolValidationStatus {
@@ -5161,10 +5417,12 @@ private fun routeAvailabilityLabel(node: SimNode): String {
 private fun messageStatusColors(status: MessageStatus): Pair<Color, Color> {
     return when (status) {
         MessageStatus.Queued -> Color(0xFFFFF3CD) to Color(0xFF5C4200)
+        MessageStatus.Pending -> Color(0xFFE6F0FF) to Color(0xFF174A7C)
         MessageStatus.Routing -> Color(0xFFFFF3CD) to Color(0xFF5C4200)
         MessageStatus.Relaying -> Color(0xFFDDEBFF) to Color(0xFF143C70)
         MessageStatus.Retrying -> Color(0xFFFFE3C2) to Color(0xFF7A4100)
         MessageStatus.Delivered -> Color(0xFFD6F1E7) to Color(0xFF145C48)
+        MessageStatus.Unknown -> Color(0xFFE7E0EC) to Color(0xFF49454F)
         MessageStatus.Failed -> Color(0xFFFFDAD6) to Color(0xFF8C1D18)
     }
 }

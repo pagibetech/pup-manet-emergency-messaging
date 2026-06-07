@@ -66,6 +66,13 @@ STEP046B-A Bridge ACK reliability policy:
 - Android should wait up to 12 seconds for a matching `DELIVERY` ACK, show pending/unknown states without false failure, and never show raw JSON as the primary Bridge ACK display.
 - STEP046B implementation must preserve LoRa as the MANET backbone and Bluetooth as phone-to-node access only.
 
+STEP046B Bridge ACK implementation:
+- Android phone-to-node access now creates a pending ACK state for live Chat sends, correlates ACKs by `ackFor`, waits up to 12 seconds for final destination `DELIVERY` ACKs, and displays `Pending`, `Delivered`, or `Unknown` instead of raw ACK JSON.
+- ESP32 destination nodes now generate correlated `ACK` packets after local message delivery. ACK payload metadata includes `ackType=DELIVERY`, `ackFor`, `ackStatus=DELIVERED`, `originNode`, `finalDestinationNode`, `ackSource`, and route data.
+- Local bridge forwarding ACKs remain `FORWARD` diagnostics only.
+- STEP046B does not change route decisions, route discovery, Bluetooth topology, Raspberry Pi gateway service, or the compact `BT1` LoRa relay format.
+- Local build validation is PASS for Android and `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`; physical ACK validation is pending.
+
 STEP042A discovery export fix:
 - Root cause: compact LoRa relay HELLO packets such as `HELLO-nodeA1` and `HELLO-nodeA2` were parsed as `MESSAGE` unconditionally, then routed, relayed, or duplicate-dropped before node table insertion.
 - Fix in `esp32-node-platformio/src/main.cpp`: infer compact relay HELLO packets from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId` payload, learn HELLO packets before route/duplicate handling, store `hopCount` in node table entries, and log `[NEIGHBOR_ADD]`, `[NEIGHBOR_UPDATE]`, and `[NODE_LIST_EXPORT]`.
@@ -177,7 +184,7 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP046B Bridge ACK Reliability Improvement - requirements defined / implementation pending.
+- STEP046B Bridge ACK Reliability Improvement - implemented / local build PASS / physical validation pending.
 - STEP046B-A Bridge ACK Requirements Definition - COMPLETE / planning only.
 - STEP047 Bluetooth Transport Layer - PASS / COMPLETE after physical validation.
 - STEP046A Controlled Multi-Hop Lab Mode - PASS / COMPLETE after physical forced-route validation; production default restored.

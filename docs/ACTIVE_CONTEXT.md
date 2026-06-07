@@ -18,11 +18,11 @@ Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
-Current milestone: STEP046B - Bridge ACK Reliability Improvement. Current / Pending Scope Confirmation; no implementation started.
+Current milestone: STEP046B - Bridge ACK Reliability Improvement. Implementation and local build validation complete; physical validation pending.
 
 Current feature: STEP047 is physically validated and closed. Bluetooth is Android phone-to-local ESP32 access only; Bluetooth is not a node-to-node MANET transport; LoRa remains the MANET backbone.
 
-STEP046B-A planning status: Bridge ACK requirements defined in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`. No source code, Android logic, ESP32 firmware, Raspberry Pi gateway service, or routing logic modified.
+STEP046B-A planning status: Bridge ACK requirements defined in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`.
 
 STEP046B-A Bridge ACK definition: Bridge ACK is the user-facing confirmation that a phone-originated message sent through the local ESP32 bridge was acknowledged by the final destination node. It is not merely Android Bluetooth write success, local ESP32 acceptance, gateway forwarding, or hop acceptance.
 
@@ -30,7 +30,13 @@ STEP046B-A ACK source decision: authoritative user-facing ACK source is the dest
 
 STEP046B-A safest design: use a two-tier ACK model. `DELIVERY` ACK from the final destination node drives the primary UI. `FORWARD` and `HOP` ACKs may update diagnostics only. Android should match ACKs by `ackFor == original packetId`, wait up to 12 seconds for a matching delivery ACK, show `Pending` while waiting, show `Delivered to <nodeId>` only for a destination delivery ACK, and show `Delivery ACK pending` or `Unknown` on timeout instead of false failure or raw JSON.
 
-Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP044 strict BT1 validation, STEP045A HELLO propagation, STEP046A lab-mode forced routing overlay, and STEP047 Bluetooth access-layer status diagnostics while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B and STEP047 phone-to-node Bluetooth access-layer UI wording.
+STEP046B implementation status: Android and ESP32 ACK reliability changes are implemented and locally build-validated. Android now tracks pending Bridge ACKs by original packet ID, waits up to 12 seconds for a matching destination `DELIVERY` ACK, displays `Pending`, `Delivered`, or `Unknown`, and keeps `FORWARD`/`HOP` ACKs diagnostic-only. Raw ACK JSON is no longer the primary Chat Bridge ACK display.
+
+STEP046B ESP32 status: destination nodes generate compact `BT1`/BT-MANET `ACK` packets with `ackType=DELIVERY`, `ackFor=<original packetId>`, `ackStatus=DELIVERED`, `ackSource=<destination node>`, and route metadata after local message delivery. Local bridge forwarding ACKs remain `FORWARD` diagnostics only. Routing decisions, route discovery, Bluetooth architecture, LoRa backbone behavior, and STEP044 strict validation are preserved.
+
+STEP046B local validation: Android build PASS with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`. ESP32 build PASS with `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
+
+Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP044 strict BT1 validation, STEP045A HELLO propagation, STEP046A lab-mode forced routing overlay, STEP047 Bluetooth access-layer status diagnostics, and STEP046B destination delivery ACK generation while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B, STEP047 phone-to-node Bluetooth access-layer UI wording, and STEP046B Bridge ACK correlation/display handling.
 
 Resolved issue: corrupted compact `BT1` LoRa packets are now rejected before neighbor learning and no longer create malformed neighbors such as `gateway=UNKNOWN`, `node=BROADCAST`, or misspelled node IDs.
 
@@ -147,4 +153,4 @@ STEP044 validation rules validated:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next workbook-approved task: STEP046B implementation after requirements acceptance. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, and STEP047 Bluetooth phone-node access boundary.
+Next validation activity: physically validate STEP046B on hardware by sending `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1` Chat messages, confirming Android shows `Bridge ACK: Pending` followed by `Bridge ACK: Delivered to <destination node>` when the destination delivery ACK returns. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, and STEP047 Bluetooth phone-node access boundary.

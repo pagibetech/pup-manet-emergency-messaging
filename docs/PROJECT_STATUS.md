@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-07
 
-Overall state: STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046B-A Bridge ACK Requirements Definition is complete as documentation/workbook planning; production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+Overall state: STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046B Bridge ACK Reliability Improvement is implemented and locally build-validated; physical validation is pending. Production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,7 +17,7 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP046B - Bridge ACK Reliability Improvement requirements defined / implementation pending.
+Workbook current milestone: STEP046B - Bridge ACK Reliability Improvement implemented / local build PASS / physical validation pending.
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
@@ -48,6 +48,7 @@ Completed highlights:
 - STEP046A PASS / COMPLETE: controlled multi-hop lab mode physically validated with manual firmware built using `TEST_FORCE_GATEWAY_ROUTE=1`, then production default restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 - STEP047 PASS / COMPLETE: Bluetooth phone-to-node access verified; `NODE_LIST` verified; `PhoneA -> nodeA2` verified; `nodeA2 -> PhoneA` verified; gateway disappearance detection verified; gateway-loss messaging verified.
 - STEP046B-A COMPLETE: Bridge ACK requirements defined without source changes. User-facing Bridge ACK means final destination-node delivery ACK; forwarding gateway and hop ACKs are diagnostics only.
+- STEP046B IMPLEMENTED / LOCAL BUILD PASS: Android now correlates Bridge ACKs by `ackFor`, waits 12 seconds for final destination `DELIVERY` ACKs, displays `Pending`, `Delivered`, or `Unknown`, and keeps forwarding/hop ACKs diagnostic-only. ESP32 destination nodes now generate correlated delivery ACKs after local message delivery. Physical validation remains pending.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -223,6 +224,16 @@ STEP046B-A - Bridge ACK Requirements Definition:
 - Timeout/retry rule: Android waits up to 12 seconds for a matching destination `DELIVERY` ACK, retries ACK read/parsing during that window, and does not automatically retransmit the original MESSAGE in STEP046B unless explicitly approved later.
 - UI rule: show `Pending`, `Delivered to <nodeId>`, `Delivery ACK pending`, `Unknown`, or explicit correlated failure. Do not show raw JSON as the primary Bridge ACK and do not treat timeout as proof of delivery failure.
 
+STEP046B - Bridge ACK Reliability Improvement:
+- Android implementation in `MainActivity.kt` adds `Pending` and `Unknown` states, structured ACK parsing, pending ACK correlation by original packet ID, 12-second delivery ACK wait, and user-friendly Bridge ACK display.
+- ESP32 implementation in `src/main.cpp` emits final destination `DELIVERY` ACK packets with `ackFor`, `ackStatus=DELIVERED`, `ackSource`, `originNode`, `finalDestinationNode`, and route metadata.
+- Local forwarding ACKs remain `FORWARD` diagnostics and no longer mark Chat messages delivered.
+- Timeout without a final destination ACK becomes `Unknown`, not `Failed`.
+- No routing decisions, route discovery logic, Bluetooth architecture, Raspberry Pi gateway service, or Android destination-selection architecture were changed.
+- Build validation PASS: Android `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
+- Build validation PASS: ESP32 `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
+- Physical validation pending.
+
 Firmware status:
 - STEP038 ESP32 firmware is not final.
 - STEP038 is now Stable STEP038 baseline firmware.
@@ -238,7 +249,7 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-- STEP046B implementation is next after requirements acceptance. Preserve routing core and do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
+- STEP046B physical validation is next. Preserve routing core and do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket

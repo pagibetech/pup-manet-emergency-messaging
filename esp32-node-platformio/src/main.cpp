@@ -1283,6 +1283,11 @@ bool parseLoRaRelayPacket(const String &line, ProtocolPacket &packet, String &er
     }
     packet.packetType = "HELLO";
     packet.status = "ALIVE";
+  } else {
+    if (packet.packetId.startsWith("ACK-")) {
+      packet.packetType = "ACK";
+      packet.status = "ACK";
+    }
   }
 
   return true;
@@ -1342,6 +1347,101 @@ void learnNodeFromHelloPacket(const ProtocolPacket &packet, int rssi, const Stri
 }
 
 void sendBluetoothPacket(const ProtocolPacket &packet);
+
+String hopPathJsonArray(const String &hopPath) {
+  String result = "[";
+  int start = 0;
+  bool first = true;
+  for (int i = 0; i <= hopPath.length(); ++i) {
+    if (i == hopPath.length() || hopPath.charAt(i) == '>') {
+      const String hop = hopPath.substring(start, i);
+      if (hop.length() > 0) {
+        if (!first) {
+          result += ",";
+        }
+        result += "\"" + jsonEscape(hop) + "\"";
+        first = false;
+      }
+      start = i + 1;
+    }
+  }
+  result += "]";
+  return result;
+}
+
+String firstHopInPath(const String &hopPath) {
+  const int separator = hopPath.indexOf('>');
+  if (separator < 0) {
+    return hopPath;
+  }
+  return hopPath.substring(0, separator);
+}
+
+String deliveryAckDestinationFor(const ProtocolPacket &messagePacket) {
+  if (messagePacket.sourceNode != "ANDROID_APP") {
+    return messagePacket.sourceNode;
+  }
+
+  const String firstHop = firstHopInPath(messagePacket.hopPath);
+  if (firstHop.length() > 0 && firstHop != "ANDROID_APP") {
+    return firstHop;
+  }
+
+  if (messagePacket.previousHop.length() > 0 && messagePacket.previousHop != String(SIM_NODE_ID)) {
+    return messagePacket.previousHop;
+  }
+
+  return messagePacket.sourceNode;
+}
+
+ProtocolPacket createDeliveryAckPacket(const ProtocolPacket &messagePacket) {
+  ProtocolPacket ack = emptyProtocolPacket();
+  const String ackDestination = deliveryAckDestinationFor(messagePacket);
+  ack.protocolVersion = PROTOCOL_VERSION;
+  ack.packetType = "ACK";
+  ack.packetId = "ACK-" + messagePacket.packetId + "-" + String(SIM_NODE_ID) + "-" + String(millis());
+  ack.sourceNode = String(SIM_NODE_ID);
+  ack.destinationNode = ackDestination;
+
+  const String ackRoute = appendHopIfMissing(messagePacket.hopPath, String(SIM_NODE_ID));
+  String payload = "{";
+  payload += "\"ackVersion\":1,";
+  payload += "\"ackType\":\"DELIVERY\",";
+  payload += "\"ackFor\":\"" + jsonEscape(messagePacket.packetId) + "\",";
+  payload += "\"ackStatus\":\"DELIVERED\",";
+  payload += "\"originNode\":\"" + jsonEscape(ackDestination) + "\",";
+  payload += "\"finalDestinationNode\":\"" + jsonEscape(messagePacket.destinationNode) + "\",";
+  payload += "\"ackSource\":\"" + jsonEscape(String(SIM_NODE_ID)) + "\",";
+  payload += "\"reason\":\"\",";
+  payload += "\"route\":" + hopPathJsonArray(ackRoute);
+  payload += "}";
+
+  ack.payload = payload;
+  ack.hopPath = String(SIM_NODE_ID) + ">" + ackDestination;
+  ack.hopCount = 0;
+  ack.ttl = DEFAULT_TTL;
+  ack.previousHop = String(SIM_NODE_ID);
+  ack.retryCount = 0;
+  ack.timestamp = simulationTimestamp();
+  ack.status = "DELIVERED";
+  ack.checksum = CHECKSUM_PLACEHOLDER;
+  return ack;
+}
+
+void sendDeliveryAckForMessage(const ProtocolPacket &messagePacket) {
+  if (messagePacket.packetType != "MESSAGE" || messagePacket.sourceNode == String(SIM_NODE_ID)) {
+    return;
+  }
+
+  ProtocolPacket ack = createDeliveryAckPacket(messagePacket);
+  const bool sent = sendLoRaLine(serializeLoRaRelayPacket(ack));
+  Serial.print("[DELIVERY_ACK_TX] ackFor=");
+  Serial.print(messagePacket.packetId);
+  Serial.print(" dest=");
+  Serial.print(ack.destinationNode);
+  Serial.print(" status=");
+  Serial.println(sent ? "SENT" : "NOT_SENT");
+}
 
 void deliverToBluetooth(const ProtocolPacket &packet) {
   if (!hasBluetoothClient()) {
@@ -1408,6 +1508,7 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
     }
 
     deliverToBluetooth(deliveryPacket);
+    sendDeliveryAckForMessage(deliveryPacket);
     return;
   }
 
@@ -1888,7 +1989,18 @@ void processIncomingBluetoothProtocolPacket(const String &line) {
       forwardedToLoRa = sendLoRaLine(serializeLoRaRelayPacket(relayPacket));
     }
 
-    String payload = "accepted=" + result.packet.packetId;
+    String payload = "ackVersion=1";
+    payload += ";ackType=FORWARD";
+    payload += ";ackFor=" + result.packet.packetId;
+    payload += ";ackStatus=";
+    payload += forwardedToLoRa ? "FORWARDED" : (shouldForwardToLoRa ? "UNKNOWN" : "ACCEPTED");
+    payload += ";originNode=" + String(SIM_NODE_ID);
+    payload += ";finalDestinationNode=" + result.packet.destinationNode;
+    payload += ";ackSource=" + String(SIM_NODE_ID);
+    payload += ";reason=";
+    payload += forwardedToLoRa ? "" : (shouldForwardToLoRa ? "LORA_NOT_READY" : "LOCAL_OR_SIMULATION_ONLY");
+    payload += ";route=" + String(SIM_NODE_ID) + ">" + result.packet.destinationNode;
+    payload += ";accepted=" + result.packet.packetId;
     payload += ";mode=" + requestedMode;
     payload += ";destination=" + result.packet.destinationNode;
     payload += ";loRa=" + String(loraReady ? "READY" : "SIMULATION_PLACEHOLDER");
