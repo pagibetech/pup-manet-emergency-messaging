@@ -1655,6 +1655,7 @@ ProtocolPacket createStatusResponsePacket(const ProtocolPacket &request) {
   payload += ";state=" + String(localNodeOnline ? "ONLINE" : "OFFLINE");
   payload += ";bluetoothService=" + String(bluetoothServiceStarted ? "STARTED" : "STOPPED");
   payload += ";bluetoothClient=" + String(hasBluetoothClient() ? "CONNECTED" : "DISCONNECTED");
+  payload += ";bluetoothRole=PHONE_NODE_ACCESS";
   payload += ";loRa=" + String(loraReady ? "READY" : "SIMULATION_PLACEHOLDER");
   payload += ";manualModes=AUTO,LORA,WIFI,GSM";
 
@@ -2002,8 +2003,11 @@ void printBluetoothStatus() {
   Serial.println(hasBluetoothClient() ? "CONNECTED" : "DISCONNECTED");
   Serial.print("  protocolVersion=");
   Serial.println(PROTOCOL_VERSION);
-  Serial.println("  transport=Classic Bluetooth SPP");
-  Serial.println("  android_transport=Bluetooth only; USB Serial remains out of Android scope");
+  Serial.println("  access=Android phone <-> local ESP32 node");
+  Serial.println("  transport=Classic Bluetooth SPP phone-node access");
+  Serial.println("  manet_backbone=LoRa");
+  Serial.println("  node_to_node_bluetooth=DISABLED");
+  Serial.println("  android_scope=Bluetooth SPP access only; USB Serial remains gateway/debug scope");
   Serial.print("  loRa=");
   Serial.println(loraReady ? "READY" : "SIMULATION_PLACEHOLDER");
   Serial.println("  manual_modes=AUTO, LORA, WIFI, GSM");
@@ -2400,7 +2404,7 @@ void processBluetoothLine(String line) {
     bluetoothPacketId("BT-ERROR"),
     String(SIM_NODE_ID),
     "ANDROID_APP",
-    "Bluetooth service expects BT-MANET-1.0 protocol JSON",
+    "Bluetooth phone-node access expects BT-MANET-1.0 protocol JSON",
     String(SIM_NODE_ID) + ">ANDROID_APP",
     0,
     "REJECTED"
@@ -2501,7 +2505,7 @@ void beginBluetoothService() {
   if (bluetoothServiceStarted) {
     Serial.print("[BT_SERVICE] started name=");
     Serial.println(bluetoothServiceName());
-    Serial.println("[BT_SERVICE] Classic Bluetooth SPP accepts BT-MANET-1.0 JSON lines.");
+    Serial.println("[BT_SERVICE] Classic Bluetooth SPP phone-node access accepts BT-MANET-1.0 JSON lines.");
   } else {
     Serial.println("[BT_SERVICE] failed to start");
   }

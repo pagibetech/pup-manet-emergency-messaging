@@ -18,11 +18,11 @@ Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
 Latest physically completed workbook step: STEP046A - Controlled Multi-Hop Lab Mode.
 
-Current milestone: STEP046A - Controlled Multi-Hop Lab Mode. Physical validation PASS / COMPLETE; production default restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+Current milestone: STEP047 - Bluetooth Transport Layer. Implementation/build validation PASS; physical validation pending.
 
-Current feature: ESP32 firmware includes a compile-time lab overlay, `TEST_FORCE_GATEWAY_ROUTE`, default `0`, to force nodeA1/nodeA2 traffic through gatewayA/gatewayB for controlled multi-hop validation on a short-range indoor bench.
+Current feature: STEP047 clarifies Bluetooth as the Android phone-to-local ESP32 access layer only. Bluetooth must not be added as a node-to-node MANET transport; LoRa remains the MANET backbone.
 
-Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP044 strict BT1 validation, STEP045A HELLO propagation, and STEP046A lab-mode forced routing overlay while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B.
+Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP044 strict BT1 validation, STEP045A HELLO propagation, STEP046A lab-mode forced routing overlay, and STEP047 Bluetooth access-layer status diagnostics while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B and STEP047 phone-to-node Bluetooth access-layer UI wording.
 
 Resolved issue: corrupted compact `BT1` LoRa packets are now rejected before neighbor learning and no longer create malformed neighbors such as `gateway=UNKNOWN`, `node=BROADCAST`, or misspelled node IDs.
 
@@ -67,6 +67,12 @@ STEP046A physical validation: PASS / COMPLETE. Manual test firmware was flashed 
 STEP046A gatewayA-off test: node count became 3, `gatewayA` disappeared from NODE_LIST, and `nodeA1`/`nodeA2` still delivered messages directly. This proves node discovery expiry and direct fallback/survivability, but not full alternate gateway reroute.
 
 STEP046A production restore: source default is restored to `#define TEST_FORCE_GATEWAY_ROUTE 0`. Production-mode build validation PASS: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`. `git diff --check` PASS.
+
+STEP047 architecture clarification: Bluetooth is Android Phone <-> local ESP32 node access only. Bluetooth is not a node-to-node MANET transport. LoRa remains the MANET backbone, and the phone is only a client/controller connected to one local node.
+
+STEP047 implementation: Android UI/diagnostic wording now describes Bluetooth SPP as a phone-to-node access layer, not a MANET transport. ESP32 `BT_STATUS`, invalid-protocol error text, and Bluetooth service startup logs now report the same role and expose `bluetoothRole=PHONE_NODE_ACCESS` in status payloads.
+
+STEP047 build validation: PASS. Android build command: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`. ESP32 build command: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
 
 Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`, plus reverse `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
 
@@ -131,4 +137,4 @@ STEP044 validation rules validated:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: choose the next workbook-approved task after STEP046A. If adaptive reroute is desired, plan it explicitly as a new step; gatewayA-off STEP046A evidence only proves expiry/direct fallback, not alternate gateway reroute.
+Next validation activity: physically validate STEP047 on hardware by pairing Android with a normal node ESP32, confirming Chat/NODE_LIST behavior remains unchanged, and checking `BT_STATUS` reports phone-node access with LoRa as the MANET backbone.

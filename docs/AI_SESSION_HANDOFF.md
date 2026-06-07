@@ -2,11 +2,11 @@
 
 Last updated: 2026-06-07
 
-Current milestone: STEP046A - Controlled Multi-Hop Lab Mode. Physical validation PASS / COMPLETE; production default restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+Current milestone: STEP047 - Bluetooth Transport Layer. Implementation/build validation PASS; physical validation pending.
 
 Latest physically completed milestone: STEP046A - Controlled Multi-Hop Lab Mode.
 
-Unfinished task: continue from the next workbook-approved task after STEP046A.
+Unfinished task: physically validate STEP047 Bluetooth phone-to-node access-layer clarification on hardware.
 
 Pending validations:
 - STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
@@ -21,6 +21,7 @@ Pending validations:
 - STEP045A mesh-wide presence propagation is physically validated PASS: Android Nodes now shows `nodeA1 ONLINE`, `gatewayA ONLINE`, `nodeA2 ONLINE`, and `gatewayB ONLINE`.
 - STEP045B Android Real-Network Cleanup is physically validated PASS: Android UI and Chat now use live discovered node IDs and selected live destination state.
 - STEP046A Controlled Multi-Hop Lab Mode is physically validated PASS / COMPLETE. Production source default is restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+- STEP047 Bluetooth Transport Layer is implemented and build-validated. Bluetooth is scoped to Android phone-to-local ESP32 access only; LoRa remains the MANET backbone.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -144,6 +145,16 @@ STEP046A Controlled Multi-Hop Lab Mode:
 - Production-mode build validation PASS: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
 - `git diff --check` PASS.
 
+STEP047 Bluetooth Transport Layer:
+- User clarification: Bluetooth is intended only for Android Phone <-> ESP32 node communication.
+- Bluetooth must not be added as a node-to-node MANET transport.
+- LoRa remains the MANET backbone.
+- The phone is only a client/controller connected to one local node.
+- Android update: `MainActivity.kt` now labels Bluetooth SPP as phone-to-node access in UI diagnostics, readiness text, validation labels, and route notes.
+- ESP32 update: `src/main.cpp` now reports Bluetooth as phone-node access in `BT_STATUS`, startup logs, invalid-protocol error text, and `bluetoothRole=PHONE_NODE_ACCESS` status metadata.
+- Build validation PASS: Android `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`; ESP32 `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
+- Physical validation pending: pair Android to `nodeA1_lora` or `nodeA2_lora`, verify Chat and NODE_LIST still work, and confirm `BT_STATUS` prints phone-node access with `manet_backbone=LoRa`.
+
 Confirmed STEP040B evidence:
 - Gateway A `pup-gateway-a` Tailscale IP: `100.123.79.41`.
 - Gateway B `pup-gateway-b` Tailscale IP: `100.79.214.18`.
@@ -169,7 +180,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: choose the next workbook-approved task after STEP046A while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, and routing.
+- Next incomplete activity for this thread: STEP047 physical validation while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, and routing.
 - STEP042C-D remain queued. Do not start delivery tracking or store-and-forward work yet.
 
 Expected outputs:

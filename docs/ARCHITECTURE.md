@@ -2,11 +2,11 @@
 
 Last updated: 2026-06-07
 
-Purpose: PUP MANET emergency messaging prototype with Android phones connected to ESP32 nodes, LoRa node-to-node transport, Raspberry Pi 3B local gateways, primary internet/Tailscale gateway backhaul, long-range LoRa gateway backup backhaul, and validated ESP32-to-Raspberry Pi USB serial bridge.
+Purpose: PUP MANET emergency messaging prototype with Android phones connected to local ESP32 nodes over Bluetooth SPP, LoRa node-to-node MANET transport, Raspberry Pi 3B local gateways, primary internet/Tailscale gateway backhaul, long-range LoRa gateway backup backhaul, and validated ESP32-to-Raspberry Pi USB serial bridge.
 
 Boundaries:
-- `esp32-node-platformio/`: ESP32 PlatformIO firmware, Bluetooth SPP service for normal MANET nodes, gateway Bluetooth-disabled LoRa builds, packet parser, `[GW_JSON]` serial bridge parsing, STEP042A HELLO/node table discovery export fix, STEP045A mesh-wide HELLO propagation, STEP046A controlled multi-hop lab mode, and controlled SX1278 LoRa live-test environments.
-- `android-chat-app/`: Kotlin Jetpack Compose Android app, simulation-first UI, Bluetooth permission/readiness flow, Classic Bluetooth SPP socket layer, and Step 023 Android-to-LoRa demo controls.
+- `esp32-node-platformio/`: ESP32 PlatformIO firmware, Bluetooth SPP phone-to-node access service for normal MANET nodes, gateway Bluetooth-disabled LoRa builds, packet parser, `[GW_JSON]` serial bridge parsing, STEP042A HELLO/node table discovery export fix, STEP045A mesh-wide HELLO propagation, STEP046A controlled multi-hop lab mode, STEP047 Bluetooth access-layer diagnostics, and controlled SX1278 LoRa live-test environments.
+- `android-chat-app/`: Kotlin Jetpack Compose Android app, simulation-first UI, Bluetooth permission/readiness flow, Classic Bluetooth SPP phone-to-local-node socket layer, and Step 023 Android-to-LoRa demo controls.
 - `raspberry-pi-gateway/`: Python gateway TCP relay service with Tailscale VPN backhaul, USB serial bridge to ESP32 via `[GW_JSON]` protocol, LoRa SPI abstraction baseline, failover, buffering, recovery.
 - `docs/`: workbook, operational memory, diagrams, test procedures, and Codex task logs.
 
@@ -49,6 +49,13 @@ Gateway ESP32 Bluetooth policy:
 - Gateway ESP32 devices must not appear in Android Bluetooth scans or accept Android pairing.
 - Normal MANET node ESP32 devices keep Bluetooth enabled for Android phones.
 - Validation: Android scan shows only `PUP-MANET-nodeA1` and `PUP-MANET-nodeA2`, not gateway ESP32 devices.
+
+STEP047 Bluetooth access-layer policy:
+- Bluetooth is intended only for Android Phone <-> ESP32 node communication.
+- Bluetooth must not be added as a node-to-node MANET transport.
+- LoRa remains the MANET backbone between ESP32 nodes.
+- The phone is only a client/controller connected to one local node.
+- STEP047 implementation/build validation updated Android UI diagnostics and ESP32 Bluetooth status output to reflect this boundary. Physical validation is pending.
 
 STEP042A discovery export fix:
 - Root cause: compact LoRa relay HELLO packets such as `HELLO-nodeA1` and `HELLO-nodeA2` were parsed as `MESSAGE` unconditionally, then routed, relayed, or duplicate-dropped before node table insertion.
@@ -161,6 +168,7 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
+- STEP047 Bluetooth Transport Layer - implementation/build validation PASS; physical validation pending.
 - STEP046A Controlled Multi-Hop Lab Mode - PASS / COMPLETE after physical forced-route validation; production default restored.
 - STEP045B Android Real-Network Cleanup - PASS / COMPLETE after physical Android validation.
 - STEP045A Mesh-Wide Presence Propagation - PASS / COMPLETE after physical Android validation.

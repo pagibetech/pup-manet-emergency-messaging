@@ -127,7 +127,7 @@ enum class BluetoothLifecycleState(val label: String) {
 
 enum class TransportOption(val label: String) {
     Simulation("Simulation fallback"),
-    BluetoothPlaceholder("Bluetooth Placeholder"),
+    BluetoothPlaceholder("Bluetooth access layer"),
     WiFiPlaceholder("WiFi Placeholder")
 }
 
@@ -542,7 +542,7 @@ private val validationLabels = listOf(
     "Packet log updates",
     "Event log updates",
     "Transport bridge status updates",
-    "Bluetooth fallback pairing check",
+    "Bluetooth phone-node access check",
     "No battery level appears",
     "Simulation speed control works",
     "Network toggles work"
@@ -593,7 +593,7 @@ private class SimulationTransport : BaseTransport(
 )
 
 private class BluetoothTransportPlaceholder : BaseTransport(
-    implementationName = "BluetoothTransportPlaceholder",
+    implementationName = "Bluetooth phone-node access placeholder",
     connectedLabel = TransportConnectionState.PlaceholderReady.label
 )
 
@@ -795,8 +795,8 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
 }
 
 /*
- * Future Bluetooth layer:
- * Android Bluetooth API -> BluetoothTransportManager -> BluetoothPacketBridge -> MANET routing engine.
+ * Bluetooth is the Android phone-to-local ESP32 access layer only.
+ * ESP32 nodes continue to use LoRa for MANET routing and forwarding.
  * This class is intentionally platform-free in Step 014; it models lifecycle transitions only.
  */
 private class BluetoothTransportManager {
@@ -1820,21 +1820,21 @@ fun MessengerApp() {
                                     onBridgeConfigChanged = { esp32BridgeConfig = it },
                                     onSendHello = {
                                         esp32BridgeConfig = esp32BridgeConfig.copy(
-                                            connectionStatus = "Waiting for ESP32_ACK in fallback lab",
+                                            connectionStatus = "Waiting for ESP32_ACK in access-layer lab",
                                             handshakeStatus = "HELLO sent"
                                         )
-                                        eventLog.add(0, "ESP32 HELLO sent in fallback lab.")
+                                        eventLog.add(0, "ESP32 HELLO sent in access-layer lab.")
                                         while (eventLog.size > 10) {
                                             eventLog.removeAt(eventLog.lastIndex)
                                         }
                                         queueScope.launch {
                                             delay(650L)
                                             esp32BridgeConfig = esp32BridgeConfig.copy(
-                                                connectionStatus = "ESP32_ACK received in fallback lab",
+                                                connectionStatus = "ESP32_ACK received in access-layer lab",
                                                 lastHandshakeTime = currentTimeLabel(),
                                                 handshakeStatus = "ESP32_ACK received"
                                             )
-                                            eventLog.add(0, "ESP32_ACK received from fallback lab bridge.")
+                                            eventLog.add(0, "ESP32_ACK received from access-layer lab.")
                                             while (eventLog.size > 10) {
                                                 eventLog.removeAt(eventLog.lastIndex)
                                             }
@@ -2293,7 +2293,7 @@ fun MessengerApp() {
                                         delay(450L)
                                         bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("ESP32_ACK")
                                         esp32BridgeConfig = esp32BridgeConfig.copy(
-                                            connectionStatus = "ESP32_ACK received over fallback Bluetooth layer",
+                                            connectionStatus = "ESP32_ACK received over phone-node Bluetooth access layer",
                                             lastHandshakeTime = currentTimeLabel(),
                                             handshakeStatus = "ESP32_ACK received"
                                         )
@@ -2843,12 +2843,12 @@ private fun BluetoothPanel(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            text = "Bluetooth Architecture",
+            text = "Bluetooth Access Layer",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
         Text(
-            text = "Future path: Android Bluetooth API -> BluetoothTransportManager -> Packet bridge -> MANET routing engine.",
+            text = "Android phones use Bluetooth SPP only to reach a paired local ESP32 node. LoRa remains the MANET backbone between ESP32 nodes.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -2876,7 +2876,7 @@ private fun BluetoothPanel(
         )
         if (bluetoothLinkedToEsp32(bluetoothState)) {
             Text(
-                text = "LoRa transport is simulated through paired ESP32.",
+                text = "Phone access uses paired ESP32 over Bluetooth SPP; MANET traffic remains LoRa.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -3708,7 +3708,7 @@ private fun TransportBridgePanel(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            text = "Transport Bridge",
+            text = "Access Layer Lab",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
@@ -3762,12 +3762,12 @@ private fun Esp32TransportPreparationPanel(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
-            text = "Fallback Transport Lab",
+            text = "Phone-to-Node Access Lab",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
         Text(
-            text = "Fallback transport lab is separate from the current live Bluetooth SPP and LoRa workflow.",
+            text = "Bluetooth here represents Android phone to local ESP32 access only. ESP32 node-to-node MANET traffic remains LoRa.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -3916,7 +3916,7 @@ private fun BluetoothProtocolPreviewPanel(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
-            text = "ESP32 Bluetooth Packet Protocol",
+            text = "Phone-to-ESP32 Packet Protocol",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
@@ -4060,34 +4060,34 @@ private fun BluetoothReadinessAndTestPlanPanel(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
-            text = "Bluetooth Readiness and Test Plan",
+            text = "Bluetooth Access Readiness and Test Plan",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
         Text(
-            text = "Android Phone <-> Bluetooth <-> ESP32 <-> LoRa <-> ESP32 <-> Bluetooth <-> Android Phone",
+            text = "Android phone <-> Bluetooth SPP <-> local ESP32 | ESP32 nodes communicate over LoRa MANET",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.SemiBold
         )
         ChecklistPanel(
-            title = "Bluetooth Readiness",
+            title = "Bluetooth Access Readiness",
             rows = listOf(
                 "Android Bluetooth architecture ready" to "Ready",
                 "Packet protocol defined" to "Ready",
                 "ESP32 firmware packet parser" to "Ready",
-                "ESP32 Bluetooth service" to "Ready",
+                "ESP32 phone-access Bluetooth service" to "Ready",
                 "SX1278 LoRa wiring pending" to "Pending",
                 "LoRa send/receive test pending" to "Pending",
                 "Android Bluetooth permissions" to "Ready",
                 "Android Bluetooth socket layer" to "Ready",
-                "Android to ESP32 live packet test" to "Ready"
+                "Android phone-to-ESP32 live packet test" to "Ready"
             )
         )
         ChecklistPanel(
             title = "ESP32 Firmware Requirements",
             rows = listOf(
-                "Expose Bluetooth connection" to "Required",
+                "Expose phone-to-node Bluetooth connection" to "Required",
                 "Accept HELLO" to "Required",
                 "Return ESP32_ACK" to "Required",
                 "Accept MESSAGE packet" to "Required",
@@ -4102,7 +4102,7 @@ private fun BluetoothReadinessAndTestPlanPanel(
                 "MESSAGE packet send test" to "Planned",
                 "ACK receive test" to "Planned",
                 "Invalid packet test" to "Planned",
-                "Route discovery packet test" to "Planned",
+                "Node list status request test" to "Planned",
                 "Status packet test" to "Planned"
             )
         )
@@ -4143,7 +4143,7 @@ private fun BluetoothReadinessAndTestPlanPanel(
             title = "Next Implementation Stages",
             rows = listOf(
                 "Step 017" to "ESP32 firmware packet parser",
-                "Step 018" to "ESP32 Bluetooth service",
+                "Step 018" to "ESP32 phone-access Bluetooth service",
                 "Step 019" to "Android real Bluetooth permissions",
                 "Step 020" to "Android Bluetooth connection implementation",
                 "Step 021" to "Android-to-ESP32 live packet test",
@@ -4790,7 +4790,7 @@ private fun runBasicValidation(
         } else {
             ValidationStatus.Fail
         },
-        "Bluetooth fallback pairing check" to if (bluetoothState.pairingStatus == PairingStatus.Paired) {
+        "Bluetooth phone-node access check" to if (bluetoothState.pairingStatus == PairingStatus.Paired) {
             ValidationStatus.Pass
         } else {
             ValidationStatus.NotTested
@@ -4879,7 +4879,7 @@ private fun decideRoute(
     if (route != RouteLabel.None) {
         val preferred = preferredRoute(selectedNetwork)
         val routeNote = if (route == RouteLabel.Lora && bluetoothLinkedToEsp32(bluetoothState)) {
-            " LoRa transport is simulated through paired ESP32 ${bluetoothState.connectedNode}."
+            " Phone access uses paired ESP32 ${bluetoothState.connectedNode}; MANET route remains LoRa."
         } else {
             ""
         }
