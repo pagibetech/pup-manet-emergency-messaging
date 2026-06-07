@@ -1,11 +1,11 @@
 # Architecture
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 
 Purpose: PUP MANET emergency messaging prototype with Android phones connected to ESP32 nodes, LoRa node-to-node transport, Raspberry Pi 3B local gateways, primary internet/Tailscale gateway backhaul, long-range LoRa gateway backup backhaul, and validated ESP32-to-Raspberry Pi USB serial bridge.
 
 Boundaries:
-- `esp32-node-platformio/`: ESP32 PlatformIO firmware, Bluetooth SPP service for normal MANET nodes, gateway Bluetooth-disabled LoRa builds, packet parser, `[GW_JSON]` serial bridge parsing, STEP042A HELLO/node table discovery export fix, and controlled SX1278 LoRa live-test environments.
+- `esp32-node-platformio/`: ESP32 PlatformIO firmware, Bluetooth SPP service for normal MANET nodes, gateway Bluetooth-disabled LoRa builds, packet parser, `[GW_JSON]` serial bridge parsing, STEP042A HELLO/node table discovery export fix, STEP045A mesh-wide HELLO propagation, and controlled SX1278 LoRa live-test environments.
 - `android-chat-app/`: Kotlin Jetpack Compose Android app, simulation-first UI, Bluetooth permission/readiness flow, Classic Bluetooth SPP socket layer, and Step 023 Android-to-LoRa demo controls.
 - `raspberry-pi-gateway/`: Python gateway TCP relay service with Tailscale VPN backhaul, USB serial bridge to ESP32 via `[GW_JSON]` protocol, LoRa SPI abstraction baseline, failover, buffering, recovery.
 - `docs/`: workbook, operational memory, diagrams, test procedures, and Codex task logs.
@@ -59,8 +59,7 @@ STEP042A discovery export fix:
 
 STEP042A/STEP042B physical validation checkpoint:
 - Flashed/running firmware: `gatewayA_lora` restored as `gatewayA`, `gatewayB_lora` restored as `gatewayB`, `nodeA1_lora` as `nodeA1`, and `nodeA2_lora` as `nodeA2`.
-- Android discovery shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
-- `gatewayB` boots and broadcasts `HELLO-gatewayB`, but does not yet appear in Android discovery.
+- Android discovery shows Gateway A group with `nodeA1 ONLINE`, `gatewayA ONLINE`, and `nodeA2 ONLINE`, plus Gateway B group with `gatewayB ONLINE` after STEP045A.
 - STEP042B bidirectional 2-node Android LoRa messaging is PASS for `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1`.
 - Phone A sent `hello from A`; Phone B received it via LoRa on path `nodeA1 -> nodeA2`.
 - Phone B sent `hello from b`; Phone A received it via LoRa on path `nodeA2 -> nodeA1`.
@@ -88,6 +87,12 @@ STEP044 strict compact BT1 validation:
 - Physical validation PASS / COMPLETE after corrective firmware commit `9dba0ef` was flashed and tested under RF stress with four active LoRa nodes: `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
 - Evidence: corrupt packets logged `[LORA_DROP_CORRUPT] reason=bad_prefix`, `[LORA_DROP_CORRUPT] reason=bad_field_count`, and `[LORA_DROP_CORRUPT] reason=malformed_gatewayId_json`; valid HELLO packets still logged `[LORA_RELAY_PARSE] valid` for `HELLO-gatewayB...`, `HELLO-nodeA1...`, and `HELLO-nodeA2...`.
 - Result: node table remained stable at 4 nodes (`gatewayA`, `gatewayB`, `nodeA1`, `nodeA2`) with no `gateway=UNKNOWN`, no `node=BROADCAST`, and no malformed names such as `gatlwayB`.
+
+STEP045A mesh-wide presence propagation:
+- Valid compact `BT1` HELLO packets are forwarded after strict STEP044 validation and local learning, so gateway presence learned by one node can propagate to Android-connected node tables.
+- Forwarding preserves compact `BT1` LoRa protocol and updates bounded routing metadata: `ttl`, `hopCount`, `previousHop`, and `hopPath`.
+- A bounded HELLO relay cache prevents infinite HELLO loops; forwarding decisions log `[HELLO_RELAY]`.
+- Physical Android validation PASS after flashing `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`: Gateway A group shows `nodeA1 ONLINE`, `gatewayA ONLINE`, and `nodeA2 ONLINE`; Gateway B group shows `gatewayB ONLINE`.
 
 Current Android/topology limitations:
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
@@ -141,9 +146,10 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
+- STEP045A Mesh-Wide Presence Propagation - PASS / COMPLETE after physical Android validation.
 - STEP044 Strict Compact BT1 LoRa Packet Validation - PASS / COMPLETE after RF-stress physical validation.
 - STEP043 Fix LoRa HELLO Packet Format - PASS for compact gatewayA/gatewayB discovery and `TEST_FINAL_001`.
 - STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
 - STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.
-- Next validation activity: continue only from the next incomplete workbook task after STEP044.
+- Next validation activity: STEP045B Android Real-Network Cleanup.
 - Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.

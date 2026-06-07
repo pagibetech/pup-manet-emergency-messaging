@@ -131,14 +131,17 @@ constexpr int MAX_HOP_COUNT = 5;
 constexpr int RSSI_DEGRADE_THRESHOLD_DBM = -78;
 constexpr unsigned long DEGRADE_TIMEOUT_MS = 10000UL;
 constexpr size_t DUPLICATE_CACHE_SIZE = 32;
+constexpr size_t HELLO_RELAY_CACHE_SIZE = 24;
 constexpr size_t MAX_NODE_TABLE_SIZE = 16;
 constexpr unsigned long HELLO_INTERVAL_MS = 10000UL;
 constexpr unsigned long NODE_EXPIRE_MS = 30000UL;
 
 String seenMessageIds[DUPLICATE_CACHE_SIZE];
+String relayedHelloPacketIds[HELLO_RELAY_CACHE_SIZE];
 NodeEntry nodeTable[MAX_NODE_TABLE_SIZE];
 size_t nodeTableCount = 0;
 size_t seenMessageIndex = 0;
+size_t helloRelayIndex = 0;
 unsigned long outboundCounter = 0;
 String serialBuffer;
 String bluetoothBuffer;
@@ -458,6 +461,20 @@ size_t duplicateCacheCount() {
 void rememberMessage(const String &msgId) {
   seenMessageIds[seenMessageIndex] = msgId;
   seenMessageIndex = (seenMessageIndex + 1) % DUPLICATE_CACHE_SIZE;
+}
+
+bool hasRelayedHelloPacket(const String &packetId) {
+  for (size_t i = 0; i < HELLO_RELAY_CACHE_SIZE; ++i) {
+    if (relayedHelloPacketIds[i] == packetId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void rememberRelayedHelloPacket(const String &packetId) {
+  relayedHelloPacketIds[helloRelayIndex] = packetId;
+  helloRelayIndex = (helloRelayIndex + 1) % HELLO_RELAY_CACHE_SIZE;
 }
 
 // ------------------------------------------------------------------
@@ -1285,6 +1302,61 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
   Serial.println();
 }
 
+void forwardHelloPresencePacket(const ProtocolPacket &packet) {
+  if (packet.packetType != "HELLO") {
+    return;
+  }
+  if (packet.sourceNode == String(SIM_NODE_ID)) {
+    return;
+  }
+  if (packet.previousHop == String(SIM_NODE_ID)) {
+    return;
+  }
+  if (hasRelayedHelloPacket(packet.packetId)) {
+    Serial.print("[HELLO_RELAY] duplicate packet_id=");
+    Serial.print(packet.packetId);
+    Serial.print(" relayed_by=");
+    Serial.println(SIM_NODE_ID);
+    return;
+  }
+  if (packet.ttl <= 1 || packet.hopCount >= DEFAULT_TTL) {
+    Serial.print("[HELLO_RELAY] ttl_exhausted packet_id=");
+    Serial.print(packet.packetId);
+    Serial.print(" source=");
+    Serial.print(packet.sourceNode);
+    Serial.print(" ttl=");
+    Serial.print(packet.ttl);
+    Serial.print(" hopCount=");
+    Serial.println(packet.hopCount);
+    return;
+  }
+
+  ProtocolPacket relayPacket = packet;
+  relayPacket.ttl -= 1;
+  relayPacket.hopCount += 1;
+  relayPacket.previousHop = String(SIM_NODE_ID);
+  relayPacket.hopPath = relayPacket.hopPath.length() > 0
+    ? relayPacket.hopPath + ">" + String(SIM_NODE_ID)
+    : String(SIM_NODE_ID);
+
+  const String relayLine = serializeLoRaRelayPacket(relayPacket);
+  if (sendLoRaLine(relayLine)) {
+    rememberRelayedHelloPacket(packet.packetId);
+    Serial.print("[HELLO_RELAY] packet_id=");
+    Serial.print(packet.packetId);
+    Serial.print(" source=");
+    Serial.print(packet.sourceNode);
+    Serial.print(" relayed_by=");
+    Serial.print(SIM_NODE_ID);
+    Serial.print(" next_ttl=");
+    Serial.print(relayPacket.ttl);
+    Serial.print(" next_hopCount=");
+    Serial.print(relayPacket.hopCount);
+    Serial.print(" path=");
+    Serial.println(relayPacket.hopPath);
+  }
+}
+
 void processIncomingLoRaRelayPacket(const String &line, int rssi = -70) {
   ProtocolPacket packet;
   String errorReason;
@@ -1308,6 +1380,7 @@ void processIncomingLoRaRelayPacket(const String &line, int rssi = -70) {
 
   learnNodeFromHelloPacket(packet, rssi, "lora_relay");
   if (packet.packetType == "HELLO") {
+    forwardHelloPresencePacket(packet);
     return;
   }
 

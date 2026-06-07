@@ -1,23 +1,24 @@
 # AI Session Handoff
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 
-Current milestone: STEP044 - Strict compact BT1 LoRa packet validation. Physical validation PASS / COMPLETE after corrective firmware commit `9dba0ef`.
+Current milestone: STEP045A - Mesh-Wide Presence Propagation. Physical Android validation PASS / COMPLETE.
 
-Latest completed milestone: STEP044 - Strict compact BT1 LoRa packet validation.
+Latest completed milestone: STEP045A - Mesh-Wide Presence Propagation.
 
-Unfinished task: continue only from the next incomplete workbook task after STEP044.
+Unfinished task: continue with STEP045B Android Real-Network Cleanup.
 
 Pending validations:
 - STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
 - STEP042B 2-node messaging is physically validated: Phone A `hello from A` reached Phone B via `nodeA1 -> nodeA2`; Phone B `hello from b` reached Phone A via `nodeA2 -> nodeA1`.
 - Existing 2-node Chat LoRa path and gateway Bluetooth-disable behavior must remain non-regressed.
-- `gatewayB` boots/broadcasts `HELLO-gatewayB` but does not yet appear in Android discovery.
+- `gatewayB` now appears in Android discovery after STEP045A mesh-wide HELLO propagation.
 - `nodeA3` has not been flashed or validated.
 - ESP32 gateway node to Raspberry Pi USB serial bridge remains VALIDATED with STEP041.
 - LoRa-to-LoRa gateway backup backhaul is not yet validated.
 - STEP043 is physically validated: Gateway A and Gateway B discover each other and `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
 - STEP044 strict corrupt-packet rejection is physically validated PASS after corrective firmware commit `9dba0ef`.
+- STEP045A mesh-wide presence propagation is physically validated PASS: Android Nodes now shows `nodeA1 ONLINE`, `gatewayA ONLINE`, `nodeA2 ONLINE`, and `gatewayB ONLINE`.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -30,7 +31,6 @@ Clarified requirements recorded 2026-06-02 (no source changes yet):
 
 Blockers:
 - STEP044 first physical validation failed once: corrupt `HELLO-nodeA1-40000zno4eA1` created `node=BROADCAST gateway=UNKNOWN`, and corrupt source `gatlwayB` created `node=gatlwayB gateway=B`. Corrective firmware commit `9dba0ef` fixed this and passed physical validation.
-- Prior `gatewayB` discovery is incomplete: firmware boots and broadcasts `HELLO-gatewayB`, but Android does not show `gatewayB` in the discovered node list.
 - Android send destination is still not fully driven by live discovered nodes; `MainActivity.kt` currently uses a temporary validation mapping from `nodeA2` to `nodeA1` because `nodeA3` is not deployed.
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
 - Route tab can show `No route` even while real LoRa messages are delivered.
@@ -81,7 +81,7 @@ STEP042A physical validation result:
 - PASS for A-side discovery only.
 - Flashed/running firmware: `gatewayA_lora` as `gatewayA`, `gatewayB_lora` as `gatewayB`, `nodeA1_lora` as `nodeA1`, and `nodeA2_lora` as `nodeA2`.
 - Android discovered nodes: `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
-- Remaining gap: `gatewayB` is flashed and broadcasts `HELLO-gatewayB`, but is not yet visible in Android discovery.
+- STEP045A follow-up result: `gatewayB` is now visible in Android discovery after valid HELLO propagation from gateway-side discovery into Android-connected node tables.
 
 STEP042B physical validation result:
 - PASS for bidirectional 2-node Android-to-Android LoRa messaging only.
@@ -112,6 +112,13 @@ STEP044 strict compact packet validation:
 - Physical validation PASS: corrective firmware commit `9dba0ef` was flashed and tested under RF stress with four active LoRa nodes: `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
 - Physical evidence: corrupt packets logged `[LORA_DROP_CORRUPT] reason=bad_prefix`, `[LORA_DROP_CORRUPT] reason=bad_field_count`, and `[LORA_DROP_CORRUPT] reason=malformed_gatewayId_json`; valid HELLO packets still logged `[LORA_RELAY_PARSE] valid packet_id=HELLO-gatewayB...`, `HELLO-nodeA1...`, and `HELLO-nodeA2...`; node table stayed stable at 4 nodes with no `gateway=UNKNOWN`, no `node=BROADCAST`, and no malformed `gatlwayB`.
 
+STEP045A mesh-wide presence propagation:
+- Root cause: valid compact HELLO discovery was learned locally and then `processIncomingLoRaRelayPacket()` returned immediately, preventing learned gateway presence from propagating to Android-connected node tables.
+- Fix in `esp32-node-platformio/src/main.cpp`: validated HELLO packets are forwarded after STEP044 parsing and local learning, preserving compact `BT1`, bounded `ttl`/`hopCount`, `previousHop`, `hopPath`, and a HELLO relay cache to avoid loops.
+- Added `[HELLO_RELAY]` logging for forwarded, duplicate, and TTL-exhausted HELLO propagation decisions.
+- Local build validation PASS: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
+- Physical Android validation PASS after flashing `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`: Gateway A group shows `nodeA1 ONLINE`, `gatewayA ONLINE`, and `nodeA2 ONLINE`; Gateway B group shows `gatewayB ONLINE`.
+
 Confirmed STEP040B evidence:
 - Gateway A `pup-gateway-a` Tailscale IP: `100.123.79.41`.
 - Gateway B `pup-gateway-b` Tailscale IP: `100.79.214.18`.
@@ -137,7 +144,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: continue only from the next incomplete workbook task after STEP044 while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery and routing.
+- Next incomplete activity for this thread: STEP045B Android Real-Network Cleanup while preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery and routing.
 - STEP042C-D remain queued. Do not start delivery tracking or store-and-forward work yet.
 
 Expected outputs:
@@ -156,8 +163,9 @@ Latest build/test result:
 - STEP042A A-side physical discovery PASS: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
 - STEP042B 2-node physical messaging PASS: Android Chat delivery validated both directions between `nodeA1` and `nodeA2`.
 - STEP044 physical validation PASS after corrective commit `9dba0ef`: corrupt drops logged, valid HELLO parses retained, no ghost neighbors, node table stable at 4 nodes.
+- STEP045A physical validation PASS: Android discovery now includes `gatewayB ONLINE` via mesh-wide HELLO propagation.
 - RPi gateway simulation tests last known passing through failover/recovery baseline.
-- Full 6-node/gateway discovery is not complete: `nodeA3` is not deployed and `gatewayB` is not yet visible in Android discovery.
+- Full 6-node discovery is not complete: `nodeA3` is not deployed.
 
 Architecture priority order:
 - Priority 1: Local LoRa MANET.
@@ -180,4 +188,4 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-Recommended next model/tool: continue from the next incomplete workbook task; Codex for focused validation or difficult blocker analysis.
+Recommended next model/tool: STEP045B Android Real-Network Cleanup with Codex after inspecting workbook and continuity files.

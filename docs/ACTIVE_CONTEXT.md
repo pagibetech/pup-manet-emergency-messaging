@@ -1,6 +1,6 @@
 # Active Context
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 
 Project: PUP MANET Emergency Messaging Prototype
 
@@ -16,11 +16,11 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
-Latest completed workbook step: STEP044 - Strict compact BT1 LoRa packet validation.
+Latest completed workbook step: STEP045A - Mesh-Wide Presence Propagation.
 
-Current milestone: STEP044 - Strict compact BT1 LoRa packet validation. Physical validation PASS / COMPLETE after corrective firmware commit `9dba0ef`.
+Current milestone: STEP045A - Mesh-Wide Presence Propagation. Physical Android validation PASS / COMPLETE after firmware was flashed to `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
 
-Current feature: strict compact `BT1` LoRa RX validation before neighbor learning or routing.
+Current feature: mesh-wide valid compact `BT1` HELLO presence propagation while preserving strict STEP044 corrupt-packet rejection.
 
 Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix and preserves gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` has a temporary validation mapping change in `peerNodeForConnectedEsp32()` from `"nodeA2" -> "nodeA3"` to `"nodeA2" -> "nodeA1"` because `nodeA3` has not been flashed or deployed.
 
@@ -45,6 +45,14 @@ STEP044 physical validation: PASS / COMPLETE. Corrective firmware commit `9dba0e
 STEP044 evidence: corrupt LoRa packets were rejected with `[LORA_DROP_CORRUPT] reason=bad_prefix`, `[LORA_DROP_CORRUPT] reason=bad_field_count`, and `[LORA_DROP_CORRUPT] reason=malformed_gatewayId_json`. Valid packets still parsed with `[LORA_RELAY_PARSE] valid packet_id=HELLO-gatewayB...`, `[LORA_RELAY_PARSE] valid packet_id=HELLO-nodeA1...`, and `[LORA_RELAY_PARSE] valid packet_id=HELLO-nodeA2...`. No ghost neighbors were observed: no `gateway=UNKNOWN`, no `node=BROADCAST`, and no malformed names like `gatlwayB`. Node table remained stable at 4 nodes: `gatewayA`, `gatewayB`, `nodeA1`, `nodeA2`.
 
 STEP044 local validation: PlatformIO builds PASS for `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora` after the corrective fix.
+
+STEP045A root cause: `gatewayB` was missing from Android discovery because valid compact HELLO discovery was learned locally and then `processIncomingLoRaRelayPacket()` returned immediately, so learned gateway presence was not propagated onward to `nodeA1`/`nodeA2` node tables.
+
+STEP045A firmware fix: `esp32-node-platformio/src/main.cpp` now forwards only validated HELLO presence packets after successful STEP044 parsing and local learning. Forwarding preserves compact `BT1`, decrements `ttl`, increments `hopCount`, updates `previousHop`, appends `hopPath`, uses a bounded HELLO relay cache to avoid loops, and logs `[HELLO_RELAY]`.
+
+STEP045A build validation: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora` PASS.
+
+STEP045A physical validation: PASS. Firmware was flashed to `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`. Android Nodes screen now shows Gateway A group with `nodeA1 ONLINE`, `gatewayA ONLINE`, and `nodeA2 ONLINE`, plus Gateway B group with `gatewayB ONLINE`.
 
 Confirmed working flow: `Phone A Chat -> NODE_A -> LoRa -> NODE_B -> Phone B Chat`, plus reverse `Phone B Chat -> NODE_B -> LoRa -> NODE_A -> Phone A Chat`.
 
@@ -73,14 +81,13 @@ STEP042A discovery export root cause: compact LoRa relay HELLO packets such as `
 STEP042A discovery export fix in `esp32-node-platformio/src/main.cpp`: infer compact relay HELLO packets from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId` payload; learn HELLO packets before route/duplicate handling; add `hopCount` to node table entries; add `[NEIGHBOR_ADD]`, `[NEIGHBOR_UPDATE]`, and `[NODE_LIST_EXPORT]` logs; remove expired nodes before NODE_LIST export and log each exported row.
 
 STEP042A physical acceptance procedure:
-1. Completed for A-side two-node discovery.
+1. Completed for mesh-wide nodeA1/nodeA2/gatewayA/gatewayB discovery propagation.
 2. Flashed/running: `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, `gatewayB_lora`.
-3. Android discovered nodes: `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
-4. Remaining discovery gap: `gatewayB` broadcasts `HELLO-gatewayB` but is not visible in Android discovery.
+3. Android discovered nodes: `nodeA1 ONLINE`, `nodeA2 ONLINE`, `gatewayA ONLINE`, and `gatewayB ONLINE`.
+4. Remaining discovery scope: `nodeA3` has not been flashed or validated.
 
 Open issues:
 - This is a 2-node validation only; `nodeA3` has not been flashed or validated.
-- `gatewayB` is flashed and broadcasting but not yet visible in Android discovery.
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
 - Route tab can show `No route` even while real LoRa messages are delivered.
 - Discovered node list works, but send destination is still not fully driven by live discovered nodes.
@@ -88,9 +95,9 @@ Open issues:
 
 Future gateway code must support store-and-forward queue, gateway ACK tracking, heartbeat monitoring, peer online detection, automatic reconnect, gateway relay mode, and LoRa backup backhaul mode.
 
-Recommended model/tool: proceed with next workbook-approved task after STEP044; use Codex only for focused validation or difficult blocker analysis.
+Recommended model/tool: proceed with STEP045B Android Real-Network Cleanup; use Codex for focused Android cleanup only after studying workbook and continuity files.
 
-Escalation guidance: do not start STEP042C/D. Do not replace the temporary Android destination mapping until STEP043 gateway HELLO discovery is physically accepted.
+Escalation guidance: do not start STEP042C/D. Do not change delivery tracking or store-and-forward until STEP045B Android real-network cleanup is complete.
 
 Clarified requirements (2026-06-02):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -113,4 +120,4 @@ STEP044 validation rules validated:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: continue only from the next incomplete workbook task; do not regress STEP044 corrupt-packet rejection, gatewayA/gatewayB/nodeA1/nodeA2 discovery, or nodeA1/nodeA2 routing.
+Next validation activity: STEP045B Android Real-Network Cleanup. Replace temporary hardcoded destination mapping with live discovered-node selection and clean simulated labels/route display without changing compact BT1 firmware behavior.

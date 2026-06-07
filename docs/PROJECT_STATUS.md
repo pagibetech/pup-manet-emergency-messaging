@@ -1,8 +1,8 @@
 # Project Status
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 
-Overall state: STEP043 compact gateway discovery is physically validated. STEP044 strict compact `BT1` corrupt-packet validation is physically validated PASS / COMPLETE after corrective firmware commit `9dba0ef`.
+Overall state: STEP045A mesh-wide presence propagation is physically validated PASS / COMPLETE. STEP044 strict compact `BT1` corrupt-packet validation remains physically validated and preserved.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,9 +17,9 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP044 - Strict compact BT1 LoRa packet validation complete; continue only from the next incomplete workbook task.
+Workbook current milestone: STEP045A - Mesh-Wide Presence Propagation complete; next task is STEP045B Android Real-Network Cleanup.
 
-Latest completed workbook step: STEP044 - Strict compact BT1 LoRa packet validation.
+Latest completed workbook step: STEP045A - Mesh-Wide Presence Propagation.
 
 Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway Bluetooth-disable cleanup is validated and must not be undone. The current Android mapping change is temporary for 2-node validation because `nodeA3` has not been deployed.
 
@@ -43,6 +43,7 @@ Completed highlights:
 - STEP042B bidirectional 2-node Android LoRa messaging passed for `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1`.
 - STEP043 PASS: gatewayA/gatewayB discover each other over compact `BT1` HELLO packets; `TEST_FINAL_001` from `gatewayB` to `gatewayA` was received.
 - STEP044 PASS / COMPLETE: corrective strict compact packet validation was physically validated under RF stress with `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`.
+- STEP045A PASS / COMPLETE: mesh-wide HELLO presence propagation fixed Android discovery for `gatewayB` while preserving compact `BT1` and STEP044 corrupt-packet rejection.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -134,10 +135,10 @@ STEP042A discovery export fix:
 - Build passed for `nodeA1_lora`, `nodeA2_lora`, `gatewayA_lora`, and `gatewayB_lora`.
 
 STEP042A physical validation status:
-- PASS for A-side discovery only.
+- PASS for nodeA1/nodeA2/gatewayA/gatewayB discovery propagation.
 - Flashed/running: `gatewayA_lora` as `gatewayA`, `gatewayB_lora` as `gatewayB`, `nodeA1_lora` as `nodeA1`, and `nodeA2_lora` as `nodeA2`.
-- Android phones show `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
-- This is not full topology validation: `nodeA3` has not been flashed or validated, and `gatewayB` is flashed/broadcasting `HELLO-gatewayB` but is not yet visible in Android discovery.
+- Android Nodes screen shows Gateway A group with `nodeA1 ONLINE`, `gatewayA ONLINE`, and `nodeA2 ONLINE`, plus Gateway B group with `gatewayB ONLINE`.
+- This is not full 6-node topology validation: `nodeA3` has not been flashed or validated.
 
 STEP042B physical validation status:
 - PASS for bidirectional 2-node Android-to-Android LoRa bridge only.
@@ -148,7 +149,6 @@ STEP042B physical validation status:
 
 Current blockers / open issues:
 - STEP044 corrupt compact packet physical validation PASS after corrective firmware commit `9dba0ef`.
-- `gatewayB` firmware boots and broadcasts `HELLO-gatewayB`, but `gatewayB` does not yet appear in Android discovered nodes.
 - Android Nodes/Route/Topology UI still partly uses simulated Node Alpha/Bravo/Charlie/Delta labels.
 - Route tab can show `No route` while real LoRa messages are delivered.
 - Discovered node list works, but send destination is still not fully driven by live discovered nodes.
@@ -175,6 +175,12 @@ STEP044 - Strict Compact BT1 LoRa Packet Validation:
 - Evidence: corrupt packets logged `[LORA_DROP_CORRUPT] reason=bad_prefix`, `[LORA_DROP_CORRUPT] reason=bad_field_count`, and `[LORA_DROP_CORRUPT] reason=malformed_gatewayId_json`; valid packets still parsed with `[LORA_RELAY_PARSE] valid packet_id=HELLO-gatewayB...`, `HELLO-nodeA1...`, and `HELLO-nodeA2...`.
 - Result: no ghost neighbors were observed; no `gateway=UNKNOWN`, no `node=BROADCAST`, no malformed names like `gatlwayB`; node table remained stable at 4 nodes: `gatewayA`, `gatewayB`, `nodeA1`, `nodeA2`.
 
+STEP045A - Mesh-Wide Presence Propagation:
+- Root cause: valid compact HELLO discovery was learned locally and then `processIncomingLoRaRelayPacket()` returned immediately, so learned gateway presence was not propagated to Android-connected `nodeA1`/`nodeA2` node tables.
+- Firmware fix in `esp32-node-platformio/src/main.cpp`: forward only validated HELLO presence packets after STEP044 parsing and local learning; preserve compact `BT1`; decrement `ttl`; increment `hopCount`; update `previousHop`; append `hopPath`; use a bounded HELLO relay cache; add `[HELLO_RELAY]` logs.
+- Build validation PASS: `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
+- Physical Android validation PASS after flashing `gatewayA`, `gatewayB`, `nodeA1`, and `nodeA2`: Android Nodes shows `nodeA1 ONLINE`, `gatewayA ONLINE`, `nodeA2 ONLINE`, and `gatewayB ONLINE`.
+
 Firmware status:
 - STEP038 ESP32 firmware is not final.
 - STEP038 is now Stable STEP038 baseline firmware.
@@ -191,8 +197,8 @@ Future gateway-code requirements:
 - LoRa backup backhaul mode.
 
 Next incomplete task:
-- Continue from the next incomplete workbook task after STEP044.
-- After STEP043 is accepted, continue with gatewayB Android discovery and replacement of the hardcoded Android destination mapping with live discovered-node selection.
+- STEP045B Android Real-Network Cleanup.
+- Replace the temporary hardcoded Android destination mapping with live discovered-node selection and clean simulated labels/route display.
 - Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.
 
 Troubleshooting notes resolved before STEP 035 pass:
