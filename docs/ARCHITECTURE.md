@@ -79,6 +79,7 @@ STEP046C Bridge ACK UI sanitization:
 - User-facing Bridge ACK states are limited to `Delivered`, `Pending`, `Unknown`, and `Failed`.
 - Raw ACK JSON remains available only to parsing/log/debug flows and is not shown in end-user Bridge ACK sections.
 - No firmware, routing, route discovery, Bluetooth topology, Raspberry Pi gateway service, or compact `BT1` protocol changes.
+- Physical validation PASS: attached screenshots confirm failed Bridge ACK card display is user-friendly and no raw ACK JSON is shown to the end user.
 
 STEP042A discovery export fix:
 - Root cause: compact LoRa relay HELLO packets such as `HELLO-nodeA1` and `HELLO-nodeA2` were parsed as `MESSAGE` unconditionally, then routed, relayed, or duplicate-dropped before node table insertion.
@@ -191,7 +192,7 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP046C Bridge ACK UI Sanitization - implemented / Android build PASS / physical UI retest pending.
+- STEP046C Bridge ACK UI Sanitization - COMPLETE / PASS.
 - STEP046B-A Bridge ACK Requirements Definition - COMPLETE / planning only.
 - STEP047 Bluetooth Transport Layer - PASS / COMPLETE after physical validation.
 - STEP046A Controlled Multi-Hop Lab Mode - PASS / COMPLETE after physical forced-route validation; production default restored.

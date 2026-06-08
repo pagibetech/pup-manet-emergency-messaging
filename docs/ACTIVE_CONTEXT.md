@@ -16,9 +16,9 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
-Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
+Latest physically completed workbook step: STEP046C - Bridge ACK UI Sanitization. STEP047 also remains COMPLETE / PASS.
 
-Current milestone: STEP046C - Bridge ACK UI Sanitization. Android UI fix implemented and locally build-validated; physical UI retest pending.
+Current milestone: STEP046C - Bridge ACK UI Sanitization COMPLETE / PASS.
 
 Current feature: STEP047 is physically validated and closed. Bluetooth is Android phone-to-local ESP32 access only; Bluetooth is not a node-to-node MANET transport; LoRa remains the MANET backbone.
 
@@ -38,7 +38,9 @@ STEP046B local validation: Android build PASS with `JAVA_HOME="/Applications/And
 
 STEP046B hardware validation: delivery behavior PASS. `nodeA1 -> nodeA2` showed Delivered, `nodeA2 -> nodeA1` showed Delivered, timeout condition was detected, failed delivery was shown correctly, and failed messages were not incorrectly marked Delivered. Acceptance failure: the failed card still displayed raw Bridge ACK JSON, violating the requirement that end users see only user-friendly Bridge ACK states.
 
-STEP046C implementation status: Android UI now sanitizes Bridge ACK display at the message card/status-row boundary. Visible Bridge ACK states are `Delivered`, `Pending`, `Unknown`, or `Failed`; raw ACK JSON payloads are retained only for logs/debug and are not shown in user-facing Bridge ACK sections. Android build PASS with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
+STEP046C status: COMPLETE / PASS. Android UI sanitizes Bridge ACK display at the message card/status-row boundary. Visible Bridge ACK states are `Delivered`, `Pending`, `Unknown`, or `Failed`; raw ACK JSON payloads are retained only for logs/debug and are not shown in user-facing Bridge ACK sections. Android build PASS with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
+
+STEP046C physical validation: PASS per attached validation screenshots. Failed Bridge ACK card now shows a user-friendly Bridge ACK failed state and no raw Bridge ACK JSON is shown to the end user.
 
 Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP044 strict BT1 validation, STEP045A HELLO propagation, STEP046A lab-mode forced routing overlay, STEP047 Bluetooth access-layer status diagnostics, and STEP046B destination delivery ACK generation while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B, STEP047 phone-to-node Bluetooth access-layer UI wording, STEP046B Bridge ACK correlation, and STEP046C user-facing Bridge ACK display sanitization.
 
@@ -157,4 +159,4 @@ STEP044 validation rules validated:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: physically retest STEP046C on Android and confirm failed Bridge ACK cards show only `Bridge ACK: Failed` without raw ACK JSON. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, and STEP047 Bluetooth phone-node access boundary.
+Next validation activity: continue only from the next workbook-approved task after STEP046C. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, and STEP047 Bluetooth phone-node access boundary.

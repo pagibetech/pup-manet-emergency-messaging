@@ -2,11 +2,11 @@
 
 Last updated: 2026-06-07
 
-Current milestone: STEP046C - Bridge ACK UI Sanitization. Android UI fix implemented and locally build-validated; physical UI retest pending.
+Current milestone: STEP046C - Bridge ACK UI Sanitization COMPLETE / PASS.
 
 Latest physically completed milestone: STEP047 - Bluetooth Transport Layer.
 
-Unfinished task: physically retest STEP046C Bridge ACK UI sanitization on Android. Do not mark STEP046C physical PASS until failed Bridge ACK cards show no raw JSON.
+Unfinished task: none for STEP046C. Continue only from the next workbook-approved task.
 
 Pending validations:
 - STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
@@ -25,7 +25,7 @@ Pending validations:
 - STEP046B-A Bridge ACK Requirements Definition is complete.
 - STEP046B implementation is complete locally and build-validated.
 - STEP046B hardware validation confirmed delivery behavior but exposed a UI acceptance failure: failed card displayed raw Bridge ACK JSON.
-- STEP046C Android UI sanitization is implemented and build-validated; hardware UI retest is pending.
+- STEP046C Android UI sanitization is COMPLETE / PASS based on attached physical validation screenshots.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -192,6 +192,7 @@ STEP046C Bridge ACK UI Sanitization:
 - Message cards, status rows, and protocol payload display now sanitize Bridge ACK content into user-facing states only: `Bridge ACK: Delivered`, `Bridge ACK: Pending`, `Bridge ACK: Unknown`, or `Bridge ACK: Failed`.
 - Raw ACK JSON payloads remain available to logs/debug parsing but are not rendered in user-facing Bridge ACK sections.
 - Android build PASS: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
+- Physical validation PASS: attached screenshots show the failed Bridge ACK card rendered as a user-friendly failed state with no raw Bridge ACK JSON displayed to the end user.
 
 Confirmed STEP040B evidence:
 - Gateway A `pup-gateway-a` Tailscale IP: `100.123.79.41`.
@@ -218,7 +219,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: STEP046C physical UI retest on Android, preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, STEP047 Bluetooth phone-node access, and routing core.
+- Next incomplete activity for this thread: inspect workbook and continue from the next approved task, preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, STEP047 Bluetooth phone-node access, and routing core.
 - STEP042C-D remain queued. Do not start delivery tracking or store-and-forward work yet.
 
 Expected outputs:
@@ -226,7 +227,7 @@ Expected outputs:
 - No malformed packet creates or updates a neighbor.
 - Known-good compact HELLO and message relay still work for gatewayA/gatewayB/nodeA1/nodeA2.
 - Local LoRa MANET routing and validated `nodeA1 <-> nodeA2` Chat delivery remain non-regressed.
-- STEP046C hardware validation should confirm failed Bridge ACK cards show `Bridge ACK: Failed` without raw ACK JSON. Delivered, Pending, and Unknown Bridge ACK states should also remain user-friendly.
+- STEP046C hardware validation evidence: attached screenshots confirm failed Bridge ACK cards show a user-friendly failed state without raw ACK JSON. Delivered, Pending, and Unknown Bridge ACK states remain user-friendly.
 
 Latest build/test result:
 - STEP 038 is treated as Stable STEP038 baseline firmware, not final firmware.

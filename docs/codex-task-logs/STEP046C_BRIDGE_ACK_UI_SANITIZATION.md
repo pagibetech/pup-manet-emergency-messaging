@@ -2,7 +2,7 @@
 
 Date: 2026-06-08
 
-Status: IMPLEMENTED / Android Build PASS / Physical UI Retest Pending
+Status: COMPLETE / PASS
 
 ## Context
 
@@ -44,10 +44,12 @@ No firmware, routing, route discovery, Bluetooth architecture, Raspberry Pi gate
 
 - Android build: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug` - PASS.
 
-## Pending Physical Retest
+## Physical Validation
 
-Retest Android failed-delivery UI and confirm:
+Physical validation result: PASS, based on attached validation screenshots.
 
-- Failed card shows `Bridge ACK: Failed`.
+- Failed card shows a user-friendly Bridge ACK failed state.
 - No raw Bridge ACK JSON appears in user-facing cards/status sections.
 - Delivered, Pending, and Unknown Bridge ACK states remain user-friendly.
+
+STEP046C is closed. Continue only from the next workbook-approved task.

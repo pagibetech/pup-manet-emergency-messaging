@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-07
 
-Overall state: STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046B delivery ACK hardware behavior passed, but UI acceptance failed because a failed card displayed raw Bridge ACK JSON. STEP046C Android UI sanitization is implemented and locally build-validated; physical UI retest is pending. Production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+Overall state: STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046B delivery ACK hardware behavior passed, but UI acceptance initially failed because a failed card displayed raw Bridge ACK JSON. STEP046C Android UI sanitization is now COMPLETE / PASS based on attached physical validation screenshots. Production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,7 +17,7 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP046C - Bridge ACK UI Sanitization implemented / Android build PASS / physical UI retest pending.
+Workbook current milestone: STEP046C - Bridge ACK UI Sanitization COMPLETE / PASS.
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
@@ -50,7 +50,7 @@ Completed highlights:
 - STEP046B-A COMPLETE: Bridge ACK requirements defined without source changes. User-facing Bridge ACK means final destination-node delivery ACK; forwarding gateway and hop ACKs are diagnostics only.
 - STEP046B IMPLEMENTED / LOCAL BUILD PASS: Android now correlates Bridge ACKs by `ackFor`, waits 12 seconds for final destination `DELIVERY` ACKs, displays `Pending`, `Delivered`, or `Unknown`, and keeps forwarding/hop ACKs diagnostic-only. ESP32 destination nodes now generate correlated delivery ACKs after local message delivery. Physical validation remains pending.
 - STEP046B HARDWARE VALIDATION PARTIAL: delivery behavior PASS for `nodeA1 -> nodeA2`, `nodeA2 -> nodeA1`, timeout detection, failed delivery display, and no incorrect Delivered state. UI acceptance FAIL because failed card showed raw Bridge ACK JSON.
-- STEP046C IMPLEMENTED / ANDROID BUILD PASS: Android UI sanitizes Bridge ACK card/status/payload display to show only `Delivered`, `Pending`, `Unknown`, or `Failed` states to end users. Physical UI retest pending.
+- STEP046C COMPLETE / PASS: Android UI sanitizes Bridge ACK card/status/payload display to show only `Delivered`, `Pending`, `Unknown`, or `Failed` states to end users. Attached physical validation screenshots confirm no raw Bridge ACK JSON is shown on the failed card.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -242,7 +242,7 @@ STEP046C - Bridge ACK UI Sanitization:
 - Raw ACK JSON payloads remain available for parsing/log/debug only and are not rendered to end users in Bridge ACK sections.
 - Android build validation PASS: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
 - No firmware, routing, route discovery, Bluetooth architecture, Raspberry Pi gateway service, or compact `BT1` protocol changes.
-- Physical UI retest pending.
+- Physical validation PASS: attached screenshots show a user-friendly failed Bridge ACK state and no raw ACK JSON displayed to the end user.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -259,7 +259,7 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-- STEP046C physical UI retest is next. Preserve routing core and do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
+- STEP046C is complete. Continue only from the next workbook-approved task. Preserve routing core and do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket
