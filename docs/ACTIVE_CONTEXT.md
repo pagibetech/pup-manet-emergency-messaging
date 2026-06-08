@@ -18,7 +18,7 @@ Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
-Current milestone: STEP046B - Bridge ACK Reliability Improvement. Implementation and local build validation complete; physical validation pending.
+Current milestone: STEP046C - Bridge ACK UI Sanitization. Android UI fix implemented and locally build-validated; physical UI retest pending.
 
 Current feature: STEP047 is physically validated and closed. Bluetooth is Android phone-to-local ESP32 access only; Bluetooth is not a node-to-node MANET transport; LoRa remains the MANET backbone.
 
@@ -36,7 +36,11 @@ STEP046B ESP32 status: destination nodes generate compact `BT1`/BT-MANET `ACK` p
 
 STEP046B local validation: Android build PASS with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`. ESP32 build PASS with `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
 
-Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP044 strict BT1 validation, STEP045A HELLO propagation, STEP046A lab-mode forced routing overlay, STEP047 Bluetooth access-layer status diagnostics, and STEP046B destination delivery ACK generation while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B, STEP047 phone-to-node Bluetooth access-layer UI wording, and STEP046B Bridge ACK correlation/display handling.
+STEP046B hardware validation: delivery behavior PASS. `nodeA1 -> nodeA2` showed Delivered, `nodeA2 -> nodeA1` showed Delivered, timeout condition was detected, failed delivery was shown correctly, and failed messages were not incorrectly marked Delivered. Acceptance failure: the failed card still displayed raw Bridge ACK JSON, violating the requirement that end users see only user-friendly Bridge ACK states.
+
+STEP046C implementation status: Android UI now sanitizes Bridge ACK display at the message card/status-row boundary. Visible Bridge ACK states are `Delivered`, `Pending`, `Unknown`, or `Failed`; raw ACK JSON payloads are retained only for logs/debug and are not shown in user-facing Bridge ACK sections. Android build PASS with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
+
+Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP044 strict BT1 validation, STEP045A HELLO propagation, STEP046A lab-mode forced routing overlay, STEP047 Bluetooth access-layer status diagnostics, and STEP046B destination delivery ACK generation while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B, STEP047 phone-to-node Bluetooth access-layer UI wording, STEP046B Bridge ACK correlation, and STEP046C user-facing Bridge ACK display sanitization.
 
 Resolved issue: corrupted compact `BT1` LoRa packets are now rejected before neighbor learning and no longer create malformed neighbors such as `gateway=UNKNOWN`, `node=BROADCAST`, or misspelled node IDs.
 
@@ -153,4 +157,4 @@ STEP044 validation rules validated:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: physically validate STEP046B on hardware by sending `nodeA1 -> nodeA2` and `nodeA2 -> nodeA1` Chat messages, confirming Android shows `Bridge ACK: Pending` followed by `Bridge ACK: Delivered to <destination node>` when the destination delivery ACK returns. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, and STEP047 Bluetooth phone-node access boundary.
+Next validation activity: physically retest STEP046C on Android and confirm failed Bridge ACK cards show only `Bridge ACK: Failed` without raw ACK JSON. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, and STEP047 Bluetooth phone-node access boundary.

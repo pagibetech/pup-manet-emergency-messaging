@@ -73,6 +73,13 @@ STEP046B Bridge ACK implementation:
 - STEP046B does not change route decisions, route discovery, Bluetooth topology, Raspberry Pi gateway service, or the compact `BT1` LoRa relay format.
 - Local build validation is PASS for Android and `gatewayA_lora`, `gatewayB_lora`, `nodeA1_lora`, and `nodeA2_lora`; physical ACK validation is pending.
 
+STEP046C Bridge ACK UI sanitization:
+- Hardware validation confirmed STEP046B delivery behavior but found one UI acceptance failure: failed Bridge ACK cards could still display raw ACK JSON.
+- Android now sanitizes user-facing Bridge ACK output at the message-card/status-row boundary.
+- User-facing Bridge ACK states are limited to `Delivered`, `Pending`, `Unknown`, and `Failed`.
+- Raw ACK JSON remains available only to parsing/log/debug flows and is not shown in end-user Bridge ACK sections.
+- No firmware, routing, route discovery, Bluetooth topology, Raspberry Pi gateway service, or compact `BT1` protocol changes.
+
 STEP042A discovery export fix:
 - Root cause: compact LoRa relay HELLO packets such as `HELLO-nodeA1` and `HELLO-nodeA2` were parsed as `MESSAGE` unconditionally, then routed, relayed, or duplicate-dropped before node table insertion.
 - Fix in `esp32-node-platformio/src/main.cpp`: infer compact relay HELLO packets from `HELLO-*` packet IDs or `BROADCAST` + `gatewayId` payload, learn HELLO packets before route/duplicate handling, store `hopCount` in node table entries, and log `[NEIGHBOR_ADD]`, `[NEIGHBOR_UPDATE]`, and `[NODE_LIST_EXPORT]`.
@@ -184,7 +191,7 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP046B Bridge ACK Reliability Improvement - implemented / local build PASS / physical validation pending.
+- STEP046C Bridge ACK UI Sanitization - implemented / Android build PASS / physical UI retest pending.
 - STEP046B-A Bridge ACK Requirements Definition - COMPLETE / planning only.
 - STEP047 Bluetooth Transport Layer - PASS / COMPLETE after physical validation.
 - STEP046A Controlled Multi-Hop Lab Mode - PASS / COMPLETE after physical forced-route validation; production default restored.

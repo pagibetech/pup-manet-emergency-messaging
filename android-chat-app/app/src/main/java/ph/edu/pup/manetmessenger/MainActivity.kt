@@ -2208,7 +2208,7 @@ fun MessengerApp() {
                                                         liveTestPassed = passed,
                                                         liveTestFailed = failed,
                                                         lastSentLine = exchange.first,
-                                                        lastReceivedLine = response ?: "No response before timeout",
+                                                        lastReceivedLine = bridgeAckSafeDisplay(response ?: "No response before timeout"),
                                                         lastError = if (matched) {
                                                             "None"
                                                         } else {
@@ -2288,7 +2288,7 @@ fun MessengerApp() {
                                                             "LoRa message sent; check ESP32 logs"
                                                         },
                                                         lastSentLine = exchange.first,
-                                                        lastReceivedLine = response ?: "No response before timeout",
+                                                        lastReceivedLine = bridgeAckSafeDisplay(response ?: "No response before timeout"),
                                                         lastError = if (forwarded) {
                                                             "None"
                                                         } else {
@@ -2957,6 +2957,7 @@ private fun StatusPanel(
 
 @Composable
 private fun StatusRow(label: String, value: String) {
+    val displayValue = bridgeAckSafeDisplay(value)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2970,7 +2971,7 @@ private fun StatusRow(label: String, value: String) {
         )
         Text(
             modifier = Modifier.weight(1f),
-            text = value,
+            text = displayValue,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.End
@@ -4197,7 +4198,7 @@ private fun ProtocolPacketCard(
         StatusRow(label = "Status", value = packet.status)
         StatusRow(label = "Checksum", value = packet.checksumPlaceholder)
         Text(
-            text = "Payload: ${packet.payload}",
+            text = "Payload: ${bridgeAckSafeDisplay(packet.payload)}",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -4483,9 +4484,117 @@ private fun MessageComposer(
     }
 }
 
+private fun userFacingDeliveryProgress(message: ChatMessage): String {
+    val safeProgress = bridgeAckSafeDisplay(message.deliveryProgress)
+    if (!isBridgeAckMessage(message)) {
+        return safeProgress
+    }
+
+    return when (message.status) {
+        MessageStatus.Pending -> "Bridge ACK: Pending"
+        MessageStatus.Delivered -> "Bridge ACK: Delivered"
+        MessageStatus.Unknown -> "Bridge ACK: Unknown"
+        MessageStatus.Failed -> "Bridge ACK: Failed"
+        else -> safeProgress
+    }
+}
+
+private fun userFacingMessageNote(message: ChatMessage): String? {
+    if (message.note.isBlank()) {
+        return null
+    }
+    if (isBridgeAckMessage(message) && message.status == MessageStatus.Failed) {
+        return null
+    }
+    return bridgeAckSafeDisplay(message.note).takeIf { it.isNotBlank() }
+}
+
+private fun isBridgeAckMessage(message: ChatMessage): Boolean {
+    return message.deliveryProgress.contains("Bridge ACK", ignoreCase = true) ||
+        message.note.contains("Bridge ACK", ignoreCase = true) ||
+        message.note.contains("delivery ACK", ignoreCase = true) ||
+        message.packet.packetId.startsWith("BT-MESSAGE")
+}
+
+private fun bridgeAckSafeDisplay(value: String): String {
+    return bridgeAckDisplayFromRawText(value) ?: value
+}
+
+private fun bridgeAckDisplayFromRawText(value: String): String? {
+    if (!looksLikeBridgeAckRawText(value)) {
+        return null
+    }
+
+    val trimmed = value.trim()
+    val jsonStart = trimmed.indexOf('{')
+    val jsonEnd = trimmed.lastIndexOf('}')
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        val jsonCandidate = trimmed.substring(jsonStart, jsonEnd + 1)
+        val packetAck = deserializeBluetoothProtocolPacket(jsonCandidate)
+            ?.let { parseBridgeAckInfo(it) }
+        if (packetAck != null) {
+            return bridgeAckDisplayLabel(packetAck.ackType, packetAck.ackStatus)
+        }
+
+        val payloadValues = bridgeAckPayloadValues(jsonCandidate)
+        if (payloadValues.isNotEmpty()) {
+            return bridgeAckDisplayLabel(
+                ackTypeText = payloadValues["ackType"],
+                ackStatusText = payloadValues["ackStatus"]
+                    ?: payloadValues["status"]
+                    ?: inferredAckStatus(trimmed, payloadValues)
+            )
+        }
+    }
+
+    val payloadValues = bridgeAckPayloadValues(trimmed)
+    if (payloadValues.isNotEmpty()) {
+        return bridgeAckDisplayLabel(
+            ackTypeText = payloadValues["ackType"] ?: inferredAckType(trimmed, payloadValues),
+            ackStatusText = payloadValues["ackStatus"] ?: inferredAckStatus(trimmed, payloadValues)
+        )
+    }
+
+    return "Bridge ACK: Unknown"
+}
+
+private fun looksLikeBridgeAckRawText(value: String): Boolean {
+    return value.contains("\"packetType\":\"ACK\"", ignoreCase = true) ||
+        value.contains("\"ackType\"", ignoreCase = true) ||
+        value.contains("\"ackFor\"", ignoreCase = true) ||
+        value.contains("ackType=", ignoreCase = true) ||
+        value.contains("ackFor=", ignoreCase = true) ||
+        value.contains("FORWARDED_OVER_LORA", ignoreCase = true)
+}
+
+private fun bridgeAckDisplayLabel(ackType: BridgeAckKind, ackStatus: BridgeAckStatus): String {
+    return when (ackStatus) {
+        BridgeAckStatus.Delivered -> "Bridge ACK: Delivered"
+        BridgeAckStatus.Failed -> "Bridge ACK: Failed"
+        BridgeAckStatus.Unknown -> "Bridge ACK: Unknown"
+        else -> if (ackType == BridgeAckKind.Delivery) {
+            "Bridge ACK: Unknown"
+        } else {
+            "Bridge ACK: Pending"
+        }
+    }
+}
+
+private fun bridgeAckDisplayLabel(ackTypeText: String?, ackStatusText: String?): String {
+    val ackType = BridgeAckKind.entries.firstOrNull {
+        it.wireName == ackTypeText.orEmpty().uppercase(Locale.US)
+    } ?: BridgeAckKind.Unknown
+    val ackStatus = BridgeAckStatus.entries.firstOrNull {
+        it.wireName == ackStatusText.orEmpty().uppercase(Locale.US)
+    } ?: BridgeAckStatus.Unknown
+    return bridgeAckDisplayLabel(ackType, ackStatus)
+}
+
 @Composable
 private fun MessageBubble(message: ChatMessage) {
     val statusColors = messageStatusColors(message.status)
+    val deliveryProgressText = userFacingDeliveryProgress(message)
+    val noteText = userFacingMessageNote(message)
     val progress = if (message.path.isEmpty()) {
         0f
     } else if (message.status == MessageStatus.Failed) {
@@ -4535,7 +4644,7 @@ private fun MessageBubble(message: ChatMessage) {
             color = statusColors.second
         )
         Text(
-            text = message.deliveryProgress,
+            text = deliveryProgressText,
             style = MaterialTheme.typography.labelSmall,
             color = statusColors.second
         )
@@ -4559,9 +4668,9 @@ private fun MessageBubble(message: ChatMessage) {
             style = MaterialTheme.typography.labelSmall,
             color = statusColors.second
         )
-        if (message.note.contains("Failover") || message.note.contains("Adaptive") || message.status == MessageStatus.Failed) {
+        if (noteText != null && (message.note.contains("Failover") || message.note.contains("Adaptive") || message.status == MessageStatus.Failed)) {
             Text(
-                text = message.note,
+                text = noteText,
                 style = MaterialTheme.typography.labelSmall,
                 color = statusColors.second
             )

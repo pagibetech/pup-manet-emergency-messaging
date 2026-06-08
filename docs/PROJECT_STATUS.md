@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-07
 
-Overall state: STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046B Bridge ACK Reliability Improvement is implemented and locally build-validated; physical validation is pending. Production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+Overall state: STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046B delivery ACK hardware behavior passed, but UI acceptance failed because a failed card displayed raw Bridge ACK JSON. STEP046C Android UI sanitization is implemented and locally build-validated; physical UI retest is pending. Production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,7 +17,7 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP046B - Bridge ACK Reliability Improvement implemented / local build PASS / physical validation pending.
+Workbook current milestone: STEP046C - Bridge ACK UI Sanitization implemented / Android build PASS / physical UI retest pending.
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
@@ -49,6 +49,8 @@ Completed highlights:
 - STEP047 PASS / COMPLETE: Bluetooth phone-to-node access verified; `NODE_LIST` verified; `PhoneA -> nodeA2` verified; `nodeA2 -> PhoneA` verified; gateway disappearance detection verified; gateway-loss messaging verified.
 - STEP046B-A COMPLETE: Bridge ACK requirements defined without source changes. User-facing Bridge ACK means final destination-node delivery ACK; forwarding gateway and hop ACKs are diagnostics only.
 - STEP046B IMPLEMENTED / LOCAL BUILD PASS: Android now correlates Bridge ACKs by `ackFor`, waits 12 seconds for final destination `DELIVERY` ACKs, displays `Pending`, `Delivered`, or `Unknown`, and keeps forwarding/hop ACKs diagnostic-only. ESP32 destination nodes now generate correlated delivery ACKs after local message delivery. Physical validation remains pending.
+- STEP046B HARDWARE VALIDATION PARTIAL: delivery behavior PASS for `nodeA1 -> nodeA2`, `nodeA2 -> nodeA1`, timeout detection, failed delivery display, and no incorrect Delivered state. UI acceptance FAIL because failed card showed raw Bridge ACK JSON.
+- STEP046C IMPLEMENTED / ANDROID BUILD PASS: Android UI sanitizes Bridge ACK card/status/payload display to show only `Delivered`, `Pending`, `Unknown`, or `Failed` states to end users. Physical UI retest pending.
 
 Current gateway/backhaul design:
 - `Raspberry Pi 3B Gateway A <-> Tailscale VPN Tunnel over Internet <-> Raspberry Pi 3B Gateway B`.
@@ -232,7 +234,15 @@ STEP046B - Bridge ACK Reliability Improvement:
 - No routing decisions, route discovery logic, Bluetooth architecture, Raspberry Pi gateway service, or Android destination-selection architecture were changed.
 - Build validation PASS: Android `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
 - Build validation PASS: ESP32 `pio run -e gatewayA_lora -e gatewayB_lora -e nodeA1_lora -e nodeA2_lora`.
-- Physical validation pending.
+- Hardware validation result: delivery behavior PASS but UI acceptance FAIL because the failed card still displayed raw Bridge ACK JSON.
+
+STEP046C - Bridge ACK UI Sanitization:
+- Android-only fix in `MainActivity.kt`.
+- User-facing message cards/status rows/protocol payload text now sanitize Bridge ACK content to `Bridge ACK: Delivered`, `Bridge ACK: Pending`, `Bridge ACK: Unknown`, or `Bridge ACK: Failed`.
+- Raw ACK JSON payloads remain available for parsing/log/debug only and are not rendered to end users in Bridge ACK sections.
+- Android build validation PASS: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:assembleDebug`.
+- No firmware, routing, route discovery, Bluetooth architecture, Raspberry Pi gateway service, or compact `BT1` protocol changes.
+- Physical UI retest pending.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -249,7 +259,7 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-- STEP046B physical validation is next. Preserve routing core and do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
+- STEP046C physical UI retest is next. Preserve routing core and do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket
