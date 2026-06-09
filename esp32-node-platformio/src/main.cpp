@@ -87,6 +87,25 @@ const char *SUPPORTED_MANUAL_MODES[] = {
 };
 constexpr size_t SUPPORTED_MANUAL_MODE_COUNT = sizeof(SUPPORTED_MANUAL_MODES) / sizeof(SUPPORTED_MANUAL_MODES[0]);
 
+// ---- STEP042C Delivery Tracking States ----
+const String DELIVERY_STATE_MESSAGE = "MESSAGE";
+const String DELIVERY_STATE_DELIVERED = "DELIVERED";
+const String DELIVERY_STATE_SEEN = "SEEN";
+const String DELIVERY_STATE_FAILED = "FAILED";
+const String DELIVERY_STATE_UNKNOWN = "UNKNOWN";
+
+constexpr size_t MAX_DELIVERY_TRACKING = 16;
+constexpr unsigned long DELIVERY_TIMEOUT_MS = 60000UL;
+
+struct DeliveryEntry {
+  String packetId;
+  String destNode;
+  String state;
+  unsigned long lastUpdatedMs;
+  unsigned long createdAtMs;
+};
+// ---- End STEP042C ----
+
 struct SimMessage {
   String msgId;
   String src;
@@ -165,6 +184,81 @@ unsigned long lastHelloSentMs = 0;
 #if ENABLE_BLUETOOTH
 BluetoothSerial SerialBT;
 #endif
+
+// ---- STEP042C Delivery Tracking ----
+DeliveryEntry deliveryTrackingTable[MAX_DELIVERY_TRACKING];
+size_t deliveryTrackingCount = 0;
+
+int findDeliveryTrackingIndex(const String &packetId) {
+  for (size_t i = 0; i < deliveryTrackingCount; ++i) {
+    if (deliveryTrackingTable[i].packetId == packetId) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+void initDeliveryTracking(const String &packetId, const String &destNode) {
+  if (deliveryTrackingCount >= MAX_DELIVERY_TRACKING) {
+    deliveryTrackingCount = 0;
+  }
+  unsigned long now = millis();
+  deliveryTrackingTable[deliveryTrackingCount].packetId = packetId;
+  deliveryTrackingTable[deliveryTrackingCount].destNode = destNode;
+  deliveryTrackingTable[deliveryTrackingCount].state = DELIVERY_STATE_MESSAGE;
+  deliveryTrackingTable[deliveryTrackingCount].lastUpdatedMs = now;
+  deliveryTrackingTable[deliveryTrackingCount].createdAtMs = now;
+  ++deliveryTrackingCount;
+  Serial.print("[DELIVERY_TRACK] init packetId=");
+  Serial.print(packetId);
+  Serial.print(" dest=");
+  Serial.print(destNode);
+  Serial.print(" state=");
+  Serial.println(DELIVERY_STATE_MESSAGE);
+}
+
+void updateDeliveryState(const String &packetId, const String &newState) {
+  int idx = findDeliveryTrackingIndex(packetId);
+  if (idx < 0) return;
+  deliveryTrackingTable[idx].state = newState;
+  deliveryTrackingTable[idx].lastUpdatedMs = millis();
+  Serial.print("[DELIVERY_TRACK] update packetId=");
+  Serial.print(deliveryTrackingTable[idx].packetId);
+  Serial.print(" newState=");
+  Serial.println(newState);
+}
+
+void processDeliveryTimeouts() {
+  unsigned long now = millis();
+  for (size_t i = 0; i < deliveryTrackingCount; ++i) {
+    if (deliveryTrackingTable[i].state == DELIVERY_STATE_MESSAGE &&
+        (now - deliveryTrackingTable[i].createdAtMs >= DELIVERY_TIMEOUT_MS)) {
+      deliveryTrackingTable[i].state = DELIVERY_STATE_UNKNOWN;
+      deliveryTrackingTable[i].lastUpdatedMs = now;
+      Serial.print("[DELIVERY_TRACK] timeout packetId=");
+      Serial.print(deliveryTrackingTable[i].packetId);
+      Serial.print(" state=");
+      Serial.println(DELIVERY_STATE_UNKNOWN);
+    }
+  }
+}
+
+void printDeliveryTracking() {
+  Serial.println("[DELIVERY_STATUS] tracking_count=" + String(deliveryTrackingCount));
+  for (size_t i = 0; i < deliveryTrackingCount; ++i) {
+    Serial.print("  packetId=");
+    Serial.print(deliveryTrackingTable[i].packetId);
+    Serial.print(" dest=");
+    Serial.print(deliveryTrackingTable[i].destNode);
+    Serial.print(" state=");
+    Serial.print(deliveryTrackingTable[i].state);
+    Serial.print(" ageMs=");
+    Serial.print(millis() - deliveryTrackingTable[i].createdAtMs);
+    Serial.print(" lastUpdateMs=");
+    Serial.println(millis() - deliveryTrackingTable[i].lastUpdatedMs);
+  }
+}
+// ---- End STEP042C ----
 
 unsigned long simulationTimestamp() {
   return millis() / 1000UL;
@@ -1507,6 +1601,14 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
       Serial.println(serializeProtocolPacket(deliveryPacket));
     }
 
+    // ---- STEP042C: update delivery state on ACK receipt ----
+    if (packet.packetType == "ACK") {
+      const String ackFor = extractJsonString(packet.payload, "ackFor");
+      if (ackFor.length() > 0) {
+        updateDeliveryState(ackFor, DELIVERY_STATE_DELIVERED);
+      }
+    }
+
     deliverToBluetooth(deliveryPacket);
     sendDeliveryAckForMessage(deliveryPacket);
     return;
@@ -1987,6 +2089,11 @@ void processIncomingBluetoothProtocolPacket(const String &line) {
       }
 
       forwardedToLoRa = sendLoRaLine(serializeLoRaRelayPacket(relayPacket));
+    }
+
+    // ---- STEP042C: init delivery tracking for MESSAGE forwarded to LoRa ----
+    if (shouldForwardToLoRa) {
+      initDeliveryTracking(result.packet.packetId, result.packet.destinationNode);
     }
 
     String payload = "ackVersion=1";
@@ -2489,8 +2596,20 @@ void processSerialLine(String line) {
     relayTestDestCommand(line);
   } else if (command == "RELAY_DUPLICATE") {
     relayTestDuplicateCommand();
-  } else if (command == "RELAY_TTL0") {
-    relayTestTtl0Command(line);
+  } else if (command == "DELIVERY_STATUS") {
+    printDeliveryTracking();
+  } else if (command == "DELIVERY_SEEN") {
+    if (commandEnd < 0) {
+      Serial.println("[ERROR] Usage: DELIVERY_SEEN <packetId>");
+    } else {
+      String seenPid = line.substring(commandEnd + 1);
+      seenPid.trim();
+      if (seenPid.length() > 0) {
+        updateDeliveryState(seenPid, DELIVERY_STATE_SEEN);
+      } else {
+        Serial.println("[ERROR] Usage: DELIVERY_SEEN <packetId>");
+      }
+    }
   } else {
     sendPlainTextFallback(line);
   }
@@ -2605,6 +2724,7 @@ void printStartupBanner() {
   Serial.println("Bluetooth service command: BT_STATUS");
   Serial.println("LoRa live-test commands: LORA_STATUS, LORA_PING, LORA_SEND <DEST> <MESSAGE>");
   Serial.println("Relay validation commands: RELAY_DEST <DEST> <PAYLOAD>, RELAY_DUPLICATE, RELAY_TTL0 <DEST> <PAYLOAD>");
+  Serial.println("Delivery tracking commands: DELIVERY_STATUS, DELIVERY_SEEN <packetId>");
   Serial.println("Paste a JSON message to simulate receiving a packet from another node.");
   Serial.println("Paste a BT-MANET-1.0 protocol JSON packet to test parser validation.");
   Serial.println("Gateway serial bridge: [GW_JSON] <json> for Pi backhaul. Raw protocol JSON also accepted.");
@@ -2679,6 +2799,9 @@ void loop() {
 
   updateNodeHealth();
   removeExpiredNodes();
+
+  // ---- STEP042C: process delivery timeouts ----
+  processDeliveryTimeouts();
 
   const unsigned long now = millis();
   if (now - lastHelloSentMs >= HELLO_INTERVAL_MS) {

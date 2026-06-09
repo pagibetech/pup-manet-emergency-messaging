@@ -1,6 +1,6 @@
 # Active Context
 
-Last updated: 2026-06-07
+Last updated: 2026-06-09
 
 Project: PUP MANET Emergency Messaging Prototype
 
@@ -16,9 +16,9 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
-Latest physically completed workbook step: STEP046C - Bridge ACK UI Sanitization. STEP047 also remains COMPLETE / PASS.
+Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP042C is now COMPLETE / PASS after ACK correlation hardening.
 
-Current milestone: STEP046C - Bridge ACK UI Sanitization COMPLETE / PASS.
+Current milestone: STEP042C - Delivery Tracking COMPLETE / PASS after ACK correlation hardening.
 
 Current feature: STEP047 is physically validated and closed. Bluetooth is Android phone-to-local ESP32 access only; Bluetooth is not a node-to-node MANET transport; LoRa remains the MANET backbone.
 
@@ -42,7 +42,9 @@ STEP046C status: COMPLETE / PASS. Android UI sanitizes Bridge ACK display at the
 
 STEP046C physical validation: PASS per attached validation screenshots. Failed Bridge ACK card now shows a user-friendly Bridge ACK failed state and no raw Bridge ACK JSON is shown to the end user.
 
-Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP044 strict BT1 validation, STEP045A HELLO propagation, STEP046A lab-mode forced routing overlay, STEP047 Bluetooth access-layer status diagnostics, and STEP046B destination delivery ACK generation while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B, STEP047 phone-to-node Bluetooth access-layer UI wording, STEP046B Bridge ACK correlation, and STEP046C user-facing Bridge ACK display sanitization.
+STEP042C delivery tracking: `esp32-node-platformio/src/main.cpp` now includes `DeliveryEntry` tracking table, `initDeliveryTracking()`, `updateDeliveryState()`, `processDeliveryTimeouts()`, and `printDeliveryTracking()`. ACK correlation uses exact `ackFor` match; no substring fallback remains. `DELIVERY_SEEN` serial command uses exact `packetId` matching. `UNKNOWN` timeout only affects `MESSAGE` state.
+
+Active implementation files: `esp32-node-platformio/src/main.cpp` contains the STEP042A discovery export fix, STEP042C delivery tracking, STEP044 strict BT1 validation, STEP045A HELLO propagation, STEP046A lab-mode forced routing overlay, STEP047 Bluetooth access-layer status diagnostics, and STEP046B destination delivery ACK generation while preserving gateway Bluetooth-disable behavior. `android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt` uses live discovered-node destination selection from STEP045B, STEP047 phone-to-node Bluetooth access-layer UI wording, STEP046B Bridge ACK correlation, and STEP046C user-facing Bridge ACK display sanitization.
 
 Resolved issue: corrupted compact `BT1` LoRa packets are now rejected before neighbor learning and no longer create malformed neighbors such as `gateway=UNKNOWN`, `node=BROADCAST`, or misspelled node IDs.
 
@@ -159,4 +161,12 @@ STEP044 validation rules validated:
 - Reject non-numeric `ttl` or `hopCount`.
 - Reject `ttl` or `hopCount` outside `0..DEFAULT_TTL`.
 
-Next validation activity: continue only from the next workbook-approved task after STEP046C. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, and STEP047 Bluetooth phone-node access boundary.
+STEP042C validation:
+- ACK handling now uses `ackFor` for exact correlation.
+- No substring matching remains (`indexOf` fallback removed).
+- `DELIVERY_SEEN` uses exact `packetId` matching.
+- `MESSAGE -> DELIVERED -> SEEN` state transitions validated.
+- `UNKNOWN` timeout only affects `MESSAGE` state.
+- Builds passed for `nodeA1` and `nodeA1_lora`.
+
+Next validation activity: continue only from the next workbook-approved task after STEP042C. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, STEP047 Bluetooth phone-node access boundary, and STEP042C delivery tracking.

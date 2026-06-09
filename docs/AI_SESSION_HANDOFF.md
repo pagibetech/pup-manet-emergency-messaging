@@ -1,14 +1,15 @@
 # AI Session Handoff
 
-Last updated: 2026-06-07
+Last updated: 2026-06-09
 
-Current milestone: STEP046C - Bridge ACK UI Sanitization COMPLETE / PASS.
+Current milestone: STEP042C - Delivery Tracking COMPLETE / PASS after ACK correlation hardening.
 
-Latest physically completed milestone: STEP047 - Bluetooth Transport Layer.
+Latest physically completed milestone: STEP047 - Bluetooth Transport Layer. STEP042C is now closed.
 
-Unfinished task: none for STEP046C. Continue only from the next workbook-approved task.
+Unfinished task: none for STEP042C. Continue only from the next workbook-approved task.
 
 Pending validations:
+- STEP042C COMPLETE / PASS: ACK correlation hardened using exact `ackFor` matching; substring fallback removed; `DELIVERY_SEEN` uses exact `packetId`; `MESSAGE -> DELIVERED -> SEEN` validated; `UNKNOWN` timeout only affects `MESSAGE` state; builds passed for `nodeA1` and `nodeA1_lora`.
 - STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
 - STEP042B 2-node messaging is physically validated: Phone A `hello from A` reached Phone B via `nodeA1 -> nodeA2`; Phone B `hello from b` reached Phone A via `nodeA2 -> nodeA1`.
 - Existing 2-node Chat LoRa path and gateway Bluetooth-disable behavior must remain non-regressed.
@@ -213,14 +214,22 @@ Confirmed STEP 037 evidence:
 - New multi-hop fields confirmed active: `hopCount`, `ttl`, `previousHop`.
 - No regression from STEP 035 / STEP 036.
 
+STEP042C delivery tracking implementation summary:
+- ESP32-only change in `esp32-node-platformio/src/main.cpp`.
+- Added `DeliveryEntry` table, `initDeliveryTracking()`, `updateDeliveryState()`, `processDeliveryTimeouts()`, `printDeliveryTracking()`, and serial commands `DELIVERY_STATUS` / `DELIVERY_SEEN <packetId>`.
+- ACK correlation now uses exact `ackFor` match instead of the ACK's own `packetId`.
+- Removed dangerous substring `indexOf` fallback from `updateDeliveryState()`.
+- `UNKNOWN` timeout only transitions `MESSAGE` state after 60 seconds.
+- No routing decisions, route discovery, Bluetooth architecture, LoRa backbone, or Android UI were changed.
+- Builds validated: `pio run -e nodeA1` PASS; `pio run -e nodeA1_lora` PASS.
+
 Latest implementation instructions:
 - Follow `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`.
 - Work on one workbook task at a time.
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: inspect workbook and continue from the next approved task, preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, STEP047 Bluetooth phone-node access, and routing core.
-- STEP042C-D remain queued. Do not start delivery tracking or store-and-forward work yet.
+- Next incomplete activity for this thread: inspect workbook and continue from the next approved task, preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, STEP047 Bluetooth phone-node access, routing core, and STEP042C delivery tracking.
 
 Expected outputs:
 - Corrupted compact packets log `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>`.

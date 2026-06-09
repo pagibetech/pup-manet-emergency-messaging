@@ -1,11 +1,11 @@
 # Architecture
 
-Last updated: 2026-06-07
+Last updated: 2026-06-09
 
 Purpose: PUP MANET emergency messaging prototype with Android phones connected to local ESP32 nodes over Bluetooth SPP, LoRa node-to-node MANET transport, Raspberry Pi 3B local gateways, primary internet/Tailscale gateway backhaul, long-range LoRa gateway backup backhaul, and validated ESP32-to-Raspberry Pi USB serial bridge.
 
 Boundaries:
-- `esp32-node-platformio/`: ESP32 PlatformIO firmware, Bluetooth SPP phone-to-node access service for normal MANET nodes, gateway Bluetooth-disabled LoRa builds, packet parser, `[GW_JSON]` serial bridge parsing, STEP042A HELLO/node table discovery export fix, STEP045A mesh-wide HELLO propagation, STEP046A controlled multi-hop lab mode, STEP047 Bluetooth access-layer diagnostics, and controlled SX1278 LoRa live-test environments.
+- `esp32-node-platformio/`: ESP32 PlatformIO firmware, Bluetooth SPP phone-to-node access service for normal MANET nodes, gateway Bluetooth-disabled LoRa builds, packet parser, `[GW_JSON]` serial bridge parsing, STEP042A HELLO/node table discovery export fix, STEP042C delivery tracking with exact `ackFor` correlation, STEP045A mesh-wide HELLO propagation, STEP046A controlled multi-hop lab mode, STEP047 Bluetooth access-layer diagnostics, and controlled SX1278 LoRa live-test environments.
 - `android-chat-app/`: Kotlin Jetpack Compose Android app, simulation-first UI, Bluetooth permission/readiness flow, Classic Bluetooth SPP phone-to-local-node socket layer, and Step 023 Android-to-LoRa demo controls.
 - `raspberry-pi-gateway/`: Python gateway TCP relay service with Tailscale VPN backhaul, USB serial bridge to ESP32 via `[GW_JSON]` protocol, LoRa SPI abstraction baseline, failover, buffering, recovery.
 - `docs/`: workbook, operational memory, diagrams, test procedures, and Codex task logs.
@@ -183,15 +183,22 @@ Future gateway code should support:
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
-- It is now considered Stable STEP038 baseline firmware with STEP041 serial bridge additions.
-- Existing routing logic remains valid: TTL, hopCount, duplicate suppression, Bluetooth bridge, LoRa forwarding, gateway Bluetooth-disable behavior, STEP042A HELLO/node table discovery export fix, STEP044 strict compact packet validation, STEP045A presence propagation, and STEP046A production-safe lab overlay default.
+- It is now considered Stable STEP038 baseline firmware with STEP041 serial bridge additions and STEP042C delivery tracking.
+- Existing routing logic remains valid: TTL, hopCount, duplicate suppression, Bluetooth bridge, LoRa forwarding, gateway Bluetooth-disable behavior, STEP042A HELLO/node table discovery export fix, STEP042C delivery tracking, STEP044 strict compact packet validation, STEP045A presence propagation, and STEP046A production-safe lab overlay default.
 - ESP32 firmware supports both NODE mode and GATEWAY mode via `[GW_JSON]` prefix parsing in `processSerialLine()`.
+- STEP042C delivery tracking notes:
+  - `DeliveryEntry` table tracks up to 16 in-flight messages.
+  - States: `MESSAGE`, `DELIVERED`, `SEEN`, `FAILED`, `UNKNOWN`.
+  - ACK correlation uses exact `ackFor == original packetId`; no substring fallback.
+  - `UNKNOWN` timeout (60s) only affects `MESSAGE` state.
+  - Serial commands: `DELIVERY_STATUS`, `DELIVERY_SEEN <packetId>`.
 
 Simulation-first rule:
 - Prefer simulation and abstraction layers before hardware-specific behavior.
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
+- STEP042C Delivery Tracking - COMPLETE / PASS after ACK correlation hardening.
 - STEP046C Bridge ACK UI Sanitization - COMPLETE / PASS.
 - STEP046B-A Bridge ACK Requirements Definition - COMPLETE / planning only.
 - STEP047 Bluetooth Transport Layer - PASS / COMPLETE after physical validation.
@@ -202,5 +209,5 @@ Current milestone:
 - STEP043 Fix LoRa HELLO Packet Format - PASS for compact gatewayA/gatewayB discovery and `TEST_FINAL_001`.
 - STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
 - STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.
-- Next validation activity: continue from the next workbook-approved task after STEP046A.
-- Do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward yet.
+- Next validation activity: continue from the next workbook-approved task after STEP042C.
+- Do not start STEP042D Store-and-Forward yet.

@@ -1,8 +1,8 @@
 # Project Status
 
-Last updated: 2026-06-07
+Last updated: 2026-06-09
 
-Overall state: STEP047 Bluetooth Transport Layer is physically validated PASS / COMPLETE with Bluetooth scoped to Android phone-to-local ESP32 access only. STEP046B delivery ACK hardware behavior passed, but UI acceptance initially failed because a failed card displayed raw Bridge ACK JSON. STEP046C Android UI sanitization is now COMPLETE / PASS based on attached physical validation screenshots. Production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+Overall state: STEP042C Delivery Tracking is COMPLETE / PASS after ACK correlation hardening. STEP047 Bluetooth Transport Layer remains physically validated PASS / COMPLETE. STEP046C Android UI sanitization remains COMPLETE / PASS. Production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,13 +17,14 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP046C - Bridge ACK UI Sanitization COMPLETE / PASS.
+Workbook current milestone: STEP042C - Delivery Tracking COMPLETE / PASS after ACK correlation hardening.
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
 Implementation note: ESP32-to-Raspberry Pi USB serial bridge is validated end-to-end. Gateway Bluetooth-disable cleanup is validated and must not be undone. Android live discovered-node destination selection is validated; `nodeA3` has not been deployed.
 
 Completed highlights:
+- STEP042C Delivery Tracking: ESP32 delivery state machine (`MESSAGE`, `DELIVERED`, `SEEN`, `FAILED`, `UNKNOWN`) with exact `ackFor` correlation, no substring fallback, and `UNKNOWN` timeout limited to `MESSAGE` state. Builds passed for `nodeA1` and `nodeA1_lora`.
 - ESP32 simulation and multi-node simulation baseline.
 - ESP32 packet parser and Bluetooth service.
 - Android app shell, simulation engine, routing visualization, packet abstraction, queue, transport bridge, and Bluetooth readiness layers.
@@ -259,7 +260,8 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-- STEP046C is complete. Continue only from the next workbook-approved task. Preserve routing core and do not start STEP042C Delivery Tracking or STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
+- STEP042C COMPLETE / PASS: Delivery tracking implemented with exact `ackFor` ACK correlation, substring fallback removed, `DELIVERY_SEEN` exact `packetId` matching, `MESSAGE -> DELIVERED -> SEEN` validated, `UNKNOWN` timeout limited to `MESSAGE` state, and builds passed for `nodeA1` and `nodeA1_lora`.
+- Continue only from the next workbook-approved task. Preserve routing core and do not start STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket
