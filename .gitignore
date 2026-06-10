@@ -54,3 +54,8 @@ PUP_MANET_System_Architecture_Test_Aligned.png
 
 # Gateway service backup files
 esp32-node-platformio/raspberry-pi-gateway/gateway_service.py.backup-step041
+
+# Legacy task logs (permanently ignored)
+docs/codex-task-logs/ANDROID_STEP_*
+docs/codex-task-logs/ANDROID_UI_TABS_*
+docs/codex-task-logs/STEP_001_REPO_STRUCTURE.md
