@@ -40,3 +40,17 @@ docs/workbook/*.backup-*.xlsx
 # Specific accidental root-level files
 ADAPTIVE\ FAILOVER\ via\ LEO\ Satcom-Mobile\ Ad\ Hoc\ Network.docx
 MANET_UPdated.docx
+
+# Accidental root-level PNG evidence / diagrams
+AndroidPerspective.png
+ChatGPT\ Image\ May\ 4\,\ 2026\,\ 11_44_56\ PM.png
+Diagrams.png
+MANET_Diagram_1_Network.png
+MANET_Diagram_Final.png
+MANET_Diagram_v1.png
+Manet_Diagrams_V2.png
+PUP_MANET_Message_Data_Flow_Test_Aligned.png
+PUP_MANET_System_Architecture_Test_Aligned.png
+
+# Gateway service backup files
+esp32-node-platformio/raspberry-pi-gateway/gateway_service.py.backup-step041
