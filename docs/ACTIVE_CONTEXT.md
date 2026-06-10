@@ -16,11 +16,11 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
-Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP042C is now COMPLETE / PASS after ACK correlation hardening.
+Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP042 is fully complete (A/B/C/D all PASS).
 
-Current milestone: STEP042D-D Store-and-Forward Validation COMPLETE / PASS. STEP042D-C is closed.
+Current milestone: STEP042 COMPLETE / PASS. All sub-tasks (A/B/C/D) closed. Milestone summary at `docs/codex-task-logs/STEP042_COMPLETE_SUMMARY.md`.
 
-Current feature: STEP042D-D Store-and-Forward Validation COMPLETE / PASS. All 8 scenarios validated: MESSAGE/DELIVERY ACK/SEEN ACK queued and replayed through normal transport path, TTL expiration diagnostic-only, duplicate rejection, link flap stability gate, mark_acked skip, STEP042C state machine preserved. Full test suite: 105/105 pass (42 queue + 19 replay + 21 sim + 23 validation). STEP042D is closed.
+Current feature: STEP042 milestone is closed. All 4 sub-tasks complete: STEP042A Discovery (PASS), STEP042B Messaging (PASS), STEP042C Delivery Tracking (PASS), STEP042D Store-and-Forward (PASS). 105/105 tests pass. Next milestone: continue from workbook.
 
 STEP046B-A planning status: Bridge ACK requirements defined in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`.
 
@@ -174,4 +174,4 @@ STEP042C validation:
 - `UNKNOWN` timeout only affects `MESSAGE` state.
 - Builds passed for `nodeA1` and `nodeA1_lora`.
 
-Next validation activity: STEP042D is closed. All store-and-forward sub-tasks complete.
+Next validation activity: STEP042 is closed. Continue from next workbook-approved task.

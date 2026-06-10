@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-09
 
-Overall state: STEP042D-D Store-and-Forward Validation COMPLETE / PASS. All 4 sub-tasks (A/B/C/D) complete. STEP042D is closed. STEP047 Bluetooth Transport Layer remains physically validated PASS / COMPLETE.
+Overall state: STEP042 milestone is COMPLETE / PASS. All 4 sub-tasks (A/B/C/D) closed. STEP047 Bluetooth Transport Layer remains physically validated. Next milestone: continue from workbook.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,7 +17,7 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP042D-D Store-and-Forward Validation COMPLETE / PASS. STEP042D is closed.
+Workbook current milestone: STEP042 COMPLETE / PASS. Summary at `docs/codex-task-logs/STEP042_COMPLETE_SUMMARY.md`.
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
@@ -260,9 +260,7 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-- STEP042D-B IMPLEMENTED / PASS: Queue engine.
-- STEP042D-C IMPLEMENTED / PASS: Replay engine.
-- STEP042D-D COMPLETE / PASS: Validation (8 scenarios, 23 validation tests). 105/105 total tests pass. STEP042D closed.
+- STEP042 CLOSED: Discovery (A), Messaging (B), Delivery Tracking (C), Store-and-Forward (D). 105/105 tests pass. Zero regressions. See `docs/codex-task-logs/STEP042_COMPLETE_SUMMARY.md`.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket
