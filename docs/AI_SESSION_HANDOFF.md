@@ -2,16 +2,17 @@
 
 Last updated: 2026-06-09
 
-Current milestone: STEP042D-C Store-and-Forward Replay Engine IMPLEMENTED / PASS. STEP042D-B is closed.
+Current milestone: STEP042D-D Store-and-Forward Validation COMPLETE / PASS. STEP042D is closed.
 
-Latest physically completed milestone: STEP047 - Bluetooth Transport Layer. STEP042D-B Queue Engine IMPLEMENTED / PASS. STEP042D-C Replay Engine IMPLEMENTED / PASS (19/19 replay tests, 82/82 total tests).
+Latest physically completed milestone: STEP047 - Bluetooth Transport Layer. STEP042D Store-and-Forward is fully complete (A/B/C/D all PASS).
 
-Unfinished task: STEP042D-D Validation defined but not started. STEP042D-C Replay Engine is implemented and validated.
+Unfinished task: none. STEP042D is fully closed. All 4 sub-tasks (A/B/C/D) complete.
 
 Pending validations:
 - STEP042D-A COMPLETE / Planning Only: Store-and-Forward requirements defined.
 - STEP042D-B IMPLEMENTED / PASS: Queue engine.
-- STEP042D-C IMPLEMENTED / PASS: Replay engine (`rpi-gateway/replay_engine.py`, 19 tests). ReplayScheduler with stability gating, FIFO replay, throttling, TTL verification, retry limits, concurrent prevention. ReplayEngine adds diagnostic ACK emission. 82/82 total tests pass; zero regressions.
+- STEP042D-C IMPLEMENTED / PASS: Replay engine.
+- STEP042D-D COMPLETE / PASS: Validation. 8 scenarios validated (MESSAGE/DELIVERY ACK/SEEN ACK queued-replayed, TTL expiration diagnostic-only, duplicate rejection, link flap, mark_acked skip, STEP042C state machine). 23 validation tests + 82 existing = 105/105 total. Zero regressions.
 - STEP042C COMPLETE / PASS: ACK correlation hardened using exact `ackFor` matching; substring fallback removed; `DELIVERY_SEEN` uses exact `packetId`; `MESSAGE -> DELIVERED -> SEEN` validated; `UNKNOWN` timeout only affects `MESSAGE` state; builds passed for `nodeA1` and `nodeA1_lora`.
 - STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
 - STEP042B 2-node messaging is physically validated: Phone A `hello from A` reached Phone B via `nodeA1 -> nodeA2`; Phone B `hello from b` reached Phone A via `nodeA2 -> nodeA1`.
@@ -232,7 +233,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: inspect workbook and continue from STEP042D-D Validation after approval. STEP042D-C is implemented and validated.
+- Next incomplete activity for this thread: inspect workbook for next approved task. STEP042D is closed.
 
 Expected outputs:
 - Corrupted compact packets log `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>`.

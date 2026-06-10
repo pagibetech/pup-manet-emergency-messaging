@@ -18,16 +18,16 @@ Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP042C is now COMPLETE / PASS after ACK correlation hardening.
 
-Current milestone: STEP042D-C Store-and-Forward Replay Engine IMPLEMENTED / PASS. STEP042D-B is closed.
+Current milestone: STEP042D-D Store-and-Forward Validation COMPLETE / PASS. STEP042D-C is closed.
 
-Current feature: STEP042D-C Replay Engine implemented and unit-test validated (19/19 pass). Replay module at `rpi-gateway/replay_engine.py`: ReplayScheduler with stability gating (5s default), FIFO replay, throttling (10 msg/s, 100ms inter-message), TTL verification, retry limits (3 max), permanent/retryable failure handling, concurrent-prevention, ACK callbacks. ReplayEngine subclass adds diagnostic ACK emission for expired/dropped/retry-exceeded messages. Full test suite: 82/82 pass (42 queue + 19 replay + 21 sim). STEP042D-D Validation is next.
+Current feature: STEP042D-D Store-and-Forward Validation COMPLETE / PASS. All 8 scenarios validated: MESSAGE/DELIVERY ACK/SEEN ACK queued and replayed through normal transport path, TTL expiration diagnostic-only, duplicate rejection, link flap stability gate, mark_acked skip, STEP042C state machine preserved. Full test suite: 105/105 pass (42 queue + 19 replay + 21 sim + 23 validation). STEP042D is closed.
 
 STEP046B-A planning status: Bridge ACK requirements defined in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`.
 
 STEP042D-A planning status: Store-and-Forward requirements defined. STEP042D-B complete: queue engine implemented and validated.
 
-STEP042D-B implementation status: Queue engine implemented in `rpi-gateway/store_forward_queue.py`. STEP042D-C complete: replay engine implemented and validated.
-STEP042D-C implementation status: Replay engine implemented in `rpi-gateway/replay_engine.py`. ReplayScheduler handles stability gating, FIFO replay, throttling, TTL/retry checks. ReplayEngine adds ack_callback for diagnostic ACK emission. 19 replay tests pass. All 82 tests pass. No ESP32/Android changes.
+STEP042D-C implementation status: Replay engine implemented. STEP042D-D complete: store-and-forward validation PASS.
+STEP042D-D validation status: 8 scenarios validated, 105/105 total tests pass. Store-and-forward requirements (STEP042D-A), Queue Engine (STEP042D-B), Replay Engine (STEP042D-C), and Validation (STEP042D-D) are all complete.
 
 STEP046B-A Bridge ACK definition: Bridge ACK is the user-facing confirmation that a phone-originated message sent through the local ESP32 bridge was acknowledged by the final destination node. It is not merely Android Bluetooth write success, local ESP32 acceptance, gateway forwarding, or hop acceptance.
 
@@ -174,4 +174,4 @@ STEP042C validation:
 - `UNKNOWN` timeout only affects `MESSAGE` state.
 - Builds passed for `nodeA1` and `nodeA1_lora`.
 
-Next validation activity: STEP042D-C is complete. Continue with STEP042D-D Validation after workbook/user approval. Do not start STEP042D-D until explicitly approved.
+Next validation activity: STEP042D is closed. All store-and-forward sub-tasks complete.
