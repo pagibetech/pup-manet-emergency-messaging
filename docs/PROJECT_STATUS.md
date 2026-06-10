@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-09
 
-Overall state: STEP042D-B Store-and-Forward Queue Engine is IMPLEMENTED / PASS (42/42 unit tests, 21/21 existing tests non-regressed). STEP042C Delivery Tracking remains COMPLETE / PASS. STEP047 Bluetooth Transport Layer remains physically validated PASS / COMPLETE. STEP046C Android UI sanitization remains COMPLETE / PASS. Production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+Overall state: STEP042D-C Store-and-Forward Replay Engine is IMPLEMENTED / PASS (19/19 replay tests, 82/82 total). STEP042C Delivery Tracking remains COMPLETE / PASS. STEP047 Bluetooth Transport Layer remains physically validated PASS / COMPLETE.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,7 +17,7 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP042D-B Store-and-Forward Queue Engine IMPLEMENTED / PASS. STEP042D-A is closed. STEP042C is closed.
+Workbook current milestone: STEP042D-C Store-and-Forward Replay Engine IMPLEMENTED / PASS. STEP042D-B is closed.
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
@@ -260,9 +260,9 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-- STEP042D-A COMPLETE / Planning Only: Store-and-Forward requirements defined.
-- STEP042D-B IMPLEMENTED / PASS: Queue engine (`rpi-gateway/store_forward_queue.py`, `rpi-gateway/tests/test_store_forward_queue.py`). 42 unit tests pass; existing gateway simulation tests non-regressed (21/21). No ESP32/Android/gateway-service changes.
-- STEP042D-C Replay Engine and STEP042D-D Validation are defined but not started. Do not start until workbook/user explicitly approves.
+- STEP042D-B IMPLEMENTED / PASS: Queue engine.
+- STEP042D-C IMPLEMENTED / PASS: Replay engine (`rpi-gateway/replay_engine.py`, `rpi-gateway/tests/test_replay_engine.py`). 19 replay tests pass. Stability gating, FIFO replay, throttling, TTL checks, retry limits, concurrent prevention, ACK callbacks. 82/82 total tests pass. No ESP32/Android changes.
+- STEP042D-D Validation defined but not started. Do not start until workbook/user explicitly approves.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket

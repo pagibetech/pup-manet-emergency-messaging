@@ -180,7 +180,7 @@ Future gateway code should support:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-Store-and-forward queue requirements (STEP042D-A) are defined; STEP042D-B Queue Engine is implemented and validated in `rpi-gateway/store_forward_queue.py` (42/42 unit tests, zero regressions). STEP042D-C Replay Engine pending.
+Store-and-forward queue (STEP042D-B) and replay engine (STEP042D-C) are implemented and validated in `rpi-gateway/` (82/82 total tests, zero regressions). STEP042D-D Validation pending.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -200,9 +200,10 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP042D-B Store-and-Forward Queue Engine - IMPLEMENTED / PASS.
+- STEP042D-C Store-and-Forward Replay Engine - IMPLEMENTED / PASS.
+- STEP042D-B Queue Engine - IMPLEMENTED / PASS.
 - STEP042D-A Store-and-Forward Requirements Definition - COMPLETE / Planning Only.
-- STEP042D-C Replay Engine, STEP042D-D Validation - Defined but not started.
+- STEP042D-D Validation - Defined but not started.
 - STEP046C Bridge ACK UI Sanitization - COMPLETE / PASS.
 - STEP046B-A Bridge ACK Requirements Definition - COMPLETE / Planning Only.
 - STEP047 Bluetooth Transport Layer - PASS / COMPLETE after physical validation.
@@ -213,5 +214,5 @@ Current milestone:
 - STEP043 Fix LoRa HELLO Packet Format - PASS for compact gatewayA/gatewayB discovery and `TEST_FINAL_001`.
 - STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
 - STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.
-- Next validation activity: STEP042D-B is complete. Continue with STEP042D-C Replay Engine only after workbook/user approval.
+- Next validation activity: STEP042D-C is complete. Continue with STEP042D-D Validation only after workbook/user approval.
 - Store-and-Forward requirements are defined in `docs/codex-task-logs/STEP042D_A_STORE_AND_FORWARD_REQUIREMENTS_DEFINITION.md`. Preserve all existing validated STEP042/STEP044/STEP045/STEP046/STEP047 behaviors.
