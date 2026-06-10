@@ -1,3 +1,42 @@
-
 # macOS files
 .DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sandbox / test projects (not active project code)
+esp32-node-platformio-roo-test/
+esp32-roo-min-test/
+MANETAdaptiveFailoverSystem/
+manet_android_starter/
+MANET1/
+
+# Accidental binaries and cruft
+WorkbookOLD/
+release-packages/
+manet_android_starter.zip
+*_diff.txt
+Terminal*.txt
+Manet_Scratch.txt
+MANET_Credentials.txt
+TestCriteria.csv
+TestCriteria.xlsx
+TestCriteria.png
+TetsingChart.png
+
+# Workbook backups
+docs/workbook/*.backup-*.xlsx
+
+# Specific accidental root-level files
+ADAPTIVE\ FAILOVER\ via\ LEO\ Satcom-Mobile\ Ad\ Hoc\ Network.docx
+MANET_UPdated.docx
