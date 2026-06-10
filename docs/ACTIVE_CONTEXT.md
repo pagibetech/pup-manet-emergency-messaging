@@ -18,11 +18,15 @@ Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP042C is now COMPLETE / PASS after ACK correlation hardening.
 
-Current milestone: STEP042C - Delivery Tracking COMPLETE / PASS after ACK correlation hardening.
+Current milestone: STEP042D-B Store-and-Forward Queue Engine IMPLEMENTED / PASS. STEP042D-A is closed. STEP042C is closed.
 
-Current feature: STEP047 is physically validated and closed. Bluetooth is Android phone-to-local ESP32 access only; Bluetooth is not a node-to-node MANET transport; LoRa remains the MANET backbone.
+Current feature: STEP042D-B Queue Engine implemented and unit-test validated (42/42 pass). Queue module at `rpi-gateway/store_forward_queue.py`: in-memory deque, optional persistent JSON-Lines file, max depth 256, 300s TTL, message-type gating, duplicate prevention, BUFFERED/DROPPED/EXPIRED ack generation. STEP042D-C Replay Engine is next. Gateway service unchanged. STEP047 is physically validated and closed.
 
 STEP046B-A planning status: Bridge ACK requirements defined in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`.
+
+STEP042D-A planning status: Store-and-Forward requirements defined. STEP042D-B complete: queue engine implemented and validated.
+
+STEP042D-B implementation status: Queue engine implemented in `rpi-gateway/store_forward_queue.py`. Covers `StoreForwardQueue`, `StoreForwardPersistentQueue`, `QueuedMessage`, `build_buffered_ack`, `build_dropped_ack`, `build_expired_ack`. 42 unit tests pass. Existing gateway simulation tests (21/21) non-regressed. Gateway service unchanged; zero ESP32/Android changes.
 
 STEP046B-A Bridge ACK definition: Bridge ACK is the user-facing confirmation that a phone-originated message sent through the local ESP32 bridge was acknowledged by the final destination node. It is not merely Android Bluetooth write success, local ESP32 acceptance, gateway forwarding, or hop acceptance.
 
@@ -134,11 +138,11 @@ Open issues:
 - This is a 2-node validation only; `nodeA3` has not been flashed or validated.
 - GatewayB repeated reset/garbage serial output needs investigation.
 
-Future gateway code must support store-and-forward queue, gateway ACK tracking, heartbeat monitoring, peer online detection, automatic reconnect, gateway relay mode, and LoRa backup backhaul mode.
+Future gateway code must support gateway ACK tracking, heartbeat monitoring, peer online detection, automatic reconnect, gateway relay mode, and LoRa backup backhaul mode. Store-and-forward requirements are now defined in STEP042D-A; queue engine and replay engine implementation are pending.
 
 Recommended model/tool: continue from the next workbook-approved task with Codex/local tools only after studying workbook and continuity files.
 
-Escalation guidance: do not start STEP042C/D unless the workbook/user explicitly routes there next.
+Escalation guidance: do not start STEP042D-B/C/D implementation unless the workbook/user explicitly routes there next.
 
 Clarified requirements (2026-06-02):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -169,4 +173,4 @@ STEP042C validation:
 - `UNKNOWN` timeout only affects `MESSAGE` state.
 - Builds passed for `nodeA1` and `nodeA1_lora`.
 
-Next validation activity: continue only from the next workbook-approved task after STEP042C. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, STEP047 Bluetooth phone-node access boundary, and STEP042C delivery tracking.
+Next validation activity: STEP042D-B is complete. Continue with STEP042D-C Replay Engine after workbook/user approval. Do not start STEP042D-C until explicitly approved. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, STEP047 Bluetooth phone-node access boundary, STEP042C delivery tracking, and STEP046B/C Bridge ACK model.

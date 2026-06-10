@@ -173,7 +173,6 @@ Clarified requirements (2026-06-02):
 - Delivery tracking statuses: MESSAGE (sent), DELIVERED (received at destination node), SEEN (read by recipient Android user).
 
 Future gateway code should support:
-- Store-and-forward queue.
 - Gateway ACK tracking.
 - Heartbeat monitoring.
 - Peer online detection.
@@ -181,11 +180,14 @@ Future gateway code should support:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
+Store-and-forward queue requirements (STEP042D-A) are defined; STEP042D-B Queue Engine is implemented and validated in `rpi-gateway/store_forward_queue.py` (42/42 unit tests, zero regressions). STEP042D-C Replay Engine pending.
+
 Firmware status:
 - STEP038 ESP32 firmware is not final.
 - It is now considered Stable STEP038 baseline firmware with STEP041 serial bridge additions and STEP042C delivery tracking.
 - Existing routing logic remains valid: TTL, hopCount, duplicate suppression, Bluetooth bridge, LoRa forwarding, gateway Bluetooth-disable behavior, STEP042A HELLO/node table discovery export fix, STEP042C delivery tracking, STEP044 strict compact packet validation, STEP045A presence propagation, and STEP046A production-safe lab overlay default.
 - ESP32 firmware supports both NODE mode and GATEWAY mode via `[GW_JSON]` prefix parsing in `processSerialLine()`.
+- Gateway queue engine (STEP042D-B) lives in `rpi-gateway/store_forward_queue.py` as a standalone Python module; it does not touch ESP32 firmware or Android.
 - STEP042C delivery tracking notes:
   - `DeliveryEntry` table tracks up to 16 in-flight messages.
   - States: `MESSAGE`, `DELIVERED`, `SEEN`, `FAILED`, `UNKNOWN`.
@@ -198,9 +200,11 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP042C Delivery Tracking - COMPLETE / PASS after ACK correlation hardening.
+- STEP042D-B Store-and-Forward Queue Engine - IMPLEMENTED / PASS.
+- STEP042D-A Store-and-Forward Requirements Definition - COMPLETE / Planning Only.
+- STEP042D-C Replay Engine, STEP042D-D Validation - Defined but not started.
 - STEP046C Bridge ACK UI Sanitization - COMPLETE / PASS.
-- STEP046B-A Bridge ACK Requirements Definition - COMPLETE / planning only.
+- STEP046B-A Bridge ACK Requirements Definition - COMPLETE / Planning Only.
 - STEP047 Bluetooth Transport Layer - PASS / COMPLETE after physical validation.
 - STEP046A Controlled Multi-Hop Lab Mode - PASS / COMPLETE after physical forced-route validation; production default restored.
 - STEP045B Android Real-Network Cleanup - PASS / COMPLETE after physical Android validation.
@@ -209,5 +213,5 @@ Current milestone:
 - STEP043 Fix LoRa HELLO Packet Format - PASS for compact gatewayA/gatewayB discovery and `TEST_FINAL_001`.
 - STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
 - STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.
-- Next validation activity: continue from the next workbook-approved task after STEP042C.
-- Do not start STEP042D Store-and-Forward yet.
+- Next validation activity: STEP042D-B is complete. Continue with STEP042D-C Replay Engine only after workbook/user approval.
+- Store-and-Forward requirements are defined in `docs/codex-task-logs/STEP042D_A_STORE_AND_FORWARD_REQUIREMENTS_DEFINITION.md`. Preserve all existing validated STEP042/STEP044/STEP045/STEP046/STEP047 behaviors.

@@ -1,0 +1,37 @@
+betech@betg2:~ $ python3 -m serial.tools.miniterm /dev/ttyUSB0 115200
+--- Miniterm on /dev/ttyUSB0  115200,8,N,1 ---
+--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H ---
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x12 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+[BT_SERVICE] disabled in this build
+[LORA_SERVICE] started frequency=433000000 sync_word=0x12
+
+PUP MANET ESP32 Multi-Node Simulation
+Node ID: gatewayB
+Gateway: B
+Default destination: nodeB1
+Bluetooth: DISABLED
+Simulation only: Serial input/output represents MANET packets.
+Commands: SEND <DEST> <MESSAGE>, STATUS, NEIGHBORS, OFFLINE, ONLINE
+Optional node state commands: OFFLINE <NODE_ID>, ONLINE <NODE_ID>
+Protocol parser commands: PARSE_HELLO, PARSE_MESSAGE, PARSE_STATUS, PARSE_NODE_LIST, PARSE_BAD_PACKET, PRINT_PROTOCOL
+Bluetooth service command: BT_STATUS
+LoRa live-test commands: LORA_STATUS, LORA_PING, LORA_SEND <DEST> <MESSAGE>
+Relay validation commands: RELAY_DEST <DEST> <PAYLOAD>, RELAY_DUPLICATE, RELAY_TTL0 <DEST> <PAYLOAD>
+Paste a JSON message to simulate receiving a packet from another node.
+Paste a BT-MANET-1.0 protocol JSON packet to test parser validation.
+Gateway serial bridge: [GW_JSON] <json> for Pi backhaul. Raw protocol JSON also accepted.
+
+[LORA_RX] rssi=-164 snr=0.00 payload=�
+[LORA_ERROR] Expected simulation JSON packet from LoRa peer.
+[LORA_RX] rssi=-68 snr=24.00 payload=�
+[LORA_ERROR] Expected simulation JSON packet from LoRa peer.
+

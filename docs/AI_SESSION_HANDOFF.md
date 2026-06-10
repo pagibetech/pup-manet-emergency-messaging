@@ -2,13 +2,15 @@
 
 Last updated: 2026-06-09
 
-Current milestone: STEP042C - Delivery Tracking COMPLETE / PASS after ACK correlation hardening.
+Current milestone: STEP042D-B Store-and-Forward Queue Engine IMPLEMENTED / PASS. STEP042D-A is closed.
 
-Latest physically completed milestone: STEP047 - Bluetooth Transport Layer. STEP042C is now closed.
+Latest physically completed milestone: STEP047 - Bluetooth Transport Layer. STEP042C is now closed. STEP042D-A requirements defined. STEP042D-B Queue Engine IMPLEMENTED / PASS (42/42 unit tests, 21/21 existing tests non-regressed).
 
-Unfinished task: none for STEP042C. Continue only from the next workbook-approved task.
+Unfinished task: STEP042D-C Replay Engine defined but not started. STEP042D-A requirements are complete. STEP042D-B Queue Engine is implemented and validated.
 
 Pending validations:
+- STEP042D-A COMPLETE / Planning Only: Store-and-Forward requirements defined.
+- STEP042D-B IMPLEMENTED / PASS: Queue engine (`rpi-gateway/store_forward_queue.py`) covering `StoreForwardQueue`, `StoreForwardPersistentQueue`, `build_buffered_ack`, `build_dropped_ack`, `build_expired_ack`. 42 unit tests pass. Existing gateway simulation tests non-regressed (21/21). Gateway service unchanged; zero ESP32/Android changes.
 - STEP042C COMPLETE / PASS: ACK correlation hardened using exact `ackFor` matching; substring fallback removed; `DELIVERY_SEEN` uses exact `packetId`; `MESSAGE -> DELIVERED -> SEEN` validated; `UNKNOWN` timeout only affects `MESSAGE` state; builds passed for `nodeA1` and `nodeA1_lora`.
 - STEP042A A-side discovery is physically validated: Android shows `nodeA1 ONLINE`, `nodeA2 ONLINE`, and `gatewayA ONLINE`.
 - STEP042B 2-node messaging is physically validated: Phone A `hello from A` reached Phone B via `nodeA1 -> nodeA2`; Phone B `hello from b` reached Phone A via `nodeA2 -> nodeA1`.
@@ -229,7 +231,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: inspect workbook and continue from the next approved task, preserving gatewayA/gatewayB/nodeA1/nodeA2 discovery, live Android destination selection, STEP047 Bluetooth phone-node access, routing core, and STEP042C delivery tracking.
+- Next incomplete activity for this thread: inspect workbook and continue from STEP042D-C Replay Engine after approval. STEP042D-B is implemented and validated. Preserve routing core, compact `BT1` validation, mesh-wide discovery, live Android destination selection, STEP047 Bluetooth phone-node access boundary, STEP042C delivery tracking, and STEP046B/C Bridge ACK model.
 
 Expected outputs:
 - Corrupted compact packets log `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>`.
@@ -266,7 +268,6 @@ ESP32 firmware status:
 - ESP32 firmware supports both NODE mode and GATEWAY mode (serial bridging via `[GW_JSON]` prefix).
 
 Future gateway-code requirements:
-- Store-and-forward queue.
 - Gateway ACK tracking.
 - Heartbeat monitoring.
 - Peer online detection.
@@ -274,4 +275,6 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-Recommended next model/tool: continue from the next workbook-approved task with Codex after inspecting workbook and continuity files.
+Store-and-forward requirements (STEP042D-A) are now defined in `docs/codex-task-logs/STEP042D_A_STORE_AND_FORWARD_REQUIREMENTS_DEFINITION.md`; implementation pending.
+
+Recommended next model/tool: continue with STEP042D-B Queue Engine after workbook/user approval.

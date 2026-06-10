@@ -1,0 +1,209 @@
+diff --git a/android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt b/android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt
+index 5aab70c..f13be7d 100644
+--- a/android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt
++++ b/android-chat-app/app/src/main/java/ph/edu/pup/manetmessenger/MainActivity.kt
+@@ -462,6 +462,12 @@ private val fakeEsp32Nodes = listOf(
+     "ESP32-MANET-03"
+ )
+ 
++data class DiscoveredNode(
++    val nodeId: String,
++    val gatewayId: String,
++    val online: Boolean
++)
++
+ private const val MAX_RETRY_COUNT = 2
+ private const val BLUETOOTH_PROTOCOL_VERSION = "BT-MANET-1.0"
+ private const val CHECKSUM_PLACEHOLDER = "checksum pending / simulated"
+@@ -1105,6 +1111,8 @@ fun MessengerApp() {
+     var realBluetoothSocketState by remember { mutableStateOf(RealBluetoothSocketState()) }
+     var demoLoRaMessage by remember { mutableStateOf("Emergency message from Phone A") }
+     var autoReceivedPacketIds by remember { mutableStateOf(setOf<String>()) }
++    var discoveredNodes by remember { mutableStateOf(listOf<DiscoveredNode>()) }
++    var nodeListStatus by remember { mutableStateOf("Not requested") }
+     var validationItems by remember { mutableStateOf(defaultValidationItems()) }
+     var activeTransport by remember {
+         mutableStateOf<ManetTransportInterface>(transportFor(TransportOption.Simulation))
+@@ -1175,12 +1183,36 @@ fun MessengerApp() {
+ 
+     LaunchedEffect(realBluetoothSocketState.connected) {
+         if (!realBluetoothSocketState.connected) return@LaunchedEffect
++        queueScope.launch {
++            delay(800L)
++            val packet = createBluetoothProtocolPacket(
++                packetType = BluetoothProtocolPacketType.Status,
++                payload = "REQUEST_NODE_LIST"
++            )
++            val line = compactSerializedPacketText(packet)
++            androidBluetoothSocketClient.sendLine(line)
++            nodeListStatus = "Requested node list..."
++        }
+         while (realBluetoothSocketState.connected) {
+             val result = androidBluetoothSocketClient.readAvailableLine()
+             result.fold(
+                 onSuccess = { line ->
+                     if (!line.isNullOrBlank()) {
+                         realBluetoothSocketState = realBluetoothSocketState.copy(lastReceivedLine = line)
++                        if (line.contains("\"packetType\":\"STATUS\"")) {
++                            val statusPacket = deserializeBluetoothProtocolPacket(line)
++                            if (statusPacket != null && statusPacket.payload.contains("type=NODE_LIST")) {
++                                val parsed = parseNodeListPayload(statusPacket.payload)
++                                discoveredNodes = parsed
++                                nodeListStatus = "Updated ${parsed.size} nodes"
++                                realBluetoothSocketState = realBluetoothSocketState.copy(
++                                    lastReceivedLine = line,
++                                    liveTestStatus = "Node list: ${parsed.size} nodes",
++                                    lastError = "None"
++                                )
++                                bluetoothPacketBridge = bluetoothPacketBridge.recordInbound("NODE_LIST")
++                            }
++                        }
+                         if (line.contains("\"packetType\":\"MESSAGE\"")) {
+                             val incomingPacket = deserializeBluetoothProtocolPacket(line)
+                             val incomingText = readableDemoMessageFromProtocolLine(line)
+@@ -1655,6 +1687,27 @@ fun MessengerApp() {
+                                 nodes = simulatedNodes
+                             )
+                         }
++                        item {
++                            DiscoveredNodesPanel(
++                                discoveredNodes = discoveredNodes,
++                                nodeListStatus = nodeListStatus,
++                                onRefresh = {
++                                    if (realBluetoothSocketState.connected) {
++                                        queueScope.launch {
++                                            val packet = createBluetoothProtocolPacket(
++                                                packetType = BluetoothProtocolPacketType.Status,
++                                                payload = "REQUEST_NODE_LIST"
++                                            )
++                                            val line = compactSerializedPacketText(packet)
++                                            androidBluetoothSocketClient.sendLine(line)
++                                            nodeListStatus = "Refresh requested..."
++                                        }
++                                    } else {
++                                        nodeListStatus = "Not connected to ESP32"
++                                    }
++                                }
++                            )
++                        }
+                     }
+                     AppTab.Routing -> {
+                         item { RoutingDecisionPanel(routingDecision = adaptiveRoutingDecision) }
+@@ -2472,6 +2525,64 @@ private fun NodeSummaryRow(
+     }
+ }
+ 
++@Composable
++private fun DiscoveredNodesPanel(
++    discoveredNodes: List<DiscoveredNode>,
++    nodeListStatus: String,
++    onRefresh: () -> Unit
++) {
++    val grouped = discoveredNodes.groupBy { it.gatewayId }
++    Column(
++        modifier = Modifier
++            .fillMaxWidth()
++            .background(
++                color = MaterialTheme.colorScheme.surfaceVariant,
++                shape = RoundedCornerShape(8.dp)
++            )
++            .padding(12.dp),
++        verticalArrangement = Arrangement.spacedBy(8.dp)
++    ) {
++        Text(
++            text = "Discovered MANET Nodes",
++            style = MaterialTheme.typography.titleMedium,
++            fontWeight = FontWeight.SemiBold
++        )
++        Text(
++            text = "Status: $nodeListStatus",
++            style = MaterialTheme.typography.labelSmall,
++            color = MaterialTheme.colorScheme.onSurfaceVariant
++        )
++        if (discoveredNodes.isEmpty()) {
++            Text(
++                text = "No nodes discovered yet. Connect to an ESP32 and request a node list.",
++                style = MaterialTheme.typography.labelSmall,
++                color = MaterialTheme.colorScheme.onSurfaceVariant
++            )
++        } else {
++            grouped.forEach { (gateway, nodes) ->
++                Text(
++                    text = "Gateway $gateway",
++                    style = MaterialTheme.typography.labelLarge,
++                    fontWeight = FontWeight.SemiBold,
++                    color = MaterialTheme.colorScheme.primary
++                )
++                nodes.forEach { node ->
++                    Text(
++                        text = "${node.nodeId} — ${if (node.online) "ONLINE" else "OFFLINE"}",
++                        style = MaterialTheme.typography.bodyMedium
++                    )
++                }
++            }
++        }
++        Button(
++            modifier = Modifier.fillMaxWidth(),
++            onClick = onRefresh
++        ) {
++            Text("Refresh Nodes")
++        }
++    }
++}
++
+ @Composable
+ private fun TopologyOverviewPanel(
+     localNode: SimNode,
+@@ -4120,19 +4231,46 @@ private fun createBluetoothProtocolPacket(
+     )
+ }
+ 
++private fun parseNodeListPayload(payload: String): List<DiscoveredNode> {
++    val result = mutableListOf<DiscoveredNode>()
++    if (!payload.contains("type=NODE_LIST")) return result
++    val parts = payload.split(";")
++    for (part in parts) {
++        val tokens = part.split(",")
++        if (tokens.size >= 3) {
++            val nodeId = tokens[0]
++            val gw = tokens[1]
++            val online = tokens[2].equals("ONLINE", ignoreCase = true)
++            if (nodeId.isNotBlank() && gw.isNotBlank() && !nodeId.contains("=")) {
++                result.add(DiscoveredNode(nodeId, gw, online))
++            }
++        }
++    }
++    return result
++}
++
+ private fun localEsp32NodeId(connectedDevice: String?): String {
+     return when {
+-        connectedDevice.isNullOrBlank() -> "NODE_A"
+-        connectedDevice.contains("NODE_A", ignoreCase = true) -> "NODE_A"
+-        connectedDevice.contains("NODE_B", ignoreCase = true) -> "NODE_B"
+-        else -> "NODE_A"
++        connectedDevice.isNullOrBlank() -> "nodeA1"
++        connectedDevice.contains("nodeA1", ignoreCase = true) -> "nodeA1"
++        connectedDevice.contains("nodeA2", ignoreCase = true) -> "nodeA2"
++        connectedDevice.contains("nodeA3", ignoreCase = true) -> "nodeA3"
++        connectedDevice.contains("nodeB1", ignoreCase = true) -> "nodeB1"
++        connectedDevice.contains("nodeB2", ignoreCase = true) -> "nodeB2"
++        connectedDevice.contains("nodeB3", ignoreCase = true) -> "nodeB3"
++        else -> "nodeA1"
+     }
+ }
+ 
+ private fun peerNodeForConnectedEsp32(connectedDevice: String?): String {
+     return when (localEsp32NodeId(connectedDevice)) {
+-        "NODE_A" -> "NODE_B"
+-        else -> "NODE_A"
++        "nodeA1" -> "nodeA2"
++        "nodeA2" -> "nodeA1"
++        "nodeA3" -> "nodeA1"
++        "nodeB1" -> "nodeB2"
++        "nodeB2" -> "nodeB3"
++        "nodeB3" -> "nodeB1"
++        else -> "nodeA2"
+     }
+ }
+ 

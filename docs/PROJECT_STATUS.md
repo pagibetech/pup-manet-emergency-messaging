@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-09
 
-Overall state: STEP042C Delivery Tracking is COMPLETE / PASS after ACK correlation hardening. STEP047 Bluetooth Transport Layer remains physically validated PASS / COMPLETE. STEP046C Android UI sanitization remains COMPLETE / PASS. Production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
+Overall state: STEP042D-B Store-and-Forward Queue Engine is IMPLEMENTED / PASS (42/42 unit tests, 21/21 existing tests non-regressed). STEP042C Delivery Tracking remains COMPLETE / PASS. STEP047 Bluetooth Transport Layer remains physically validated PASS / COMPLETE. STEP046C Android UI sanitization remains COMPLETE / PASS. Production firmware mode remains restored to `TEST_FORCE_GATEWAY_ROUTE=0`.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,7 +17,7 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP042C - Delivery Tracking COMPLETE / PASS after ACK correlation hardening.
+Workbook current milestone: STEP042D-B Store-and-Forward Queue Engine IMPLEMENTED / PASS. STEP042D-A is closed. STEP042C is closed.
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
@@ -260,8 +260,9 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-- STEP042C COMPLETE / PASS: Delivery tracking implemented with exact `ackFor` ACK correlation, substring fallback removed, `DELIVERY_SEEN` exact `packetId` matching, `MESSAGE -> DELIVERED -> SEEN` validated, `UNKNOWN` timeout limited to `MESSAGE` state, and builds passed for `nodeA1` and `nodeA1_lora`.
-- Continue only from the next workbook-approved task. Preserve routing core and do not start STEP042D Store-and-Forward unless explicitly routed by the workbook/user.
+- STEP042D-A COMPLETE / Planning Only: Store-and-Forward requirements defined.
+- STEP042D-B IMPLEMENTED / PASS: Queue engine (`rpi-gateway/store_forward_queue.py`, `rpi-gateway/tests/test_store_forward_queue.py`). 42 unit tests pass; existing gateway simulation tests non-regressed (21/21). No ESP32/Android/gateway-service changes.
+- STEP042D-C Replay Engine and STEP042D-D Validation are defined but not started. Do not start until workbook/user explicitly approves.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket

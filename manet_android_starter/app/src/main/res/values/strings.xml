@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">MANET Adaptive Failover System</string>
+    <string name="banner_title">MANET Adaptive Failover System</string>
+    <string name="banner_subtitle">Adamson University GSM Network Monitor</string>
+    <string name="logo_desc">Adamson University official seal</string>
+    <string name="current_network_card_title">Current Connected Network</string>
+    <string name="detected_networks_title">Detected Networks / Cell Information</string>
+    <string name="detected_networks_hint">This section shows the network and cell information Android makes available on the device.</string>
+    <string name="detected_networks_hint_empty">No detected network entries were returned. Make sure SIM is inserted, location is ON, and permissions are granted.</string>
+    <string name="refresh_button">Refresh</string>
+    <string name="signal_dbm_placeholder">-- dBm</string>
+    <string name="signal_bars_placeholder">□□□□ (0/4)</string>
+    <string name="status_weak">Weak</string>
+    <string name="status_fair">Fair</string>
+    <string name="status_strong">Strong</string>
+    <string name="status_unknown">Unknown</string>
+    <string name="unknown_network">Unknown network</string>
+    <string name="permission_required_message">Please allow Phone and Location permissions so the app can read network and signal data.</string>
+    <string name="loading_text">Loading network details…</string>
+    <string name="no_active_sim_detected">No active SIM detected</string>
+    <string name="insert_sim_message">Insert a SIM card and grant permissions to read network details.</string>
+    <string name="no_telephony_title">Telephony Not Available</string>
+    <string name="no_telephony_message">This device does not report phone radio access for this app.</string>
+</resources>
