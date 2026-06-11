@@ -2,11 +2,11 @@
 
 Last updated: 2026-06-09
 
-Current milestone: STEP042 COMPLETE / PASS. All sub-tasks (A/B/C/D) closed.
+Current milestone: STEP048A Gateway Degradation Awareness IMPLEMENTED / PASS.
 
-Latest physically completed milestone: STEP047 - Bluetooth Transport Layer. STEP042 is fully complete and closed. Next milestone: continue from workbook.
+Latest physically completed milestone: STEP048A Gateway Degradation Awareness. STEP042 is fully complete and closed.
 
-Unfinished task: none. STEP042 is fully closed. All sub-tasks complete. Closure summary at `docs/codex-task-logs/STEP042_COMPLETE_SUMMARY.md`.
+Unfinished task: STEP048B Gateway Route State Machine defined but not started. STEP048A is complete.
 
 Pending validations:
 - STEP042D-A COMPLETE / Planning Only: Store-and-Forward requirements defined.
@@ -233,7 +233,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: inspect workbook for next approved task after STEP042.
+- Next incomplete activity for this thread: STEP048B Gateway Route State Machine after workbook/user approval.
 
 Expected outputs:
 - Corrupted compact packets log `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>`.

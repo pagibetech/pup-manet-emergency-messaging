@@ -180,7 +180,7 @@ Future gateway code should support:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-Store-and-forward (STEP042D-A/B/C/D) is fully complete and validated. 105/105 tests pass across queue engine, replay engine, and validation suites in `rpi-gateway/`. Zero ESP32/Android regressions.
+Gateway degradation awareness (STEP048A) is implemented in `rpi-gateway/health_event_parser.py` and `rpi-gateway/node_health_monitor.py`. The gateway service now detects ESP32 `[DEGRADATION]`/`[RECOVERY]` serial lines before JSON parsing. 153/153 tests pass.
 
 Firmware status:
 - STEP038 ESP32 firmware is not final.
@@ -200,12 +200,9 @@ Simulation-first rule:
 - Do not introduce new real ESP32, Raspberry Pi, or Android logic unless the workbook step explicitly allows it.
 
 Current milestone:
-- STEP042 COMPLETE / PASS. All sub-tasks (A/B/C/D) closed.
-- STEP042D Store-and-Forward (A-D) complete and validated.
-- STEP042C Delivery Tracking complete.
-- STEP042B Destination Messaging complete.
-- STEP042A Node Discovery and Reachability complete.
-- Closure summary: `docs/codex-task-logs/STEP042_COMPLETE_SUMMARY.md`.
+- STEP048A Gateway Degradation Awareness - IMPLEMENTED / PASS.
+- STEP042 is closed.
+- Next: STEP048B Gateway Route State Machine.
 - STEP046C Bridge ACK UI Sanitization - COMPLETE / PASS.
 - STEP046B-A Bridge ACK Requirements Definition - COMPLETE / Planning Only.
 - STEP047 Bluetooth Transport Layer - PASS / COMPLETE after physical validation.
@@ -216,5 +213,5 @@ Current milestone:
 - STEP043 Fix LoRa HELLO Packet Format - PASS for compact gatewayA/gatewayB discovery and `TEST_FINAL_001`.
 - STEP042A Node Discovery and Reachability - PASS for A-side `nodeA1`/`nodeA2`/`gatewayA` discovery.
 - STEP042B Destination Messaging - PASS for bidirectional 2-node Android LoRa messaging on `nodeA1 <-> nodeA2`.
-- Next validation activity: STEP042 is closed. Continue from next workbook-approved task.
+- Next validation activity: STEP048A complete. Continue with STEP048B Gateway Route State Machine.
 - Store-and-Forward requirements are defined in `docs/codex-task-logs/STEP042D_A_STORE_AND_FORWARD_REQUIREMENTS_DEFINITION.md`. Preserve all existing validated STEP042/STEP044/STEP045/STEP046/STEP047 behaviors.

@@ -16,6 +16,16 @@ import threading
 import time
 from pathlib import Path
 
+try:
+    from rpi_gateway_health import parse_health_event, NodeHealthMonitor
+except ImportError:
+    try:
+        from node_health_monitor import NodeHealthMonitor
+        from health_event_parser import parse_health_event
+    except ImportError:
+        parse_health_event = None
+        NodeHealthMonitor = None
+
 DEFAULT_CONFIG = {
     "mode": "server",
     "bind_host": "0.0.0.0",
@@ -97,6 +107,12 @@ class GatewayRelay:
         self._remote_nodes: dict[str, dict] = {}  # node_id -> {"gateway": str, "last_seen": float}
         self._nodes_lock = threading.Lock()
 
+        # STEP048A Gateway Degradation Awareness
+        if NodeHealthMonitor is not None:
+            self._health_monitor = NodeHealthMonitor(gateway_id=self.gateway_id)
+        else:
+            self._health_monitor = None
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -130,6 +146,16 @@ class GatewayRelay:
                 if not line:
                     continue
                 self._log("[SERIAL_RX]", line[:256])
+
+                # STEP048A: detect health events before JSON parsing
+                if self._health_monitor is not None and parse_health_event is not None:
+                    health = parse_health_event(line)
+                    if health is not None:
+                        self._health_monitor._apply_event(health)
+                        self._log("[HEALTH_EVENT]",
+                                  f"{health['event']} node={health['nodeId']} "
+                                  f"rssi={health['rssi']}")
+                        continue
 
                 json_str = line
                 if line.startswith("[GW_JSON]"):
