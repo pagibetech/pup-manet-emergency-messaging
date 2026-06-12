@@ -2,11 +2,11 @@
 
 Last updated: 2026-06-09
 
-Current milestone: STEP048A Gateway Degradation Awareness IMPLEMENTED / PASS.
+Current milestone: STEP048B Gateway Route State Machine IMPLEMENTED / PASS.
 
-Latest physically completed milestone: STEP048A Gateway Degradation Awareness. STEP042 is fully complete and closed.
+Latest physically completed milestone: STEP048B Gateway Route State Machine.
 
-Unfinished task: STEP048B Gateway Route State Machine defined but not started. STEP048A is complete.
+Unfinished task: STEP048C Store-and-Forward Gateway Integration defined but not started.
 
 Pending validations:
 - STEP042D-A COMPLETE / Planning Only: Store-and-Forward requirements defined.
@@ -233,7 +233,7 @@ Latest implementation instructions:
 - Keep ESP32, Raspberry Pi, Android, and docs responsibilities separated.
 - Do not add hardware-dependent logic unless the workbook step explicitly allows it.
 - Follow hybrid AI workflow Codex conservation rules.
-- Next incomplete activity for this thread: STEP048B Gateway Route State Machine after workbook/user approval.
+- Next incomplete activity: STEP048C Store-and-Forward Gateway Integration after workbook/user approval.
 
 Expected outputs:
 - Corrupted compact packets log `[LORA_DROP_CORRUPT] reason=<reason> payload=<short payload>`.

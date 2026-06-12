@@ -18,9 +18,9 @@ Workbook latest referenced commit before STEP043 fix: `e8cf02d`
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP042 is fully complete (A/B/C/D all PASS).
 
-Current milestone: STEP048A Gateway Degradation Awareness IMPLEMENTED / PASS. STEP042 is closed.
+Current milestone: STEP048B Gateway Route State Machine IMPLEMENTED / PASS. STEP048A is closed.
 
-Current feature: STEP048A Gateway Degradation Awareness implemented. New modules `health_event_parser.py` and `node_health_monitor.py` in `rpi-gateway/` parse ESP32 `[DEGRADATION]`/`[RECOVERY]` serial lines and track node health state. Gateway service `_serial_read_loop` detects health events before JSON parsing. 48 new tests + 105 existing = 153/153 pass. No ESP32/Android changes. Next: STEP048B Gateway Route State Machine.
+Current feature: STEP048B Route State Machine implemented. Standalone `RouteStateMachine` in `rpi-gateway/route_state_machine.py` with 4 states (PRIMARY_LORA, DEGRADED, FAILOVER_ACTIVE, RECOVERING), 10s failover timer, 10s recovery timer. Reads NodeHealthMonitor data only; no routing actions. 34 new tests + 153 existing = 187/187 pass. Next: STEP048C Store-and-Forward Gateway Integration.
 
 STEP046B-A planning status: Bridge ACK requirements defined in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`.
 
@@ -174,4 +174,4 @@ STEP042C validation:
 - `UNKNOWN` timeout only affects `MESSAGE` state.
 - Builds passed for `nodeA1` and `nodeA1_lora`.
 
-Next validation activity: STEP048A complete. Continue with STEP048B Gateway Route State Machine after workbook/user approval.
+Next validation activity: STEP048B complete. Continue with STEP048C after workbook/user approval.

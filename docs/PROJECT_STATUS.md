@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-09
 
-Overall state: STEP048A Gateway Degradation Awareness IMPLEMENTED / PASS (153/153 tests). STEP042 milestone is closed. Next: STEP048B Gateway Route State Machine.
+Overall state: STEP048B Gateway Route State Machine IMPLEMENTED / PASS (187/187 tests). Next: STEP048C.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3.
@@ -17,7 +17,7 @@ Current branch: `step-002-003-esp32-simulation`
 
 Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
 
-Workbook current milestone: STEP048A Gateway Degradation Awareness IMPLEMENTED / PASS.
+Workbook current milestone: STEP048B Gateway Route State Machine IMPLEMENTED / PASS.
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
@@ -260,7 +260,8 @@ Future gateway-code requirements:
 - Gateway relay mode.
 - LoRa backup backhaul mode.
 
-- STEP048A IMPLEMENTED / PASS: Gateway Degradation Awareness (`health_event_parser.py`, `node_health_monitor.py`). Parse ESP32 [DEGRADATION]/[RECOVERY] serial lines. Minimal gateway_service.py integration. 48 new tests + 105 existing = 153/153 pass.
+- STEP048A IMPLEMENTED / PASS: Gateway Degradation Awareness.
+- STEP048B IMPLEMENTED / PASS: Route State Machine (`route_state_machine.py`). 4-state FSM with 10s failover/recovery timers. Reads NodeHealthMonitor data only. 34 new tests + 153 existing = 187/187 pass.
 
 Troubleshooting notes resolved before STEP 035 pass:
 - stale Bluetooth socket
