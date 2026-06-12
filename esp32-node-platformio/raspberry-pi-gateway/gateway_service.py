@@ -8,6 +8,8 @@ Modes:
   client  — actively connects to a peer and can send JSON packets
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import socket
@@ -26,6 +28,33 @@ except ImportError:
         parse_health_event = None
         NodeHealthMonitor = None
 
+try:
+    from store_forward_queue import (
+        StoreForwardQueue,
+        build_buffered_ack,
+        build_dropped_ack,
+    )
+    from replay_engine import ReplayScheduler, ReplayResult, evaluate_send_result
+    from route_state_machine import (
+        RouteStateMachine,
+        STATE_FAILOVER_ACTIVE,
+        STATE_RECOVERING,
+        STATE_PRIMARY_LORA,
+        DEFAULT_HEALTH_CHECK_INTERVAL,
+    )
+except ImportError:
+    StoreForwardQueue = None
+    ReplayScheduler = None
+    ReplayResult = None
+    evaluate_send_result = None
+    RouteStateMachine = None
+    build_buffered_ack = None
+    build_dropped_ack = None
+    STATE_FAILOVER_ACTIVE = "FAILOVER_ACTIVE"
+    STATE_RECOVERING = "RECOVERING"
+    STATE_PRIMARY_LORA = "PRIMARY_LORA"
+    DEFAULT_HEALTH_CHECK_INTERVAL = 1.0
+
 DEFAULT_CONFIG = {
     "mode": "server",
     "bind_host": "0.0.0.0",
@@ -41,6 +70,10 @@ DEFAULT_CONFIG = {
     "serial_read_timeout_sec": 0.1,
     "gateway_id": "A",
     "node_advertise_interval_sec": 10,
+    "store_forward_max_depth": 256,
+    "store_forward_ttl_sec": 300,
+    "replay_stability_sec": 5.0,
+    "route_health_check_interval_sec": DEFAULT_HEALTH_CHECK_INTERVAL,
 }
 
 LOG_TAGS = {
@@ -112,6 +145,38 @@ class GatewayRelay:
             self._health_monitor = NodeHealthMonitor(gateway_id=self.gateway_id)
         else:
             self._health_monitor = None
+
+        # STEP048C Store-and-Forward Gateway Integration
+        if StoreForwardQueue is not None:
+            self._store_forward_queue = StoreForwardQueue(
+                max_depth=int(config.get("store_forward_max_depth", 256)),
+                ttl_seconds=int(config.get("store_forward_ttl_sec", 300)),
+                gateway_id=self.gateway_id,
+            )
+        else:
+            self._store_forward_queue = None
+
+        if RouteStateMachine is not None and self._health_monitor is not None:
+            self._route_state_machine = RouteStateMachine(
+                self._health_monitor,
+                gateway_id=self.gateway_id,
+            )
+        else:
+            self._route_state_machine = None
+
+        if ReplayScheduler is not None and self._store_forward_queue is not None:
+            self._replay_scheduler = ReplayScheduler(
+                queue=self._store_forward_queue,
+                send_callback=self._send_replay_packet,
+                gateway_id=self.gateway_id,
+                stability_seconds=float(config.get("replay_stability_sec", 5.0)),
+            )
+        else:
+            self._replay_scheduler = None
+
+        self.route_health_check_interval = float(
+            config.get("route_health_check_interval_sec", DEFAULT_HEALTH_CHECK_INTERVAL)
+        )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -331,6 +396,73 @@ class GatewayRelay:
         self._log(LOG_TAGS["nodes"], f"Injected node list to local ESP32 serial ({len(packet['payload'].split(';')) - 2} nodes)")
 
     # ------------------------------------------------------------------
+    # STEP048C route state / store-forward integration
+    # ------------------------------------------------------------------
+    def _get_active_local_node_ids(self) -> list[str]:
+        now = time.time()
+        with self._nodes_lock:
+            return [
+                node_id
+                for node_id, info in self._local_nodes.items()
+                if (now - info.get("last_seen", 0.0)) < 35
+            ]
+
+    def _tick_route_state_once(self) -> str:
+        if self._route_state_machine is None:
+            return STATE_PRIMARY_LORA
+        previous = self._route_state_machine.state
+        state = self._route_state_machine.tick(self._get_active_local_node_ids())
+        if state != previous:
+            self._log("[ROUTE_STATE]", f"{previous} -> {state}")
+        return state
+
+    def _route_state_loop(self) -> None:
+        while not self._stop_event.is_set():
+            self._tick_route_state_once()
+            self._stop_event.wait(self.route_health_check_interval)
+
+    def get_route_state(self) -> str:
+        if self._route_state_machine is None:
+            return STATE_PRIMARY_LORA
+        return self._route_state_machine.state
+
+    def _handle_peer_link_up(self) -> None:
+        if self._replay_scheduler is not None:
+            self._replay_scheduler.on_link_up()
+
+    def _handle_peer_link_down(self) -> None:
+        if self._replay_scheduler is not None:
+            self._replay_scheduler.on_link_down()
+
+    def _should_store_forward(self) -> bool:
+        return self.get_route_state() in (STATE_FAILOVER_ACTIVE, STATE_RECOVERING)
+
+    def _queue_for_store_forward(self, payload: dict) -> bool:
+        if self._store_forward_queue is None or not self._should_store_forward():
+            return False
+        entry = self._store_forward_queue.enqueue(payload)
+        if entry is None:
+            self._log("[STORE_FORWARD]", "Packet not queued")
+            if build_dropped_ack is not None:
+                self._serial_write(build_dropped_ack(payload, self.gateway_id))
+            return False
+        self._log(
+            "[STORE_FORWARD]",
+            f"Queued messageId={entry.message_id} depth={self._store_forward_queue.depth}",
+        )
+        if build_buffered_ack is not None:
+            self._serial_write(build_buffered_ack(payload, self.gateway_id))
+        return True
+
+    def _send_replay_packet(self, payload: dict):
+        if not self._connected or self.conn is None:
+            return ReplayResult.RETRYABLE if ReplayResult is not None else False
+        ok = self._send_json(self.conn, payload)
+        if evaluate_send_result is not None:
+            return evaluate_send_result(ok)
+        return ok
+
+    # ------------------------------------------------------------------
     # Heartbeat
     # ------------------------------------------------------------------
     def _heartbeat_loop(self, sk: socket.socket) -> None:
@@ -423,6 +555,7 @@ class GatewayRelay:
             self.conn = conn
             self.peer_addr = addr
             self._connected = True
+            self._handle_peer_link_up()
             self._log(LOG_TAGS["peer"], f"Peer connected from {addr[0]}:{addr[1]}")
 
             # Start heartbeat toward the connected peer
@@ -444,6 +577,7 @@ class GatewayRelay:
             self._rx_loop(conn, f"{addr[0]}:{addr[1]}")
 
             self._connected = False
+            self._handle_peer_link_down()
             self._close(conn)
             self.conn = None
             self._log(LOG_TAGS["peer"], "Peer disconnected, returning to accept()")
@@ -476,6 +610,7 @@ class GatewayRelay:
 
             self.conn = sk
             self._connected = True
+            self._handle_peer_link_up()
             self._log(LOG_TAGS["peer"], f"Connected to {self.peer_host}:{self.peer_port}")
 
             hb_thread = threading.Thread(
@@ -495,6 +630,7 @@ class GatewayRelay:
             self._rx_loop(sk, f"server:{self.peer_host}:{self.peer_port}")
 
             self._connected = False
+            self._handle_peer_link_down()
             self._close(sk)
             self.conn = None
             self._log(LOG_TAGS["peer"], f"Connection lost, reconnecting in {self.reconnect_delay}s ...")
@@ -505,6 +641,8 @@ class GatewayRelay:
     # ------------------------------------------------------------------
     def send(self, payload: dict) -> bool:
         if not self._connected or self.conn is None:
+            if self._queue_for_store_forward(payload):
+                return True
             self._log(LOG_TAGS["tx"], "No active peer connection — dropping packet")
             return False
         ok = self._send_json(self.conn, payload)
@@ -526,6 +664,9 @@ class GatewayRelay:
         if self._serial is not None:
             self._serial_worker = threading.Thread(target=self._serial_read_loop, daemon=True)
             self._serial_worker.start()
+        if self._route_state_machine is not None:
+            self._route_worker = threading.Thread(target=self._route_state_loop, daemon=True)
+            self._route_worker.start()
 
     def stop(self) -> None:
         self._log(LOG_TAGS["start"], "Shutting down ...")
@@ -536,6 +677,10 @@ class GatewayRelay:
             self._worker.join(timeout=3)
         if hasattr(self, "_serial_worker"):
             self._serial_worker.join(timeout=1)
+        if hasattr(self, "_route_worker"):
+            self._route_worker.join(timeout=1)
+        if self._replay_scheduler is not None:
+            self._replay_scheduler.stop()
         if self._serial is not None:
             try:
                 self._serial.close()

@@ -1,18 +1,19 @@
 # AI Session Handoff
 
-Last updated: 2026-06-10
+Last updated: 2026-06-12
 
-Current milestone: STEP048B Gateway Route State Machine IMPLEMENTED / PASS. Hermes transition checkpoint prepared.
+Current milestone: STEP048C Store-and-Forward Gateway Integration IMPLEMENTED / PASS. Review/commit pending.
 
-Latest physically completed milestone: STEP048B Gateway Route State Machine. 187/187 tests pass.
+Latest physically completed milestone: STEP048B Gateway Route State Machine. Latest local gateway validation: STEP048C with 197/197 tests pass.
 
-Unfinished task: STEP048C Store-and-Forward Gateway Integration design reviewed, ready for implementation.
+Unfinished task: STEP048C commit/push review is pending. STEP048D Gateway Relay Mode is next only after explicit approval.
 
-Hermes: read `docs/codex-task-logs/HERMES_TRANSITION_HANDOFF.md` first. Do not implement until status confirmed.
+Hermes: do not implement STEP048D until STEP048C is reviewed and committed.
 
 Pending validations:
 - STEP048A COMPLETE / PASS: Gateway Degradation Awareness (health_event_parser, node_health_monitor).
 - STEP048B IMPLEMENTED / PASS: Route State Machine (4-state FSM, 10s timers).
+- STEP048C IMPLEMENTED / PASS: Store-and-Forward Gateway Integration (gateway_service wiring, 10 integration tests, 197 total PASS).
 - STEP042D COMPLETE / PASS: Store-and-Forward (Queue, Replay, Validation).
 - STEP042C COMPLETE / PASS: Delivery Tracking.
 - STEP042A/B PASS: Node Discovery and Destination Messaging.
@@ -47,4 +48,4 @@ Future gateway-code requirements:
 - Gateway relay mode (STEP048D)
 - LoRa backup backhaul mode
 
-Next incomplete activity: Hermes should confirm status, then proceed to STEP048C Store-and-Forward Gateway Integration.
+Next incomplete activity: Review/commit/push STEP048C. After acceptance, next implementation target is STEP048D Gateway Relay Mode / failover execution behavior.

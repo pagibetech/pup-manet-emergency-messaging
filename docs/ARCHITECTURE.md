@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-06-10
+Last updated: 2026-06-12
 
 Purpose: PUP MANET emergency messaging prototype with Android phones connected to local ESP32 nodes over Bluetooth SPP, LoRa node-to-node MANET transport, Raspberry Pi 3B local gateways, primary internet/Tailscale gateway backhaul, long-range LoRa gateway backup backhaul, and validated ESP32-to-Raspberry Pi USB serial bridge.
 
@@ -47,9 +47,9 @@ Integration status with gateway_service.py:
 | Module | Wired? | When |
 |---|---|---|
 | NodeHealthMonitor + parse_health_event | YES | STEP048A |
-| StoreForwardQueue | NO | STEP048C (pending) |
-| ReplayScheduler | NO | STEP048C (pending) |
-| RouteStateMachine | NO | STEP048C (pending) |
+| StoreForwardQueue | YES | STEP048C |
+| ReplayScheduler | YES | STEP048C |
+| RouteStateMachine | YES | STEP048C |
 
 Current topology limitations:
 - nodeA3 has not been flashed or deployed
@@ -69,9 +69,10 @@ Preserved behaviors (must not be altered by any future step):
 - gatewayA_lora and gatewayB_lora boot with Bluetooth DISABLED
 
 Current milestone:
+- STEP048C Store-and-Forward Gateway Integration - IMPLEMENTED / PASS
 - STEP048B Gateway Route State Machine - IMPLEMENTED / PASS
 - STEP048A Gateway Degradation Awareness - IMPLEMENTED / PASS
 - STEP042 is closed
-- Next: STEP048C Store-and-Forward Gateway Integration (design reviewed)
+- Next: STEP048D Gateway Relay Mode / failover execution behavior (pending explicit approval)
 
 Hermes: read `docs/codex-task-logs/HERMES_TRANSITION_HANDOFF.md` for full context.

@@ -1,6 +1,6 @@
 # Active Context
 
-Last updated: 2026-06-10
+Last updated: 2026-06-12
 
 Project: PUP MANET Emergency Messaging Prototype
 
@@ -10,19 +10,19 @@ Local path: `/Users/macbookm1max321tb/A_Design/A_Coding/ADM_Manet`
 
 Current branch: `step-002-003-esp32-simulation`
 
-Latest commit: `20d337c` feat: STEP048B Gateway Route State Machine
+Latest commit before STEP048C work: `f36184f`
 
 Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Hermes handoff: `docs/codex-task-logs/HERMES_TRANSITION_HANDOFF.md`
 
-Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP048B Route State Machine is complete. STEP048C design review complete, implementation pending.
+Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP048C Store-and-Forward Gateway Integration is implemented and locally validated. STEP048D Gateway Relay Mode is pending explicit approval.
 
-Current milestone: STEP048B Gateway Route State Machine IMPLEMENTED / PASS. Next: STEP048C Store-and-Forward Gateway Integration.
+Current milestone: STEP048C Store-and-Forward Gateway Integration IMPLEMENTED / PASS. Next: STEP048D Gateway Relay Mode / failover execution behavior (pending approval).
 
-Current feature: STEP048B implemented. 187/187 tests pass. Hermes transition checkpoint prepared 2026-06-10. All continuity documents updated. Hermes should read docs in order: workbook -> ACTIVE_CONTEXT -> AI_SESSION_HANDOFF -> PROJECT_STATUS -> ARCHITECTURE -> HERMES_TRANSITION_HANDOFF.
+Current feature: STEP048C implemented. 197/197 gateway tests pass. StoreForwardQueue, ReplayScheduler, and RouteStateMachine are now wired into gateway_service.py without ESP32/Android changes.
 
-Hermes next task: STEP048C Store-and-Forward Gateway Integration (design reviewed, ready for implementation).
+Hermes next task: stop for review/commit approval for STEP048C; do not start STEP048D without explicit user approval.
 
 STEP046B-A planning status: Bridge ACK requirements defined in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`.
 
