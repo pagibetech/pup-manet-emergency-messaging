@@ -41,6 +41,7 @@ Gateway module inventory (rpi-gateway/):
 | node_health_monitor.py | Thread-safe per-node health state tracking | IMPLEMENTED, 25 tests |
 | route_state_machine.py | 4-state FSM (PRIMARY_LORA->DEGRADED->FAILOVER_ACTIVE->RECOVERING) | IMPLEMENTED, 34 tests |
 | gateway_service.py STEP048D relay mode | Explicit gateway relay execution for FAILOVER_ACTIVE/RECOVERING with store-forward fallback on send failure | IMPLEMENTED, 6 tests |
+| gateway_service.py STEP048E ACK tracking | Packet-level relay acknowledgment with bounded thread-safe tracking table | IMPLEMENTED, 14 tests |
 | gateway_sim/ | Gateway simulation baseline | IMPLEMENTED, 21 tests |
 
 Integration status with gateway_service.py:
@@ -52,6 +53,7 @@ Integration status with gateway_service.py:
 | ReplayScheduler | YES | STEP048C |
 | RouteStateMachine | YES | STEP048C |
 | Gateway Relay Mode | YES | STEP048D |
+| Relay ACK Tracking | YES | STEP048E |
 
 Current topology limitations:
 - nodeA3 has not been flashed or deployed
@@ -71,11 +73,12 @@ Preserved behaviors (must not be altered by any future step):
 - gatewayA_lora and gatewayB_lora boot with Bluetooth DISABLED
 
 Current milestone:
+- STEP048E Gateway Relay ACK Tracking - IMPLEMENTED / PASS
 - STEP048D Gateway Relay Mode - IMPLEMENTED / PASS
 - STEP048C Store-and-Forward Gateway Integration - IMPLEMENTED / PASS
 - STEP048B Gateway Route State Machine - IMPLEMENTED / PASS
 - STEP048A Gateway Degradation Awareness - IMPLEMENTED / PASS
 - STEP042 is closed
-- Next: review/commit/push STEP048D, then select the next gateway task
+- Next: commit STEP048E, then STEP048F Peer Online Detection Hardening
 
 Hermes: read `docs/codex-task-logs/HERMES_TRANSITION_HANDOFF.md` for full context.

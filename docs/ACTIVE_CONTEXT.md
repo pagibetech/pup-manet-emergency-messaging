@@ -16,13 +16,13 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Hermes handoff: `docs/codex-task-logs/HERMES_TRANSITION_HANDOFF.md`
 
-Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP048D Gateway Relay Mode is implemented and locally validated. Next gateway task selection is pending after review/commit.
+Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP048E Gateway Relay ACK Tracking is implemented and locally validated. Peer online detection hardening is next.
 
-Current milestone: STEP048D Gateway Relay Mode IMPLEMENTED / PASS. Next: review/commit/push STEP048D, then select gateway ACK tracking / peer reconnect hardening / LoRa backup design / physical test campaign.
+Current milestone: STEP048E Gateway Relay ACK Tracking IMPLEMENTED / PASS. Next: commit STEP048E, then STEP048F Peer Online Detection Hardening.
 
-Current feature: STEP048D implemented. 203/203 gateway tests pass. Gateway relay mode now explicitly relays eligible MESSAGE/ACK packets during FAILOVER_ACTIVE/RECOVERING and falls back to store-and-forward on relay send failure.
+Current feature: STEP048E implemented. 217/217 gateway tests pass. Gateway now tracks relayed packet acknowledgment via peer ACK correlation with bounded thread-safe tracking table and diagnostics.
 
-Hermes next task: provide STEP048D pre-commit report, then commit/push when approved or when continuing under user's autonomous best-practice approval.
+Hermes next task: commit STEP048E, proceed to STEP048F Peer Online Detection Hardening.
 
 STEP046B-A planning status: Bridge ACK requirements defined in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`.
 

@@ -188,6 +188,11 @@ class GatewayRelay:
             "last_relay_at": 0.0,
         }
 
+        # STEP048E Gateway Relay ACK Tracking
+        self._relay_tracking: dict[str, dict] = {}
+        self._relay_tracking_lock = threading.Lock()
+        self._relay_tracking_max_entries = 100
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -493,6 +498,11 @@ class GatewayRelay:
     def _relay_gateway_packet(self, payload: dict) -> bool:
         if self.conn is None:
             return False
+        packet_id = str(payload.get("packetId", "")).strip()
+        src_node = str(payload.get("sourceNode", "")).strip()
+        dest_node = str(payload.get("destinationNode", "")).strip()
+        if packet_id:
+            self._relay_track(packet_id, src_node, dest_node)
         ok = self._send_json(self.conn, payload)
         if ok:
             self._gateway_relay_stats["relayed"] += 1
@@ -517,6 +527,80 @@ class GatewayRelay:
             "peer_connected": self.is_connected(),
             "stats": dict(self._gateway_relay_stats),
         }
+
+    # ------------------------------------------------------------------
+    # STEP048E Gateway Relay ACK Tracking
+    # ------------------------------------------------------------------
+    def _relay_track(self, packet_id: str, src_node: str, dest_node: str) -> None:
+        if not packet_id:
+            return
+        now = time.time()
+        with self._relay_tracking_lock:
+            if packet_id in self._relay_tracking:
+                return
+            if len(self._relay_tracking) >= self._relay_tracking_max_entries:
+                oldest = min(
+                    self._relay_tracking,
+                    key=lambda k: self._relay_tracking[k].get("sent_at", 0.0),
+                    default=None,
+                )
+                if oldest:
+                    del self._relay_tracking[oldest]
+            self._relay_tracking[packet_id] = {
+                "packet_id": packet_id,
+                "src_node": src_node,
+                "dest_node": dest_node,
+                "sent_at": now,
+                "acked_at": 0.0,
+                "status": "pending",
+            }
+
+    def _relay_ack(self, packet_id: str) -> bool:
+        if not packet_id:
+            return False
+        now = time.time()
+        with self._relay_tracking_lock:
+            entry = self._relay_tracking.get(packet_id)
+            if entry is None:
+                return False
+            if entry["status"] == "acknowledged":
+                return True
+            entry["status"] = "acknowledged"
+            entry["acked_at"] = now
+            self._log(
+                "[RELAY_ACK]",
+                f"Relay acknowledged packetId={packet_id} "
+                f"src={entry['src_node']} dest={entry['dest_node']} "
+                f"latency={now - entry['sent_at']:.3f}s",
+            )
+            return True
+
+    def _process_peer_ack(self, ack_msg: dict) -> None:
+        if not isinstance(ack_msg, dict):
+            return
+        ref_packet_id = str(ack_msg.get("ref_packet_id", "")).strip()
+        if ref_packet_id:
+            self._relay_ack(ref_packet_id)
+
+    def get_relay_tracking(self) -> dict:
+        with self._relay_tracking_lock:
+            entries = {}
+            pending = 0
+            acknowledged = 0
+            for pkt_id, entry in self._relay_tracking.items():
+                entries[pkt_id] = dict(entry)
+                if entry["status"] == "pending":
+                    pending += 1
+                elif entry["status"] == "acknowledged":
+                    acknowledged += 1
+            return {
+                "gateway_id": self.gateway_id,
+                "pending": pending,
+                "acknowledged": acknowledged,
+                "total_tracked": len(entries),
+                "max_entries": self._relay_tracking_max_entries,
+                "entries": entries,
+            }
 
     # ------------------------------------------------------------------
     # Heartbeat
@@ -576,6 +660,11 @@ class GatewayRelay:
                     self._inject_remote_nodes_to_serial()
                     continue
 
+                # STEP048E: process peer ACK for relay tracking
+                if msg_type == "ack" and isinstance(msg, dict):
+                    self._process_peer_ack(msg)
+                    continue
+
                 # Auto-ack anything that isn't a heartbeat or ack to avoid loops
                 if msg_type not in ("heartbeat", "ack"):
                     reply = {
@@ -583,6 +672,9 @@ class GatewayRelay:
                         "ref_type": msg_type,
                         "timestamp": time.time(),
                     }
+                    ref_pkt_id = str(msg.get("packetId", "")).strip()
+                    if ref_pkt_id:
+                        reply["ref_packet_id"] = ref_pkt_id
                     self._send_json(sk, reply)
                     self._log(LOG_TAGS["tx"], f"ACK sent to {label}")
 
