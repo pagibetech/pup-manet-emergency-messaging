@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-12
 
-Overall state: STEP048F Peer Online Detection Hardening IMPLEMENTED / PASS. 229/229 gateway tests pass. Gateway reconnect hardening is next (gateway-only).
+Overall state: STEP048G Gateway Reconnect Hardening IMPLEMENTED / PASS. 240/240 gateway tests pass. Gateway-side development complete. Next boundary: Android or hardware testing required.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3
@@ -17,7 +17,7 @@ Current branch: `step-002-003-esp32-simulation`
 
 Latest commit before STEP048C work: `f36184f`
 
-Workbook current milestone: STEP048F Peer Online Detection Hardening IMPLEMENTED / PASS.
+Workbook current milestone: STEP048G Gateway Reconnect Hardening IMPLEMENTED / PASS.
 
 Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer.
 
@@ -31,6 +31,7 @@ Completed highlights:
 - STEP048D: Gateway Relay Mode (explicit failover/recovery relay execution with store-forward fallback on relay send failure)
 - STEP048E: Gateway Relay ACK Tracking (packet-level relay acknowledgment with bounded thread-safe tracking table)
 - STEP048F: Peer Online Detection Hardening (last-seen tracking, lost count, reconnect reset)
+- STEP048G: Gateway Reconnect Hardening (exponential backoff with jitter, attempt tracking, reconnect diagnostics)
 - ESP32 simulation and multi-node simulation baseline
 - ESP32 packet parser and Bluetooth service
 - Android app shell, simulation engine, routing visualization, packet abstraction, queue, transport bridge, and Bluetooth readiness layers
@@ -78,7 +79,8 @@ Current test counts:
 - STEP048D gateway relay mode: 6 tests
 - STEP048E relay ACK tracking: 14 tests
 - STEP048F peer online detection: 12 tests
-- Total after STEP048F: 229 PASS, 0 regressions
+- STEP048G reconnect hardening: 11 tests
+- Total after STEP048G: 240 PASS, 0 regressions
 
 Current blockers / open issues:
 - Physical distance/RSSI degradation testing deferred (no physical space)
@@ -86,6 +88,6 @@ Current blockers / open issues:
 - nodeA3 not deployed; 6-node topology incomplete
 - GatewayB repeated reset/garbage serial output needs investigation
 
-Next task: Commit STEP048F, then STEP048G Gateway Reconnect Hardening (gateway-only).
+Next task: Gateway-side complete. Next boundary: Android app rebuild OR physical hardware failover/degradation test campaign.
 
 Hermes: read `docs/codex-task-logs/HERMES_TRANSITION_HANDOFF.md` for full context.

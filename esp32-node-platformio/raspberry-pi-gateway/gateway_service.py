@@ -76,7 +76,10 @@ DEFAULT_CONFIG = {
     "route_health_check_interval_sec": DEFAULT_HEALTH_CHECK_INTERVAL,
     "peer_online_timeout_sec": 30,
     "peer_health_check_interval_sec": 5,
-    }
+    "reconnect_base_delay_sec": 5,
+    "reconnect_max_delay_sec": 120,
+    "reconnect_backoff_multiplier": 2.0,
+}
 
 LOG_TAGS = {
     "start": "[GATEWAY_START]",
@@ -205,6 +208,18 @@ class GatewayRelay:
         self._peer_last_seen: float | None = None
         self._peer_lost_count = 0
         self._peer_was_online = False
+
+        # STEP048G Gateway Reconnect Hardening
+        self.reconnect_base_delay_sec = float(
+            config.get("reconnect_base_delay_sec", 5)
+        )
+        self.reconnect_max_delay_sec = float(
+            config.get("reconnect_max_delay_sec", 120)
+        )
+        self.reconnect_backoff_multiplier = float(
+            config.get("reconnect_backoff_multiplier", 2.0)
+        )
+        self._reconnect_attempts = 0
 
     # ------------------------------------------------------------------
     # Helpers
@@ -456,6 +471,7 @@ class GatewayRelay:
 
     def _handle_peer_link_up(self) -> None:
         self._touch_peer_seen()
+        self._reset_reconnect_attempts()
         if self._replay_scheduler is not None:
             self._replay_scheduler.on_link_up()
 
@@ -652,6 +668,31 @@ class GatewayRelay:
         }
 
     # ------------------------------------------------------------------
+    # STEP048G Gateway Reconnect Hardening
+    # ------------------------------------------------------------------
+    def _compute_reconnect_delay(self, attempts: int) -> float:
+        import random
+        base = self.reconnect_base_delay_sec * (
+            self.reconnect_backoff_multiplier ** max(0, attempts)
+        )
+        capped = min(base, self.reconnect_max_delay_sec)
+        jitter = capped * 0.1 * random.random()
+        return capped + jitter
+
+    def _reset_reconnect_attempts(self) -> None:
+        self._reconnect_attempts = 0
+
+    def get_reconnect_status(self) -> dict:
+        return {
+            "gateway_id": self.gateway_id,
+            "attempts": self._reconnect_attempts,
+            "base_delay_sec": self.reconnect_base_delay_sec,
+            "max_delay_sec": self.reconnect_max_delay_sec,
+            "multiplier": self.reconnect_backoff_multiplier,
+            "next_delay_sec": self._compute_reconnect_delay(self._reconnect_attempts),
+        }
+
+    # ------------------------------------------------------------------
     # Heartbeat
     # ------------------------------------------------------------------
     def _heartbeat_loop(self, sk: socket.socket) -> None:
@@ -803,8 +844,10 @@ class GatewayRelay:
         while not self._stop_event.is_set():
             sk = self._client_connect()
             if sk is None:
-                self._log(LOG_TAGS["peer"], f"Reconnecting in {self.reconnect_delay}s ...")
-                time.sleep(self.reconnect_delay)
+                delay = self._compute_reconnect_delay(self._reconnect_attempts)
+                self._reconnect_attempts += 1
+                self._log(LOG_TAGS["peer"], f"Reconnecting in {delay:.1f}s (attempt {self._reconnect_attempts}) ...")
+                time.sleep(delay)
                 continue
 
             self.conn = sk
