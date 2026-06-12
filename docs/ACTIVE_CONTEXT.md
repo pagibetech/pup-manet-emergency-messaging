@@ -1,6 +1,6 @@
 # Active Context
 
-Last updated: 2026-06-09
+Last updated: 2026-06-10
 
 Project: PUP MANET Emergency Messaging Prototype
 
@@ -10,17 +10,19 @@ Local path: `/Users/macbookm1max321tb/A_Design/A_Coding/ADM_Manet`
 
 Current branch: `step-002-003-esp32-simulation`
 
-Local HEAD observed before STEP043 fix: `e8cf02d STEP042A Gateway node advertisement and serial bridge`
+Latest commit: `20d337c` feat: STEP048B Gateway Route State Machine
 
 Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
-Workbook latest referenced commit before STEP043 fix: `e8cf02d`
+Hermes handoff: `docs/codex-task-logs/HERMES_TRANSITION_HANDOFF.md`
 
-Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP042 is fully complete (A/B/C/D all PASS).
+Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP048B Route State Machine is complete. STEP048C design review complete, implementation pending.
 
-Current milestone: STEP048B Gateway Route State Machine IMPLEMENTED / PASS. STEP048A is closed.
+Current milestone: STEP048B Gateway Route State Machine IMPLEMENTED / PASS. Next: STEP048C Store-and-Forward Gateway Integration.
 
-Current feature: STEP048B Route State Machine implemented. Standalone `RouteStateMachine` in `rpi-gateway/route_state_machine.py` with 4 states (PRIMARY_LORA, DEGRADED, FAILOVER_ACTIVE, RECOVERING), 10s failover timer, 10s recovery timer. Reads NodeHealthMonitor data only; no routing actions. 34 new tests + 153 existing = 187/187 pass. Next: STEP048C Store-and-Forward Gateway Integration.
+Current feature: STEP048B implemented. 187/187 tests pass. Hermes transition checkpoint prepared 2026-06-10. All continuity documents updated. Hermes should read docs in order: workbook -> ACTIVE_CONTEXT -> AI_SESSION_HANDOFF -> PROJECT_STATUS -> ARCHITECTURE -> HERMES_TRANSITION_HANDOFF.
+
+Hermes next task: STEP048C Store-and-Forward Gateway Integration (design reviewed, ready for implementation).
 
 STEP046B-A planning status: Bridge ACK requirements defined in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`.
 
@@ -174,4 +176,4 @@ STEP042C validation:
 - `UNKNOWN` timeout only affects `MESSAGE` state.
 - Builds passed for `nodeA1` and `nodeA1_lora`.
 
-Next validation activity: STEP048B complete. Continue with STEP048C after workbook/user approval.
+Next validation activity: Hermes transition complete. Continue with STEP048C after Hermes reviews status and confirms.
