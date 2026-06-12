@@ -178,6 +178,16 @@ class GatewayRelay:
             config.get("route_health_check_interval_sec", DEFAULT_HEALTH_CHECK_INTERVAL)
         )
 
+        # STEP048D Gateway Relay Mode diagnostics. These counters are
+        # intentionally in gateway_service.py only; packet payloads are not
+        # mutated and ESP32/Android protocol semantics remain unchanged.
+        self._gateway_relay_stats = {
+            "relayed": 0,
+            "skipped": 0,
+            "failed": 0,
+            "last_relay_at": 0.0,
+        }
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -463,6 +473,52 @@ class GatewayRelay:
         return ok
 
     # ------------------------------------------------------------------
+    # STEP048D Gateway Relay Mode
+    # ------------------------------------------------------------------
+    def _is_gateway_relay_candidate(self, payload: dict) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        packet_type = str(payload.get("packetType", "")).upper().strip()
+        if packet_type in ("MESSAGE", "ACK"):
+            return True
+        return False
+
+    def _should_gateway_relay(self, payload: dict) -> bool:
+        if not self._connected or self.conn is None:
+            return False
+        if self.get_route_state() not in (STATE_FAILOVER_ACTIVE, STATE_RECOVERING):
+            return False
+        return self._is_gateway_relay_candidate(payload)
+
+    def _relay_gateway_packet(self, payload: dict) -> bool:
+        if self.conn is None:
+            return False
+        ok = self._send_json(self.conn, payload)
+        if ok:
+            self._gateway_relay_stats["relayed"] += 1
+            self._gateway_relay_stats["last_relay_at"] = time.time()
+            self._log(
+                "[GATEWAY_RELAY]",
+                f"Relayed packetId={payload.get('packetId', '')} "
+                f"state={self.get_route_state()}",
+            )
+            return True
+        self._gateway_relay_stats["failed"] += 1
+        self._log(
+            "[GATEWAY_RELAY]",
+            f"Relay failed packetId={payload.get('packetId', '')}; attempting store-forward",
+        )
+        return False
+
+    def get_gateway_relay_status(self) -> dict:
+        return {
+            "gateway_id": self.gateway_id,
+            "route_state": self.get_route_state(),
+            "peer_connected": self.is_connected(),
+            "stats": dict(self._gateway_relay_stats),
+        }
+
+    # ------------------------------------------------------------------
     # Heartbeat
     # ------------------------------------------------------------------
     def _heartbeat_loop(self, sk: socket.socket) -> None:
@@ -645,6 +701,13 @@ class GatewayRelay:
                 return True
             self._log(LOG_TAGS["tx"], "No active peer connection — dropping packet")
             return False
+        if self._should_gateway_relay(payload):
+            if self._relay_gateway_packet(payload):
+                return True
+            if self._queue_for_store_forward(payload):
+                return True
+            return False
+        self._gateway_relay_stats["skipped"] += 1
         ok = self._send_json(self.conn, payload)
         if ok:
             self._log(LOG_TAGS["tx"], f"Sent type={payload.get('type','unknown')} to peer")

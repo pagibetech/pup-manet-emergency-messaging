@@ -16,13 +16,13 @@ Workbook path: `docs/workbook/PUP_MANET_Implementation_Workbook.xlsx`
 
 Hermes handoff: `docs/codex-task-logs/HERMES_TRANSITION_HANDOFF.md`
 
-Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP048C Store-and-Forward Gateway Integration is implemented and locally validated. STEP048D Gateway Relay Mode is pending explicit approval.
+Latest physically completed workbook step: STEP047 - Bluetooth Transport Layer. STEP048D Gateway Relay Mode is implemented and locally validated. Next gateway task selection is pending after review/commit.
 
-Current milestone: STEP048C Store-and-Forward Gateway Integration IMPLEMENTED / PASS. Next: STEP048D Gateway Relay Mode / failover execution behavior (pending approval).
+Current milestone: STEP048D Gateway Relay Mode IMPLEMENTED / PASS. Next: review/commit/push STEP048D, then select gateway ACK tracking / peer reconnect hardening / LoRa backup design / physical test campaign.
 
-Current feature: STEP048C implemented. 197/197 gateway tests pass. StoreForwardQueue, ReplayScheduler, and RouteStateMachine are now wired into gateway_service.py without ESP32/Android changes.
+Current feature: STEP048D implemented. 203/203 gateway tests pass. Gateway relay mode now explicitly relays eligible MESSAGE/ACK packets during FAILOVER_ACTIVE/RECOVERING and falls back to store-and-forward on relay send failure.
 
-Hermes next task: stop for review/commit approval for STEP048C; do not start STEP048D without explicit user approval.
+Hermes next task: provide STEP048D pre-commit report, then commit/push when approved or when continuing under user's autonomous best-practice approval.
 
 STEP046B-A planning status: Bridge ACK requirements defined in `docs/codex-task-logs/STEP046B_A_BRIDGE_ACK_REQUIREMENTS_DEFINITION.md`.
 

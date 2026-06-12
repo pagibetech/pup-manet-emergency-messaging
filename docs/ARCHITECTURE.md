@@ -40,6 +40,7 @@ Gateway module inventory (rpi-gateway/):
 | health_event_parser.py | Regex parser for [DEGRADATION]/[RECOVERY] serial lines | IMPLEMENTED, 23 tests |
 | node_health_monitor.py | Thread-safe per-node health state tracking | IMPLEMENTED, 25 tests |
 | route_state_machine.py | 4-state FSM (PRIMARY_LORA->DEGRADED->FAILOVER_ACTIVE->RECOVERING) | IMPLEMENTED, 34 tests |
+| gateway_service.py STEP048D relay mode | Explicit gateway relay execution for FAILOVER_ACTIVE/RECOVERING with store-forward fallback on send failure | IMPLEMENTED, 6 tests |
 | gateway_sim/ | Gateway simulation baseline | IMPLEMENTED, 21 tests |
 
 Integration status with gateway_service.py:
@@ -50,6 +51,7 @@ Integration status with gateway_service.py:
 | StoreForwardQueue | YES | STEP048C |
 | ReplayScheduler | YES | STEP048C |
 | RouteStateMachine | YES | STEP048C |
+| Gateway Relay Mode | YES | STEP048D |
 
 Current topology limitations:
 - nodeA3 has not been flashed or deployed
@@ -69,10 +71,11 @@ Preserved behaviors (must not be altered by any future step):
 - gatewayA_lora and gatewayB_lora boot with Bluetooth DISABLED
 
 Current milestone:
+- STEP048D Gateway Relay Mode - IMPLEMENTED / PASS
 - STEP048C Store-and-Forward Gateway Integration - IMPLEMENTED / PASS
 - STEP048B Gateway Route State Machine - IMPLEMENTED / PASS
 - STEP048A Gateway Degradation Awareness - IMPLEMENTED / PASS
 - STEP042 is closed
-- Next: STEP048D Gateway Relay Mode / failover execution behavior (pending explicit approval)
+- Next: review/commit/push STEP048D, then select the next gateway task
 
 Hermes: read `docs/codex-task-logs/HERMES_TRANSITION_HANDOFF.md` for full context.
