@@ -74,7 +74,9 @@ DEFAULT_CONFIG = {
     "store_forward_ttl_sec": 300,
     "replay_stability_sec": 5.0,
     "route_health_check_interval_sec": DEFAULT_HEALTH_CHECK_INTERVAL,
-}
+    "peer_online_timeout_sec": 30,
+    "peer_health_check_interval_sec": 5,
+    }
 
 LOG_TAGS = {
     "start": "[GATEWAY_START]",
@@ -192,6 +194,17 @@ class GatewayRelay:
         self._relay_tracking: dict[str, dict] = {}
         self._relay_tracking_lock = threading.Lock()
         self._relay_tracking_max_entries = 100
+
+        # STEP048F Peer Online Detection Hardening
+        self.peer_online_timeout_sec = float(
+            config.get("peer_online_timeout_sec", 30)
+        )
+        self.peer_health_check_interval = float(
+            config.get("peer_health_check_interval_sec", 5)
+        )
+        self._peer_last_seen: float | None = None
+        self._peer_lost_count = 0
+        self._peer_was_online = False
 
     # ------------------------------------------------------------------
     # Helpers
@@ -442,10 +455,12 @@ class GatewayRelay:
         return self._route_state_machine.state
 
     def _handle_peer_link_up(self) -> None:
+        self._touch_peer_seen()
         if self._replay_scheduler is not None:
             self._replay_scheduler.on_link_up()
 
     def _handle_peer_link_down(self) -> None:
+        self._peer_last_seen = None
         if self._replay_scheduler is not None:
             self._replay_scheduler.on_link_down()
 
@@ -603,6 +618,40 @@ class GatewayRelay:
             }
 
     # ------------------------------------------------------------------
+    # STEP048F Peer Online Detection Hardening
+    # ------------------------------------------------------------------
+    def _touch_peer_seen(self) -> None:
+        self._peer_last_seen = time.time()
+
+    def is_peer_online(self) -> bool:
+        if self._peer_last_seen is None:
+            if self._peer_was_online:
+                self._peer_lost_count += 1
+                self._peer_was_online = False
+            return False
+        now = time.time()
+        online = (now - self._peer_last_seen) < self.peer_online_timeout_sec
+        if online:
+            if not self._peer_was_online:
+                self._peer_lost_count = 0
+            self._peer_was_online = True
+            return True
+        if self._peer_was_online:
+            self._peer_lost_count += 1
+            self._peer_was_online = False
+        return False
+
+    def get_peer_status(self) -> dict:
+        online = self.is_peer_online()
+        return {
+            "gateway_id": self.gateway_id,
+            "online": online,
+            "last_seen": self._peer_last_seen,
+            "lost_count": self._peer_lost_count,
+            "timeout_sec": self.peer_online_timeout_sec,
+        }
+
+    # ------------------------------------------------------------------
     # Heartbeat
     # ------------------------------------------------------------------
     def _heartbeat_loop(self, sk: socket.socket) -> None:
@@ -653,6 +702,8 @@ class GatewayRelay:
 
                 msg_type = msg.get("type", "unknown")
                 self._log(LOG_TAGS["rx"], f"From {label} type={msg_type} body={json.dumps(msg)}")
+
+                self._touch_peer_seen()
 
                 # Track remote nodes advertised by peer gateway
                 if msg_type == "nodes":

@@ -2,13 +2,13 @@
 
 Last updated: 2026-06-12
 
-Current milestone: STEP048D Gateway Relay Mode IMPLEMENTED / PASS. Review/commit pending.
+Current milestone: STEP048F Peer Online Detection Hardening IMPLEMENTED / PASS. Commit pending.
 
-Latest physically completed milestone: STEP048B Gateway Route State Machine. Latest local gateway validation: STEP048D with 203/203 tests pass.
+Latest physically completed milestone: STEP048B Gateway Route State Machine. Latest local gateway validation: STEP048F with 229/229 tests pass.
 
-Unfinished task: STEP048D commit/push review is pending. Next gateway task should be selected after commit.
+Unfinished task: STEP048F commit/push pending. STEP048G Gateway Reconnect Hardening is next.
 
-Hermes: STEP048D is implemented; do not start the next gateway task until STEP048D is committed.
+Hermes: STEP048F implemented; continue with STEP048G after commit.
 
 Pending validations:
 - STEP048A COMPLETE / PASS: Gateway Degradation Awareness (health_event_parser, node_health_monitor).
