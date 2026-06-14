@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-12
 
-Overall state: STEP048G Gateway Reconnect Hardening IMPLEMENTED / PASS. 240/240 gateway tests pass. Gateway-side development complete. Next boundary: Android or hardware testing required.
+Overall state: ESP32 testability commands + gateway test harness IMPLEMENTED. 240/240 tests + 11 harness phases PASS. Firmware builds SUCCESS all 4 targets. Serial simulator next.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3

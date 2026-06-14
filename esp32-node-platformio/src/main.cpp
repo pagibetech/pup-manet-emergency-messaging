@@ -2477,6 +2477,83 @@ void printNeighbors() {
   }
 }
 
+// STEP048 testability: print health state of all tracked nodes
+void printHealthStatus() {
+  Serial.println("[HEALTH_STATUS]");
+  for (size_t i = 0; i < nodeTableCount; ++i) {
+    Serial.print("  node=");
+    Serial.print(nodeTable[i].nodeId);
+    Serial.print(" rssi=");
+    Serial.print(nodeTable[i].rssi);
+    Serial.print(" degraded=");
+    Serial.print(nodeTable[i].degraded ? "YES" : "NO");
+    if (nodeTable[i].degraded) {
+      Serial.print(" degraded_since_ms=");
+      Serial.print(nodeTable[i].degradedSinceMs);
+    }
+    Serial.print(" online=");
+    Serial.print(nodeTable[i].online ? "YES" : "NO");
+    Serial.println();
+  }
+}
+
+// STEP048 testability: force degradation on a node
+void forceDegradeCommand(const String &line) {
+  const int spaceIdx = line.indexOf(' ');
+  if (spaceIdx < 0) {
+    Serial.println("[ERROR] Usage: FORCE_DEGRADE <nodeId>");
+    return;
+  }
+  String nodeId = line.substring(spaceIdx + 1);
+  nodeId.trim();
+  if (nodeId.length() == 0) {
+    Serial.println("[ERROR] Usage: FORCE_DEGRADE <nodeId>");
+    return;
+  }
+  NodeEntry *entry = findNodeEntry(nodeId);
+  if (entry == nullptr) {
+    Serial.print("[ERROR] Node not found: ");
+    Serial.println(nodeId);
+    return;
+  }
+  entry->degraded = true;
+  entry->degradedSinceMs = millis();
+  entry->rssi = RSSI_DEGRADE_THRESHOLD_DBM - 1;
+  Serial.print("[DEGRADATION] node=");
+  Serial.print(nodeId);
+  Serial.print(" rssi=");
+  Serial.print(entry->rssi);
+  Serial.println(" state=DEGRADED");
+}
+
+// STEP048 testability: force recovery on a node
+void forceRecoverCommand(const String &line) {
+  const int spaceIdx = line.indexOf(' ');
+  if (spaceIdx < 0) {
+    Serial.println("[ERROR] Usage: FORCE_RECOVER <nodeId>");
+    return;
+  }
+  String nodeId = line.substring(spaceIdx + 1);
+  nodeId.trim();
+  if (nodeId.length() == 0) {
+    Serial.println("[ERROR] Usage: FORCE_RECOVER <nodeId>");
+    return;
+  }
+  NodeEntry *entry = findNodeEntry(nodeId);
+  if (entry == nullptr) {
+    Serial.print("[ERROR] Node not found: ");
+    Serial.println(nodeId);
+    return;
+  }
+  entry->degraded = false;
+  entry->degradedSinceMs = 0;
+  entry->rssi = -55;
+  Serial.print("[RECOVERY] node=");
+  Serial.print(nodeId);
+  Serial.print(" rssi=");
+  Serial.println(entry->rssi);
+}
+
 void printStatus() {
   Serial.println("[STATUS]");
   Serial.print("  node=");
@@ -2610,6 +2687,12 @@ void processSerialLine(String line) {
         Serial.println("[ERROR] Usage: DELIVERY_SEEN <packetId>");
       }
     }
+  } else if (command == "HEALTH_STATUS") {
+    printHealthStatus();
+  } else if (command == "FORCE_DEGRADE") {
+    forceDegradeCommand(line);
+  } else if (command == "FORCE_RECOVER") {
+    forceRecoverCommand(line);
   } else {
     sendPlainTextFallback(line);
   }
