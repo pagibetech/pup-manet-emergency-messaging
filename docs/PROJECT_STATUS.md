@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-12
 
-Overall state: ESP32 testability commands + gateway test harness IMPLEMENTED. 240/240 tests + 11 harness phases PASS. Firmware builds SUCCESS all 4 targets. Serial simulator next.
+Overall state: Gateway-side development exhausted. 240/240 tests PASS, firmware builds SUCCESS, test harness 11/11 PASS, serial simulator validated. Next boundary: physical hardware connection for flashing/deployment.
 
 Clarified requirements recorded 2026-06-02 (no source changes yet):
 - Default node IDs: nodeA1, nodeA2, nodeA3, nodeB1, nodeB2, nodeB3
