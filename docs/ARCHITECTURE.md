@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-06-12
+Last updated: 2026-06-17
 
 Purpose: PUP MANET emergency messaging prototype with Android phones connected to local ESP32 nodes over Bluetooth SPP, LoRa node-to-node MANET transport, Raspberry Pi 3B local gateways, primary internet/Tailscale gateway backhaul, long-range LoRa gateway backup backhaul, and validated ESP32-to-Raspberry Pi USB serial bridge.
 
@@ -43,6 +43,7 @@ Gateway module inventory (rpi-gateway/):
 | gateway_service.py STEP048D relay mode | Explicit gateway relay execution for FAILOVER_ACTIVE/RECOVERING with store-forward fallback on send failure | IMPLEMENTED, 6 tests |
 | gateway_service.py STEP048E ACK tracking | Packet-level relay acknowledgment with bounded thread-safe tracking table | IMPLEMENTED, 14 tests |
 | gateway_service.py STEP048F peer online | Last-seen timestamp tracking, lost-count with reconnect reset, peer online diagnostics | IMPLEMENTED, 12 tests |
+| gateway_service.py STEP048G reconnect hardening | Exponential backoff with jitter, attempt tracking, reconnect diagnostics | IMPLEMENTED, 11 tests |
 | gateway_sim/ | Gateway simulation baseline | IMPLEMENTED, 21 tests |
 
 Integration status with gateway_service.py:
@@ -56,7 +57,7 @@ Integration status with gateway_service.py:
 | Gateway Relay Mode | YES | STEP048D |
 | Relay ACK Tracking | YES | STEP048E |
 | Peer Online Detection | YES | STEP048F |
-
+| Reconnect Hardening (exp backoff + jitter) | YES | STEP048G |
 Current topology limitations:
 - nodeA3 has not been flashed or deployed
 - GatewayB repeated reset/garbage serial output needs investigation
@@ -75,6 +76,7 @@ Preserved behaviors (must not be altered by any future step):
 - gatewayA_lora and gatewayB_lora boot with Bluetooth DISABLED
 
 Current milestone:
+- STEP048G Gateway Reconnect Hardening - IMPLEMENTED / PASS
 - STEP048F Peer Online Detection Hardening - IMPLEMENTED / PASS
 - STEP048E Gateway Relay ACK Tracking - IMPLEMENTED / PASS
 - STEP048D Gateway Relay Mode - IMPLEMENTED / PASS
@@ -82,6 +84,6 @@ Current milestone:
 - STEP048B Gateway Route State Machine - IMPLEMENTED / PASS
 - STEP048A Gateway Degradation Awareness - IMPLEMENTED / PASS
 - STEP042 is closed
-- Next: commit STEP048F, then STEP048G Gateway Reconnect Hardening
+- All STEP048 gateway-side development complete -- 240/240 tests PASS
 
 Hermes: read `docs/codex-task-logs/HERMES_TRANSITION_HANDOFF.md` for full context.
