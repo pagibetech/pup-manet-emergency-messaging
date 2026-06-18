@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1473,11 +1475,16 @@ fun MessengerApp() {
     Scaffold(
         bottomBar = {
             if (selectedTab == AppTab.Messaging) {
+                var isBroadcast by remember { mutableStateOf(false) }
                 MessageComposer(
                     draftMessage = draftMessage,
                     onDraftChange = { draftMessage = it },
-                    sendEnabled = !realBluetoothSocketState.connected || activeChatDestinationNode.isNotBlank(),
-                    destinationLabel = liveDestinationLabel,
+                    sendEnabled = !realBluetoothSocketState.connected || (isBroadcast || activeChatDestinationNode.isNotBlank()),
+                    destinations = liveDestinations,
+                    selectedDestinationId = selectedLiveDestination?.nodeId,
+                    onDestinationSelected = { selectedLiveDestinationId = it },
+                    isBroadcast = isBroadcast,
+                    onBroadcastToggle = { isBroadcast = it },
                     onSend = {
                         val trimmedMessage = draftMessage.trim()
                         if (trimmedMessage.isNotEmpty()) {
@@ -1882,12 +1889,7 @@ fun MessengerApp() {
                         }
                     }
                     AppTab.Network -> {
-                        item {
-                            NetworkSelector(
-                                selectedNetwork = selectedNetwork,
-                                onNetworkSelected = { selectedNetwork = it }
-                            )
-                        }
+                        
                         item {
                             DiscoveredNodesPanel(
                                 discoveredNodes = discoveredNodes,
@@ -2526,15 +2528,7 @@ fun MessengerApp() {
                                 }
                             )
                         }
-                        item {
-                            SimulationControls(
-                                networkState = networkState,
-                                onNetworkStateChange = { networkState = it },
-                                simulationSpeed = simulationSpeed,
-                                onSimulationSpeedChange = { simulationSpeed = it },
-                                simulationCondition = simulationCondition
-                            )
-                        }
+                        
                     }
                     AppTab.Diagnostics -> {
                         item {
@@ -4387,7 +4381,11 @@ private fun MessageComposer(
     draftMessage: String,
     onDraftChange: (String) -> Unit,
     sendEnabled: Boolean,
-    destinationLabel: String,
+    destinations: List<DiscoveredNode>,
+    selectedDestinationId: String?,
+    onDestinationSelected: (String?) -> Unit,
+    isBroadcast: Boolean,
+    onBroadcastToggle: (Boolean) -> Unit,
     onSend: () -> Unit
 ) {
     Surface(
@@ -4402,29 +4400,60 @@ private fun MessageComposer(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                text = destinationLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    modifier = Modifier.weight(1f),
-                    value = draftMessage,
-                    onValueChange = onDraftChange,
-                    placeholder = { Text("Type message") },
-                    singleLine = true
+                FilterChip(
+                    selected = isBroadcast,
+                    onClick = {
+                        onBroadcastToggle(!isBroadcast)
+                        if (isBroadcast) onDestinationSelected(null)
+                    },
+                    label = { if (isBroadcast) Text("Broadcast ON") else Text("Broadcast") }
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    enabled = sendEnabled,
-                    onClick = onSend
-                ) {
-                    Text("Send")
+                destinations.forEach { dest ->
+                    val isSelected = dest.nodeId == selectedDestinationId && !isBroadcast
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            onBroadcastToggle(false)
+                            onDestinationSelected(dest.nodeId)
+                        },
+                        label = { Text(dest.nodeId) },
+                        trailingIcon = {
+                            Text(
+                                dest.gatewayId,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    )
                 }
+                if (destinations.isEmpty() && !isBroadcast) {
+                    Text(
+                        text = "No phone-paired nodes detected",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            OutlinedTextField(
+                modifier = Modifier.weight(1f),
+                value = draftMessage,
+                onValueChange = onDraftChange,
+                placeholder = { Text("Type message") },
+                singleLine = true
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                enabled = sendEnabled,
+                onClick = onSend
+            ) {
+                Text("Send")
             }
         }
     }
