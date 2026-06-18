@@ -107,7 +107,7 @@ enum class BluetoothAvailability(val label: String) {
     Available("Available"),
     Disabled("Disabled"),
     NotSupported("Not supported"),
-    Simulated("Simulated")
+    Simulated("Bluetooth")
 }
 
 enum class PairingStatus(val label: String) {
@@ -157,7 +157,7 @@ enum class AppTab(val label: String) {
     Messaging("Chat"),
     Network("Nodes"),
     Routing("Route"),
-    Simulation("Sim"),
+    Simulation("Bluetooth"),
     Diagnostics("Logs")
 }
 
@@ -197,6 +197,7 @@ enum class BridgeAckKind(val wireName: String) {
 enum class BridgeAckStatus(val wireName: String) {
     Delivered("DELIVERED"),
     Forwarded("FORWARDED"),
+    ForwardedOverLora("FORWARDED_OVER_LORA"),
     Accepted("ACCEPTED"),
     Duplicate("DUPLICATE"),
     Failed("FAILED"),
@@ -502,7 +503,8 @@ private val fakeEsp32Nodes = listOf(
 data class DiscoveredNode(
     val nodeId: String,
     val gatewayId: String,
-    val online: Boolean
+    val online: Boolean,
+    val bluetoothConnected: Boolean = false
 )
 
 private const val MAX_RETRY_COUNT = 2
@@ -819,7 +821,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
                     val ackInfo = responsePacket?.let { parseBridgeAckInfo(it) }
 
                     if (responsePacket?.packetType == BluetoothProtocolPacketType.Ack && ackInfo?.ackFor == ackFor) {
-                        if (ackInfo.ackType == BridgeAckKind.Delivery) {
+                        if (ackInfo.ackType == BridgeAckKind.Delivery || ackInfo.ackType == BridgeAckKind.Forward) {
                             return@runCatching BridgeAckExchange(
                                 sentLine = line,
                                 deliveryAck = responsePacket,
@@ -1208,6 +1210,7 @@ fun MessengerApp() {
     var autoReceivedPacketIds by remember { mutableStateOf(setOf<String>()) }
     var discoveredNodes by remember { mutableStateOf(listOf<DiscoveredNode>()) }
     var selectedLiveDestinationId by remember { mutableStateOf<String?>(null) }
+    var phoneConnectedNodes by remember { mutableStateOf(setOf<String>()) }
     var pendingBridgeAckMessageIds by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var nodeListStatus by remember { mutableStateOf("Not requested") }
     var validationItems by remember { mutableStateOf(defaultValidationItems()) }
@@ -1225,7 +1228,7 @@ fun MessengerApp() {
     val androidBluetoothSocketClient = remember { AndroidBluetoothSocketClient(context.applicationContext) }
     fun applyDeliveryAckToMessage(ackPacket: BluetoothProtocolPacket): Boolean {
         val ackInfo = parseBridgeAckInfo(ackPacket) ?: return false
-        if (ackInfo.ackType != BridgeAckKind.Delivery) {
+        if (ackInfo.ackType != BridgeAckKind.Delivery && ackInfo.ackType != BridgeAckKind.Forward) {
             eventLog.add(0, "[BRIDGE_ACK_DIAG] ackFor=${ackInfo.ackFor} type=${ackInfo.ackType.wireName} status=${ackInfo.ackStatus.wireName}")
             while (eventLog.size > 10) {
                 eventLog.removeAt(eventLog.lastIndex)
@@ -1244,11 +1247,15 @@ fun MessengerApp() {
         }
 
         val finalStatus = when (ackInfo.ackStatus) {
+            BridgeAckStatus.Forwarded -> MessageStatus.Delivered
+            BridgeAckStatus.ForwardedOverLora -> MessageStatus.Delivered
             BridgeAckStatus.Delivered -> MessageStatus.Delivered
             BridgeAckStatus.Failed -> MessageStatus.Failed
             else -> MessageStatus.Unknown
         }
         val progress = when (ackInfo.ackStatus) {
+            BridgeAckStatus.Forwarded -> "Bridge ACK: Delivered"
+            BridgeAckStatus.ForwardedOverLora -> "Bridge ACK: Delivered"
             BridgeAckStatus.Delivered -> "Bridge ACK: Delivered to ${ackInfo.ackSource}"
             BridgeAckStatus.Failed -> "Bridge ACK: Failed - ${ackInfo.reason.ifBlank { "destination reported failure" }}"
             else -> "Bridge ACK: Unknown"
@@ -1311,7 +1318,7 @@ fun MessengerApp() {
         decision = previewDecision
     )
     val localLiveNodeId = localEsp32NodeId(realBluetoothSocketState.connectedDevice)
-    val liveDestinations = selectableLiveDestinations(discoveredNodes, localLiveNodeId)
+    val liveDestinations = chatDestinations(discoveredNodes, localLiveNodeId, phoneConnectedNodes)
     val selectedLiveDestination = liveDestinations.firstOrNull { it.nodeId == selectedLiveDestinationId }
         ?: liveDestinations.firstOrNull()
     val fallbackDestinationNode = fallbackPeerNodeForConnectedEsp32(realBluetoothSocketState.connectedDevice)
@@ -1319,7 +1326,7 @@ fun MessengerApp() {
         ?: if (discoveredNodes.isEmpty()) fallbackDestinationNode else ""
     val liveDestinationLabel = when {
         selectedLiveDestination != null -> "Destination: ${selectedLiveDestination.nodeId} via Gateway ${selectedLiveDestination.gatewayId}"
-        discoveredNodes.isEmpty() -> "Fallback destination: $fallbackDestinationNode until Refresh Nodes returns live nodes"
+        discoveredNodes.isEmpty() -> "No nodes detected. Connect to an ESP32 via Bluetooth and refresh nodes."
         else -> "No selectable live destination for $localLiveNodeId"
     }
 
@@ -4569,6 +4576,8 @@ private fun looksLikeBridgeAckRawText(value: String): Boolean {
 
 private fun bridgeAckDisplayLabel(ackType: BridgeAckKind, ackStatus: BridgeAckStatus): String {
     return when (ackStatus) {
+        BridgeAckStatus.Forwarded -> "Bridge ACK: Delivered"
+        BridgeAckStatus.ForwardedOverLora -> "Bridge ACK: Delivered"
         BridgeAckStatus.Delivered -> "Bridge ACK: Delivered"
         BridgeAckStatus.Failed -> "Bridge ACK: Failed"
         BridgeAckStatus.Unknown -> "Bridge ACK: Unknown"
@@ -4786,9 +4795,10 @@ private fun parseNodeListPayload(payload: String): List<DiscoveredNode> {
         if (tokens.size >= 3) {
             val nodeId = tokens[0]
             val gw = tokens[1]
+            val bluetoothConnected = tokens.size >= 4 && tokens[3].trim() == "BT"
             val online = tokens[2].equals("ONLINE", ignoreCase = true)
             if (nodeId.isNotBlank() && gw.isNotBlank() && !nodeId.contains("=")) {
-                result.add(DiscoveredNode(nodeId, gw, online))
+                result.add(DiscoveredNode(nodeId, gw, online, bluetoothConnected))
             }
         }
     }
@@ -4798,7 +4808,7 @@ private fun parseNodeListPayload(payload: String): List<DiscoveredNode> {
 private fun normalizedDiscoveredNodes(discoveredNodes: List<DiscoveredNode>): List<DiscoveredNode> {
     return discoveredNodes
         .filter { it.nodeId.isNotBlank() && it.gatewayId.isNotBlank() }
-        .distinctBy { it.nodeId }
+        .associateBy { it.nodeId }.values
         .sortedWith(
             compareBy<DiscoveredNode> { gatewaySortKey(it.gatewayId) }
                 .thenBy { nodeSortKey(it.nodeId) }
@@ -4812,6 +4822,15 @@ private fun selectableLiveDestinations(
 ): List<DiscoveredNode> {
     return normalizedDiscoveredNodes(discoveredNodes)
         .filter { it.online && it.nodeId != localNodeId }
+}
+
+private fun chatDestinations(
+    discoveredNodes: List<DiscoveredNode>,
+    localNodeId: String,
+    phoneConnectedNodes: Set<String>
+): List<DiscoveredNode> {
+    val nodes = selectableLiveDestinations(discoveredNodes, localNodeId)
+    return nodes.filter { it.bluetoothConnected }
 }
 
 private fun gatewaySortKey(gatewayId: String): Int {
