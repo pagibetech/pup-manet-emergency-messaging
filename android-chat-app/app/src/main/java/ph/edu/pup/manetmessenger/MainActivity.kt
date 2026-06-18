@@ -899,8 +899,8 @@ private class BluetoothTransportManager {
     fun scan(state: BluetoothDeviceState): BluetoothDeviceState {
         return state.copy(
             lifecycleState = BluetoothLifecycleState.Scanning,
-            discoveredDevices = fakeEsp32Nodes,
-            selectedDevice = state.selectedDevice ?: fakeEsp32Nodes.first()
+            discoveredDevices = emptyList(),
+            selectedDevice = state.selectedDevice
         )
     }
 
@@ -3057,7 +3057,7 @@ private fun BluetoothPanel(
         )
         if (bluetoothLinkedToEsp32(bluetoothState)) {
             Text(
-                text = "Phone access uses paired ESP32 over Bluetooth SPP; MANET traffic remains LoRa.",
+                text = "",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -3067,63 +3067,28 @@ private fun BluetoothPanel(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                modifier = Modifier.weight(1f),
-                onClick = onScan
-            ) {
-                Text("Scan")
-            }
-            Button(
-                modifier = Modifier.weight(1f),
-                enabled = bluetoothDeviceState.discoveredDevices.isNotEmpty(),
-                onClick = onPair
-            ) {
-                Text("Pair")
-            }
+            Box(Modifier.size(0.dp))
+            Box(Modifier.size(0.dp))
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                modifier = Modifier.weight(1f),
-                enabled = bluetoothDeviceState.pairedDevice != null,
-                onClick = onConnect
-            ) {
-                Text("Connect")
-            }
-            Button(
-                modifier = Modifier.weight(1f),
-                enabled = bluetoothDeviceState.lifecycleState == BluetoothLifecycleState.Connected,
-                onClick = onExchangeHello
-            ) {
-                Text("HELLO")
-            }
+            Box(Modifier.size(0.dp))
+            Box(Modifier.size(0.dp))
         }
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            enabled = bluetoothState.connectedNode != null || bluetoothState.pairingStatus != PairingStatus.NotPaired,
-            onClick = onDisconnect
-        ) {
-            Text("Disconnect")
-        }
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            enabled = bluetoothDeviceState.pairedDevice != null,
-            onClick = onSimulateTimeout
-        ) {
-            Text("Simulate Timeout / Reconnect")
-        }
+        Box(Modifier.size(0.dp))
+        Box(Modifier.size(0.dp))
         if (bluetoothDeviceState.discoveredDevices.isEmpty()) {
             Text(
-                text = "No simulated ESP32 nodes scanned yet. These controls are simulation-only and do not connect to real Bluetooth hardware.",
+                text = "",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
             Text(
-                text = "Simulated ESP32 Nodes",
+                text = "",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -3211,28 +3176,9 @@ private fun RealBluetoothSocketPanel(
                 Text("Connect ESP32")
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(
-                modifier = Modifier.weight(1f),
-                enabled = socketState.connected,
-                onClick = onSendHello
-            ) {
-                Text("Send HELLO")
-            }
-            Button(
-                modifier = Modifier.weight(1f),
-                enabled = socketState.connected,
-                onClick = onRunLivePacketTest
-            ) {
-                Text("Run Test")
-            }
-        }
+        Box(Modifier.size(0.dp))
         OutlinedTextField(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.size(0.dp),
             value = demoLoRaMessage,
             onValueChange = onDemoLoRaMessageChanged,
             enabled = socketState.connected,
@@ -3244,20 +3190,8 @@ private fun RealBluetoothSocketPanel(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                modifier = Modifier.weight(1f),
-                enabled = socketState.connected && demoLoRaMessage.isNotBlank(),
-                onClick = onSendLoRaMessage
-            ) {
-                Text("Send Msg")
-            }
-            Button(
-                modifier = Modifier.weight(1f),
-                enabled = socketState.connected,
-                onClick = onReadIncomingPacket
-            ) {
-                Text("Check In")
-            }
+
+
         }
         Button(
             modifier = Modifier.fillMaxWidth(),
@@ -3278,7 +3212,11 @@ private fun RealBluetoothSocketPanel(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            socketState.bondedDevices.chunked(2).forEach { rowDevices ->
+            val manetDevices = socketState.bondedDevices.filter { it.startsWith("PUP-MANET-", ignoreCase = true) }
+            if (manetDevices.isEmpty()) {
+                Text(text = "No PUP-MANET nodes paired. Pair in Android Bluetooth settings.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                manetDevices.chunked(2).forEach { rowDevices ->
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -3291,10 +3229,11 @@ private fun RealBluetoothSocketPanel(
                         )
                     }
                 }
+                }
             }
         }
         Text(
-            text = "Demo flow: type a short message on Phone A, press Send Msg, then press Check In on Phone B.",
+            text = "",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
