@@ -3162,7 +3162,13 @@ private fun RealBluetoothSocketPanel(
             ) {
                 Text("Load Paired")
             }
-            Box(Modifier.size(0.dp))
+            Button(
+                modifier = Modifier.weight(1f),
+                enabled = permissionsReady && socketState.selectedDevice != null && !socketState.connected,
+                onClick = onConnect
+            ) {
+                Text("Connect ESP32")
+            }
         }
         Box(Modifier.size(0.dp))
         OutlinedTextField(
@@ -3181,7 +3187,13 @@ private fun RealBluetoothSocketPanel(
 
 
         }
-        Box(Modifier.size(0.dp))
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = socketState.connected,
+            onClick = onDisconnect
+        ) {
+            Text("Close Socket")
+        }
         if (socketState.bondedDevices.isEmpty()) {
             Text(
                 text = "Real Bluetooth requires a physical Android phone. Pair the ESP32 in Android Bluetooth settings first, then load paired devices here. Android Emulator usually cannot use real Bluetooth SPP.",
@@ -3926,7 +3938,12 @@ private fun Esp32TransportPreparationPanel(
         StatusRow(label = "Connection status", value = esp32BridgeConfig.connectionStatus)
         StatusRow(label = "Last handshake", value = esp32BridgeConfig.lastHandshakeTime)
         StatusRow(label = "Handshake state", value = esp32BridgeConfig.handshakeStatus)
-        Box(Modifier.size(0.dp))
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onSendHello
+        ) {
+            Text("Send HELLO to ESP32")
+        }
         Text(
             text = "Expected response: ESP32_ACK (simulated only)",
             style = MaterialTheme.typography.labelSmall,
