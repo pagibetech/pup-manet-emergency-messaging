@@ -1889,12 +1889,7 @@ fun MessengerApp() {
                         }
                     }
                     AppTab.Network -> {
-                        item {
-                            NetworkSelector(
-                                selectedNetwork = selectedNetwork,
-                                onNetworkSelected = { selectedNetwork = it }
-                            )
-                        }
+                        
                         item {
                             DiscoveredNodesPanel(
                                 discoveredNodes = discoveredNodes,
@@ -2533,15 +2528,7 @@ fun MessengerApp() {
                                 }
                             )
                         }
-                        item {
-                            SimulationControls(
-                                networkState = networkState,
-                                onNetworkStateChange = { networkState = it },
-                                simulationSpeed = simulationSpeed,
-                                onSimulationSpeedChange = { simulationSpeed = it },
-                                simulationCondition = simulationCondition
-                            )
-                        }
+                        
                     }
                     AppTab.Diagnostics -> {
                         item {
@@ -3175,13 +3162,7 @@ private fun RealBluetoothSocketPanel(
             ) {
                 Text("Load Paired")
             }
-            Button(
-                modifier = Modifier.weight(1f),
-                enabled = permissionsReady && socketState.selectedDevice != null && !socketState.connected,
-                onClick = onConnect
-            ) {
-                Text("Connect ESP32")
-            }
+            Box(Modifier.size(0.dp))
         }
         Box(Modifier.size(0.dp))
         OutlinedTextField(
@@ -3200,13 +3181,7 @@ private fun RealBluetoothSocketPanel(
 
 
         }
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            enabled = socketState.connected,
-            onClick = onDisconnect
-        ) {
-            Text("Close Socket")
-        }
+        Box(Modifier.size(0.dp))
         if (socketState.bondedDevices.isEmpty()) {
             Text(
                 text = "Real Bluetooth requires a physical Android phone. Pair the ESP32 in Android Bluetooth settings first, then load paired devices here. Android Emulator usually cannot use real Bluetooth SPP.",
@@ -3951,12 +3926,7 @@ private fun Esp32TransportPreparationPanel(
         StatusRow(label = "Connection status", value = esp32BridgeConfig.connectionStatus)
         StatusRow(label = "Last handshake", value = esp32BridgeConfig.lastHandshakeTime)
         StatusRow(label = "Handshake state", value = esp32BridgeConfig.handshakeStatus)
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onSendHello
-        ) {
-            Text("Send HELLO to ESP32")
-        }
+        Box(Modifier.size(0.dp))
         Text(
             text = "Expected response: ESP32_ACK (simulated only)",
             style = MaterialTheme.typography.labelSmall,
