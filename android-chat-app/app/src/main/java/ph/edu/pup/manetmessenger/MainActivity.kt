@@ -1889,7 +1889,12 @@ fun MessengerApp() {
                         }
                     }
                     AppTab.Network -> {
-                        
+                        item {
+                            NetworkSelector(
+                                selectedNetwork = selectedNetwork,
+                                onNetworkSelected = { selectedNetwork = it }
+                            )
+                        }
                         item {
                             DiscoveredNodesPanel(
                                 discoveredNodes = discoveredNodes,
@@ -2528,7 +2533,15 @@ fun MessengerApp() {
                                 }
                             )
                         }
-                        
+                        item {
+                            SimulationControls(
+                                networkState = networkState,
+                                onNetworkStateChange = { networkState = it },
+                                simulationSpeed = simulationSpeed,
+                                onSimulationSpeedChange = { simulationSpeed = it },
+                                simulationCondition = simulationCondition
+                            )
+                        }
                     }
                     AppTab.Diagnostics -> {
                         item {
@@ -4441,19 +4454,24 @@ private fun MessageComposer(
                     )
                 }
             }
-            OutlinedTextField(
-                modifier = Modifier.weight(1f),
-                value = draftMessage,
-                onValueChange = onDraftChange,
-                placeholder = { Text("Type message") },
-                singleLine = true
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(
-                enabled = sendEnabled,
-                onClick = onSend
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Send")
+                OutlinedTextField(
+                    modifier = Modifier.weight(1f),
+                    value = draftMessage,
+                    onValueChange = onDraftChange,
+                    placeholder = { Text("Type message") },
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    enabled = sendEnabled,
+                    onClick = onSend
+                ) {
+                    Text("Send")
+                }
             }
         }
     }
