@@ -2564,27 +2564,7 @@ fun MessengerApp() {
                                 incomingPacket = sampleIncomingAckPacket(outgoingPacketPreview)
                             )
                         }
-                        item {
-                            ValidationChecklistPanel(
-                                items = validationItems,
-                                onRunBasicValidation = {
-                                    validationItems = runBasicValidation(
-                                        selectedTab = selectedTab,
-                                        messages = messages,
-                                        routingDecision = adaptiveRoutingDecision,
-                                        packetLog = packetLog,
-                                        eventLog = eventLog,
-                                        transportStatus = transportStatus,
-                                        bluetoothState = bluetoothState,
-                                        simulationSpeed = simulationSpeed,
-                                        networkState = networkState
-                                    )
-                                },
-                                onResetValidation = {
-                                    validationItems = defaultValidationItems()
-                                }
-                            )
-                        }
+                        
                         item { PacketLogPanel(packets = packetLog) }
                         item { EventLogPanel(events = eventLog) }
                     }
