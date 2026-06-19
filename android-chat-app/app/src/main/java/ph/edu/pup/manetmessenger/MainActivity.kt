@@ -796,7 +796,7 @@ private class AndroidBluetoothSocketClient(private val context: Context) {
     suspend fun sendLineAndWaitForDeliveryAck(
         line: String,
         ackFor: String,
-        timeoutMs: Long = 12000L
+        timeoutMs: Long = 25000L
     ): Result<BridgeAckExchange> = withContext(Dispatchers.IO) {
         val activeSocket = socket
             ?: return@withContext Result.failure(IllegalStateException("Bluetooth socket not connected"))
@@ -1576,7 +1576,7 @@ fun MessengerApp() {
                                     }
                                     pendingBridgeAckMessageIds = pendingBridgeAckMessageIds + (btPacket.packetId to messageId)
                                     queueScope.launch {
-                                        val result = androidBluetoothSocketClient.sendLineAndWaitForDeliveryAck(line, btPacket.packetId, 12000L)
+                                        val result = androidBluetoothSocketClient.sendLineAndWaitForDeliveryAck(line, btPacket.packetId, 25000L)
                                         val exchangeIndex = messages.indexOfFirst { it.id == messageId }
                                         if (exchangeIndex >= 0) {
                                             result.fold(
