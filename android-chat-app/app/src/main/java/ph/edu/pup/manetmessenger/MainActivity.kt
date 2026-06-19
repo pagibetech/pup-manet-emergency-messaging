@@ -2554,16 +2554,7 @@ fun MessengerApp() {
                                 maxRetryCount = queueManager.maxRetryCount
                             )
                         }
-                        item {
-                            BluetoothReadinessAndTestPlanPanel(
-                                outgoingPacket = protocolPacketFromManetPacket(
-                                    packet = outgoingPacketPreview,
-                                    packetType = BluetoothProtocolPacketType.Message,
-                                    retryCount = messages.firstOrNull { it.packet.packetId == outgoingPacketPreview.packetId }?.retryCount ?: 0
-                                ),
-                                incomingPacket = sampleIncomingAckPacket(outgoingPacketPreview)
-                            )
-                        }
+                        
                         
                         item { PacketLogPanel(packets = packetLog) }
                         item { EventLogPanel(events = eventLog) }
@@ -3930,7 +3921,6 @@ private fun Esp32TransportPreparationPanel(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         PacketFormatPreviewPanel(packet = packetPreview)
-        HardwareReadinessPanel(bluetoothState = bluetoothState)
     }
 }
 
@@ -3956,38 +3946,6 @@ private fun PacketFormatPreviewPanel(packet: LoraManetPacket) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    }
-}
-
-@Composable
-private fun HardwareReadinessPanel(bluetoothState: BluetoothState) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                color = MaterialTheme.colorScheme.background,
-                shape = RoundedCornerShape(8.dp)
-            )
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(
-            text = "Hardware Readiness",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        StatusRow(label = "Android app ready", value = "Ready for simulation")
-        StatusRow(label = "ESP32 firmware ready", value = "Not verified")
-        StatusRow(
-            label = "Bluetooth pairing ready",
-            value = if (bluetoothState.pairingStatus == PairingStatus.Paired) {
-                "Simulated paired"
-            } else {
-                "Placeholder only"
-            }
-        )
-        StatusRow(label = "LoRa module wired", value = "Not verified")
-        StatusRow(label = "Packet format matched", value = "Pending ESP32 test")
     }
 }
 
@@ -4131,118 +4089,6 @@ private fun ProtocolPacketCard(
             text = protocolValidationText(validation),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary
-        )
-    }
-}
-
-@Composable
-private fun BluetoothReadinessAndTestPlanPanel(
-    outgoingPacket: BluetoothProtocolPacket,
-    incomingPacket: BluetoothProtocolPacket
-) {
-    val outgoingValidation = validateBluetoothProtocolPacket(outgoingPacket)
-    val incomingValidation = validateBluetoothProtocolPacket(incomingPacket)
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(8.dp)
-            )
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text(
-            text = "Bluetooth Access Readiness and Test Plan",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = "Android phone <-> Bluetooth SPP <-> local ESP32 | ESP32 nodes communicate over LoRa MANET",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold
-        )
-        ChecklistPanel(
-            title = "Bluetooth Access Readiness",
-            rows = listOf(
-                "Android Bluetooth architecture ready" to "Ready",
-                "Packet protocol defined" to "Ready",
-                "ESP32 firmware packet parser" to "Ready",
-                "ESP32 phone-access Bluetooth service" to "Ready",
-                "SX1278 LoRa wiring pending" to "Pending",
-                "LoRa send/receive test pending" to "Pending",
-                "Android Bluetooth permissions" to "Ready",
-                "Android Bluetooth socket layer" to "Ready",
-                "Android phone-to-ESP32 live packet test" to "Ready"
-            )
-        )
-        ChecklistPanel(
-            title = "ESP32 Firmware Requirements",
-            rows = listOf(
-                "Expose phone-to-node Bluetooth connection" to "Required",
-                "Accept HELLO" to "Required",
-                "Return ESP32_ACK" to "Required",
-                "Accept MESSAGE packet" to "Required",
-                "Forward MESSAGE over LoRa" to "Required",
-                "Report STATUS" to "Required"
-            )
-        )
-        ChecklistPanel(
-            title = "Protocol Test Cases",
-            rows = listOf(
-                "HELLO handshake test" to "Planned",
-                "MESSAGE packet send test" to "Planned",
-                "ACK receive test" to "Planned",
-                "Invalid packet test" to "Planned",
-                "Node list status request test" to "Planned",
-                "Status packet test" to "Planned"
-            )
-        )
-        ProtocolPacketCard(
-            title = "Detailed outgoing protocol data",
-            packet = outgoingPacket,
-            validation = outgoingValidation
-        )
-        ProtocolPacketCard(
-            title = "Detailed incoming protocol data",
-            packet = incomingPacket,
-            validation = incomingValidation
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    color = MaterialTheme.colorScheme.background,
-                    shape = RoundedCornerShape(8.dp)
-                )
-                .padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = "Readable Serialization",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-            serializeBluetoothProtocolPacket(outgoingPacket).lines().forEach { line ->
-                Text(
-                    text = line,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        ChecklistPanel(
-            title = "Next Implementation Stages",
-            rows = listOf(
-                "Step 017" to "ESP32 firmware packet parser",
-                "Step 018" to "ESP32 phone-access Bluetooth service",
-                "Step 019" to "Android real Bluetooth permissions",
-                "Step 020" to "Android Bluetooth connection implementation",
-                "Step 021" to "Android-to-ESP32 live packet test",
-                "Step 022" to "ESP32-to-ESP32 LoRa packet test"
-            )
         )
     }
 }
