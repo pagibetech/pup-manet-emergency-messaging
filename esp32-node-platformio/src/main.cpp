@@ -124,6 +124,7 @@ struct NodeEntry {
   bool online;
   bool degraded;
   unsigned long degradedSinceMs;
+  bool bluetoothConnected;
 };
 
 struct ProtocolPacket {
@@ -612,7 +613,7 @@ void logNodeTableChange(const char *label, const NodeEntry &entry) {
   Serial.println(nodeTableCount);
 }
 
-NodeEntry *upsertNodeEntry(const String &nodeId, const String &gatewayId, int rssi, bool online, int hopCount = 0) {
+NodeEntry *upsertNodeEntry(const String &nodeId, const String &gatewayId, int rssi, bool online, int hopCount = 0, bool bluetoothConnected = false) {
   NodeEntry *existing = findNodeEntry(nodeId);
   if (existing != nullptr) {
     existing->gatewayId = gatewayId;
@@ -620,6 +621,7 @@ NodeEntry *upsertNodeEntry(const String &nodeId, const String &gatewayId, int rs
     existing->lastSeen = millis();
     existing->hopCount = hopCount;
     existing->online = online;
+    existing->bluetoothConnected = bluetoothConnected;
     logNodeTableChange("NEIGHBOR_UPDATE", *existing);
     return existing;
   }
@@ -632,7 +634,8 @@ NodeEntry *upsertNodeEntry(const String &nodeId, const String &gatewayId, int rs
       hopCount,
       online,
       false,
-      0
+      0,
+      bluetoothConnected
     };
     NodeEntry *created = &nodeTable[nodeTableCount++];
     logNodeTableChange("NEIGHBOR_ADD", *created);
@@ -893,6 +896,7 @@ void processIncomingMessage(const String &line) {
 
 bool protocolPacketTargetsLocalNode(const ProtocolPacket &packet) {
   return packet.destinationNode == String(SIM_NODE_ID) ||
+         packet.destinationNode == "BROADCAST" ||
          packet.destinationNode == "ESP32_BRIDGE" ||
          packet.destinationNode == "ANDROID_APP";
 }
@@ -1231,14 +1235,8 @@ bool parseStrictGatewayIdPayload(const String &payload, String &gatewayId) {
 
   gatewayId = String(gatewayChar);
 
-  skipJsonWhitespace(payload, index);
-  if (index >= payload.length() || payload.charAt(index) != '}') {
-    return false;
-  }
-  ++index;
-
-  skipJsonWhitespace(payload, index);
-  return index == payload.length();
+  // Accept any remaining JSON fields after gatewayId
+  return true;
 }
 
 bool isValidHelloPacketIdForSource(const String &packetId, const String &sourceNode) {
@@ -1417,7 +1415,8 @@ void learnNodeFromHelloPacket(const ProtocolPacket &packet, int rssi, const Stri
     return;
   }
 
-  upsertNodeEntry(packet.sourceNode, gatewayId, rssi, true, packet.hopCount);
+  bool btConnected = extractJsonString(packet.payload, "bluetooth") == "true";
+  upsertNodeEntry(packet.sourceNode, gatewayId, rssi, true, packet.hopCount, btConnected);
   Serial.print("[HELLO] discovered ");
   Serial.print(packet.sourceNode);
   Serial.print(" gateway=");
@@ -1611,7 +1610,12 @@ void routeLoRaProtocolPacket(const ProtocolPacket &packet, const String &sourceL
 
     deliverToBluetooth(deliveryPacket);
     sendDeliveryAckForMessage(deliveryPacket);
-    return;
+    // For BROADCAST: deliver locally AND relay for other nodes
+    if (packet.destinationNode == "BROADCAST") {
+      Serial.println("[BROADCAST] deliver locally and relay");
+    } else {
+      return;
+    }
   }
 
   ProtocolPacket relayPacket = packet;
@@ -1875,6 +1879,11 @@ ProtocolPacket createStatusResponsePacket(const ProtocolPacket &request) {
 }
 
 ProtocolPacket createNodeListResponsePacket(const ProtocolPacket &request) {
+  // Update local node Bluetooth status
+  NodeEntry *self = findNodeEntry(String(SIM_NODE_ID));
+  if (self != nullptr) {
+    self->bluetoothConnected = hasBluetoothClient();
+  }
   removeExpiredNodes();
 
   String payload = "type=NODE_LIST";
@@ -1890,7 +1899,7 @@ ProtocolPacket createNodeListResponsePacket(const ProtocolPacket &request) {
   Serial.println(nodeTableCount);
 
   for (size_t i = 0; i < nodeTableCount; ++i) {
-    payload += ";" + nodeTable[i].nodeId + "," + nodeTable[i].gatewayId + "," + String(nodeTable[i].online ? "ONLINE" : "OFFLINE");
+    payload += ";" + nodeTable[i].nodeId + "," + nodeTable[i].gatewayId + "," + String(nodeTable[i].online ? "ONLINE" : "OFFLINE") + "," + String(nodeTable[i].bluetoothConnected ? "BT" : "");
     Serial.print("[NODE_LIST_EXPORT] node=");
     Serial.print(nodeTable[i].nodeId);
     Serial.print(" gateway=");
@@ -2767,7 +2776,7 @@ void readLoRaInput() {
 }
 
 void sendHelloBroadcast() {
-  String payload = "{\"gatewayId\":\"" + jsonEscape(String(GATEWAY_ID)) + "\"}";
+  String payload = "{\"gatewayId\":\"" + jsonEscape(String(GATEWAY_ID)) + "\",\"bluetooth\":\"" + String(hasBluetoothClient() ? "true" : "false") + "\"}";
   ProtocolPacket packet = createProtocolPacket(
     "HELLO",
     bluetoothPacketId("HELLO"),
